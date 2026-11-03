@@ -1,0 +1,10 @@
+# Cross-repo siblings cloned by setup-dev-env, pinned to commits (never
+# branches) until this repo is declared in its project manifest in
+# metacraft-labs/metacraft-manifests; then delete the `=<sha>` suffixes.
+# The pins are the `agents` tips of 2026-11-03: ActivityTimeline, the first
+# reducer wrapped here, is not on nim-agents' dev yet.
+nim-acp=478b45609289a1db28a7cbf6a2380cfffd02d6d5  # nim-acp@agents tip
+nim-agent-harbor=7953355d91edebdac055a4b5623f4454b4b760ff  # nim-agent-harbor@agents tip
+nim-everywhere=2a41b67a6c0d41cbb55359c702f300eb2696682f  # nim-everywhere@agents tip
+nim-agents=d49813aaeadfe0c64615316414e171012d7e0d6e  # nim-agents@agents tip
+isonim=013765fe0aa28ee3da049bc2646704e4b82e854b  # isonim@agents tip

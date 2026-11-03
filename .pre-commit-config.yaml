@@ -1,0 +1,23 @@
+# The committed-binaries tier of the MCL standard hook set
+# (metacraft-dev-guidelines/policies/repo-requirements.md §4.3), in the portable
+# form of devops-modules' `git-hooks/mcl-standard-hooks.yaml`, the same set
+# nim-agents carries. The formatting tier is not adopted yet.
+#
+# Install:  automatic on dev-shell entry (scripts/install-git-hooks.sh, called
+#           from the shellHook in flake.nix). Elsewhere `prek install`.
+# Run:      prek run --all-files
+minimum_pre_commit_version: '3.0.0'
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      # 1024 KB passed explicitly because UPSTREAM'S DEFAULT IS 500 KB.
+      - id: check-added-large-files
+        args: ['--maxkb=1024']
+
+  - repo: https://github.com/metacraft-labs/devops-modules
+    # Pinned to a sha, never to a branch.
+    rev: 6ba34072850f7348e1669a6daf8a0acb79669434
+    hooks:
+      - id: ban-added-ct-recordings
