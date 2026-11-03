@@ -1,0 +1,73 @@
+{
+  "events": [
+    {
+      "type": "agent_question",
+      "request": "2d227ee6-e35f-4b8c-a66e-a60190784c06:question:1",
+      "kind": "single_choice",
+      "prompt": "Which retry policy should the uploader use?",
+      "options": [
+        {
+          "label": "Exponential backoff",
+          "recommended": true
+        },
+        {
+          "label": "Fixed interval",
+          "recommended": false
+        },
+        {
+          "label": "No retries",
+          "recommended": false
+        }
+      ],
+      "timestamp": 1768465406296
+    },
+    {
+      "type": "session_awaiting_input",
+      "request": "2d227ee6-e35f-4b8c-a66e-a60190784c06:question:1",
+      "timestamp": 1768465223519
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Committed 2 files",
+      "timestamp": 1768465102632
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Pushed fix/propagator-step-count",
+      "timestamp": 1768464927599
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Editing src/propagator/step.rs",
+      "timestamp": 1768464728178
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768464651677
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "2d227ee6-e35f-4b8c-a66e-a60190784c06",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Claude",
+            "version": "4.2.0"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768464576248
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768464576248,
+  "total_count": 7
+}

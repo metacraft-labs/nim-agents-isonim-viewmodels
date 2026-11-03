@@ -1,0 +1,11 @@
+{
+  "id": "d179f0b9-7450-4aec-a376-d5fc28257ed1",
+  "status": "failed",
+  "fleet": {
+    "leader": "mac-01",
+    "followers": []
+  },
+  "endpoints": {
+    "events": "/api/v1/sessions/d179f0b9-7450-4aec-a376-d5fc28257ed1/events"
+  }
+}

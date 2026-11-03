@@ -1,0 +1,100 @@
+[
+  {
+    "kind": "run-started",
+    "testRunId": "synthetic-scheduler-tests",
+    "platform": [
+      "os.macos",
+      "arch.aarch64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct"
+  },
+  {
+    "kind": "test-started",
+    "testRunId": "synthetic-scheduler-tests",
+    "platform": [
+      "os.macos",
+      "arch.aarch64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_queue.py::test_fifo_order"
+  },
+  {
+    "kind": "test-finished",
+    "testRunId": "synthetic-scheduler-tests",
+    "platform": [
+      "os.macos",
+      "arch.aarch64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_queue.py::test_fifo_order",
+    "status": "passed",
+    "durationMs": 4,
+    "reused": false
+  },
+  {
+    "kind": "test-started",
+    "testRunId": "synthetic-scheduler-tests",
+    "platform": [
+      "os.macos",
+      "arch.aarch64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_queue.py::test_priority_order"
+  },
+  {
+    "kind": "test-finished",
+    "testRunId": "synthetic-scheduler-tests",
+    "platform": [
+      "os.macos",
+      "arch.aarch64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_queue.py::test_priority_order",
+    "status": "passed",
+    "durationMs": 5,
+    "reused": false
+  },
+  {
+    "kind": "test-started",
+    "testRunId": "synthetic-scheduler-tests",
+    "platform": [
+      "os.macos",
+      "arch.aarch64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_timer.py::test_deadline_fires"
+  },
+  {
+    "kind": "test-finished",
+    "testRunId": "synthetic-scheduler-tests",
+    "platform": [
+      "os.macos",
+      "arch.aarch64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_timer.py::test_deadline_fires",
+    "status": "passed",
+    "durationMs": 18,
+    "reused": false
+  },
+  {
+    "kind": "run-finished",
+    "testRunId": "synthetic-scheduler-tests",
+    "platform": [
+      "os.macos",
+      "arch.aarch64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "totals": {
+      "passed": 3
+    }
+  }
+]

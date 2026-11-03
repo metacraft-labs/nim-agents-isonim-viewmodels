@@ -1,0 +1,52 @@
+{
+  "events": [
+    {
+      "type": "status",
+      "status": "completed",
+      "timestamp": 1768371971518
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Reading docs/configuration.md",
+      "timestamp": 1768371837398
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Running the test suite",
+      "timestamp": 1768371609632
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Running the test suite",
+      "timestamp": 1768371531091
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768371432583
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "bdf85db5-85d8-46f3-a5c4-da6d5a432ad1",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Claude",
+            "version": "4.2.0"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768371286073
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768371286073,
+  "total_count": 6
+}

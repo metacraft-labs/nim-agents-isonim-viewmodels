@@ -1,0 +1,56 @@
+#+TITLE: Route cache on the new storage layer Milestones
+
+* Document
+  :PROPERTIES:
+  :next_steps: Finish RC-2.
+  :last_updated: 2026-01-14
+  :current_milestone: RC-2
+  :executive_summary: Route cache on the new storage layer: one milestone done, one in progress, one planned.
+  :END:
+
+* Introduction
+  An invented campaign for the synthetic fixture set.
+
+* Milestones
+
+** RC-1: Groundwork
+   :PROPERTIES:
+   :status: completed
+   :depends_on: 
+   :END:
+
+*** Deliverables
+    - [x] The groundwork is in place.
+
+*** Verification
+    - test_name: just test-rc-1
+      description: The milestone's tests pass.
+      status: passing
+
+** RC-2: The main change
+   :PROPERTIES:
+   :status: in_progress
+   :depends_on: RC-1
+   :END:
+
+*** Deliverables
+    - [ ] The change is in place.
+
+*** Verification
+    - test_name: just test-rc-2
+      description: The milestone's tests pass.
+      status: pending
+
+** RC-3: Polish and release
+   :PROPERTIES:
+   :status: planned
+   :depends_on: RC-2
+   :END:
+
+*** Deliverables
+    - [ ] The release notes is in place.
+
+*** Verification
+    - test_name: just test-rc-3
+      description: The milestone's tests pass.
+      status: pending

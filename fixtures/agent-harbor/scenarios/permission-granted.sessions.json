@@ -1,0 +1,58 @@
+{
+  "items": [
+    {
+      "id": "0c12e274-fc78-460c-a5fa-7dda5be043e0",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Ask before deleting the generated files"
+      },
+      "agent": {
+        "agent": {
+          "software": "Claude",
+          "version": "latest"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": ""
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "completed",
+      "createdAt": "1970-01-01T00:00:00Z",
+      "updatedAt": "2026-01-15T10:00:00.000Z",
+      "started_at": "1970-01-01T00:00:00Z",
+      "ended_at": "2026-01-15T10:00:00.000Z",
+      "awaiting_input": false,
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "agent permission request: delete build/generated (allow once, reject once); allowed once",
+          "timestamp": 0
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "assistant: deleted 3 generated files",
+          "timestamp": 0
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 0
+        }
+      ]
+    }
+  ],
+  "total": 1,
+  "nextPage": null
+}

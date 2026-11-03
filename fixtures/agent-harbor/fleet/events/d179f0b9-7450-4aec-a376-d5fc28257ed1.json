@@ -1,0 +1,63 @@
+{
+  "events": [
+    {
+      "type": "status",
+      "status": "failed",
+      "timestamp": 1768420942567
+    },
+    {
+      "type": "log",
+      "level": "error",
+      "message": "[exit] status=1",
+      "timestamp": 1768420915436
+    },
+    {
+      "type": "session_resumed",
+      "deliverer": "human",
+      "timestamp": 1768420812049
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Pushed fix/propagator-step-count",
+      "timestamp": 1768420639741
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Committed 2 files",
+      "timestamp": 1768420591518
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Committed 2 files",
+      "timestamp": 1768420430938
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768420303234
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "d179f0b9-7450-4aec-a376-d5fc28257ed1",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Gemini",
+            "version": "1.8.2"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768420203697
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768420203697,
+  "total_count": 8
+}

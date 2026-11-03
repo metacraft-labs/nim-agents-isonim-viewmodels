@@ -1,0 +1,15 @@
+diff --git a/src/propagator/step.rs b/src/propagator/step.rs
+index 1111111..2222222 100644
+--- a/src/propagator/step.rs
++++ b/src/propagator/step.rs
+@@ -1,1 +1,1 @@
+-    for i in 0..=steps {
++    for i in 0..steps {
+diff --git a/tests/propagator.rs b/tests/propagator.rs
+index 1111111..2222222 100644
+--- a/tests/propagator.rs
++++ b/tests/propagator.rs
+@@ -1,1 +1,2 @@
+-    assert_eq!(run(10).len(), 11);
++    assert_eq!(run(10).len(), 10);
++    assert_eq!(run(0).len(), 0);

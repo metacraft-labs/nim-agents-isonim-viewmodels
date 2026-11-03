@@ -1,0 +1,69 @@
+{
+  "events": [
+    {
+      "type": "status",
+      "status": "failed",
+      "timestamp": 1768423336423
+    },
+    {
+      "type": "log",
+      "level": "error",
+      "message": "[exit] status=1",
+      "timestamp": 1768423206169
+    },
+    {
+      "type": "session_resumed",
+      "deliverer": "human",
+      "timestamp": 1768422964749
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Committed 2 files",
+      "timestamp": 1768422828918
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Reading docs/configuration.md",
+      "timestamp": 1768422603849
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Running the test suite",
+      "timestamp": 1768422350959
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Pushed fix/propagator-step-count",
+      "timestamp": 1768422227166
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768422170151
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "e581d879-8d00-4d1b-a00d-316924457bc7",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Claude",
+            "version": "4.2.0"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768422065806
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768422065806,
+  "total_count": 9
+}

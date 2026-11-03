@@ -1,0 +1,11 @@
+{
+  "id": "cfe7355d-ef20-43c0-a3e5-9822f1337c39",
+  "status": "stopped",
+  "fleet": {
+    "leader": "win-01",
+    "followers": []
+  },
+  "endpoints": {
+    "events": "/api/v1/sessions/cfe7355d-ef20-43c0-a3e5-9822f1337c39/events"
+  }
+}

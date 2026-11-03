@@ -1,0 +1,11 @@
+{
+  "id": "0759569c-4732-4057-ac8b-dda64c477652",
+  "status": "cancelled",
+  "fleet": {
+    "leader": "build-01",
+    "followers": []
+  },
+  "endpoints": {
+    "events": "/api/v1/sessions/0759569c-4732-4057-ac8b-dda64c477652/events"
+  }
+}

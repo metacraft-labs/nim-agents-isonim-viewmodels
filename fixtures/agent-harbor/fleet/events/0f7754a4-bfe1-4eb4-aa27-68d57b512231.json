@@ -1,0 +1,72 @@
+{
+  "events": [
+    {
+      "type": "agent_question",
+      "request": "0f7754a4-bfe1-4eb4-aa27-68d57b512231:question:1",
+      "kind": "single_choice",
+      "prompt": "Which retry policy should the uploader use?",
+      "options": [
+        {
+          "label": "Exponential backoff",
+          "recommended": true
+        },
+        {
+          "label": "Fixed interval",
+          "recommended": false
+        },
+        {
+          "label": "No retries",
+          "recommended": false
+        }
+      ],
+      "timestamp": 1768462385922
+    },
+    {
+      "type": "session_awaiting_input",
+      "request": "0f7754a4-bfe1-4eb4-aa27-68d57b512231:question:1",
+      "timestamp": 1768462343612
+    },
+    {
+      "type": "session_resumed",
+      "deliverer": "human",
+      "timestamp": 1768462311126
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Editing src/propagator/step.rs",
+      "timestamp": 1768462128278
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Committed 2 files",
+      "timestamp": 1768462078579
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768462036246
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "0f7754a4-bfe1-4eb4-aa27-68d57b512231",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Opencode",
+            "version": "0.12.7"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768461842046
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768461842046,
+  "total_count": 7
+}

@@ -1,0 +1,11 @@
+{
+  "id": "cf5812b4-9eed-4419-a939-9299c29cf633",
+  "status": "failed",
+  "fleet": {
+    "leader": "win-01",
+    "followers": []
+  },
+  "endpoints": {
+    "events": "/api/v1/sessions/cf5812b4-9eed-4419-a939-9299c29cf633/events"
+  }
+}

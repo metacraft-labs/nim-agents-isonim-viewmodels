@@ -1,0 +1,11 @@
+{
+  "id": "c0404b1c-ce10-47a8-ad46-b15fa453c59b",
+  "status": "completed",
+  "fleet": {
+    "leader": "mac-01",
+    "followers": []
+  },
+  "endpoints": {
+    "events": "/api/v1/sessions/c0404b1c-ce10-47a8-ad46-b15fa453c59b/events"
+  }
+}

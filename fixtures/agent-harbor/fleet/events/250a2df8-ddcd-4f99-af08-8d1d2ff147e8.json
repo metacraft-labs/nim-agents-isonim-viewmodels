@@ -1,0 +1,41 @@
+{
+  "events": [
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Running the test suite",
+      "timestamp": 1768458139528
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Editing src/propagator/step.rs",
+      "timestamp": 1768458055804
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768457815702
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "250a2df8-ddcd-4f99-af08-8d1d2ff147e8",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Claude",
+            "version": "4.2.0"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768457676468
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768457676468,
+  "total_count": 4
+}

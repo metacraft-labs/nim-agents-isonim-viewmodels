@@ -1,0 +1,40 @@
+{
+  "events": [
+    {
+      "type": "status",
+      "status": "completed",
+      "timestamp": 0
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "assistant: 12 tests passed",
+      "timestamp": 0
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "assistant: renamed 4 helpers in units/convert.py",
+      "timestamp": 0
+    },
+    {
+      "type": "user_input",
+      "input_type": "text",
+      "content": "Rename the units module's helpers and run its tests",
+      "timestamp": 0
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 0
+    },
+    {
+      "type": "status",
+      "status": "queued",
+      "timestamp": 0
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 0,
+  "total_count": 6
+}

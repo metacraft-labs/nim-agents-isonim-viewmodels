@@ -1,0 +1,46 @@
+{
+  "events": [
+    {
+      "type": "session_resumed",
+      "deliverer": "human",
+      "timestamp": 1768440073968
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Reading docs/configuration.md",
+      "timestamp": 1768440024232
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Running the test suite",
+      "timestamp": 1768439894808
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768439765857
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "bb848a21-a7f2-4efb-a86f-b3b319a68847",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Gemini",
+            "version": "1.8.2"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768439590794
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768439590794,
+  "total_count": 5
+}

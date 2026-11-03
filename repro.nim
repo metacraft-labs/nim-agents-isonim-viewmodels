@@ -18,6 +18,7 @@ import ct_test_nim_unittest
 
 const viewmodelTests = @[
   "tests/test_activity_vm.nim",
+  "tests/test_agent_harbor_fleet_vm.nim",
   "tests/test_nimcache_is_worktree_local.nim",
 ]
 
@@ -54,7 +55,9 @@ package nim_agents_isonim_viewmodels:
         binary = "build/test-bin/" & stem,
         paths = @["src"],
         actionId = "nim_agents_isonim_viewmodels.test_build." & stem,
-        extraInputs = @["src", "nim_agents_isonim_viewmodels.nimble"])
+        # `fixtures`: the Agent Harbor fixture source embeds
+        # `fixtures/agent-harbor/` at compile time (`staticRead`).
+        extraInputs = @["src", "fixtures", "nim_agents_isonim_viewmodels.nimble"])
       testBuildActions.add(edge.action)
       testExecuteActions.add(edge.testBinary.run(
         actionId = "nim_agents_isonim_viewmodels.test_execute." & stem,

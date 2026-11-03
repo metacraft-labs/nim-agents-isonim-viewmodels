@@ -1,0 +1,58 @@
+{
+  "events": [
+    {
+      "type": "status",
+      "status": "failed",
+      "timestamp": 1768425308133
+    },
+    {
+      "type": "log",
+      "level": "error",
+      "message": "build failed: 3 tests did not pass",
+      "timestamp": 1768425196750
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Running the test suite",
+      "timestamp": 1768425155329
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Pushed fix/propagator-step-count",
+      "timestamp": 1768424933017
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Pushed fix/propagator-step-count",
+      "timestamp": 1768424761595
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768424608549
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "e68df722-130e-4619-acd2-6e578bf43bf7",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Gemini",
+            "version": "1.8.2"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768424540076
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768424540076,
+  "total_count": 7
+}

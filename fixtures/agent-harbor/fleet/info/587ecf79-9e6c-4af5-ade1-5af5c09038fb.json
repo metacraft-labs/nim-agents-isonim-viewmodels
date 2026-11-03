@@ -1,0 +1,11 @@
+{
+  "id": "587ecf79-9e6c-4af5-ade1-5af5c09038fb",
+  "status": "queued",
+  "fleet": {
+    "leader": "build-03",
+    "followers": []
+  },
+  "endpoints": {
+    "events": "/api/v1/sessions/587ecf79-9e6c-4af5-ade1-5af5c09038fb/events"
+  }
+}

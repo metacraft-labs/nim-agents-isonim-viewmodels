@@ -1,0 +1,62 @@
+{
+  "events": [
+    {
+      "type": "status",
+      "status": "cancelled",
+      "timestamp": 1768414090501
+    },
+    {
+      "type": "anti_halting_resume_confirmed",
+      "stallType": "idle_turn",
+      "timestamp": 1768413986602
+    },
+    {
+      "type": "session_resumed",
+      "deliverer": "human",
+      "timestamp": 1768413919615
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Committed 2 files",
+      "timestamp": 1768413704463
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Reading docs/configuration.md",
+      "timestamp": 1768413671291
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Reading docs/configuration.md",
+      "timestamp": 1768413569764
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768413327605
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "333cc0ed-167f-4626-ae9b-bc7b066dfe1a",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Opencode",
+            "version": "0.12.7"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768413201864
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768413201864,
+  "total_count": 8
+}

@@ -1,0 +1,3094 @@
+{
+  "items": [
+    {
+      "id": "c43bad2a-276d-40d4-a1e5-19fa40e9e482",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Add a retry budget to the telemetry uploader and cover it with tests"
+      },
+      "agent": {
+        "agent": {
+          "software": "Claude",
+          "version": "4.2.0"
+        },
+        "model": "large",
+        "count": 2
+      },
+      "runtime": {
+        "type": "devcontainer"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/orbit-sim.git",
+        "branch": "fix/propagator-step-count",
+        "commit": "1d1d82936da54c7da133bfa0e9643bf4"
+      },
+      "status": "running",
+      "createdAt": "2026-01-15T09:18:50.763Z",
+      "updatedAt": "2026-01-15T09:33:22.777Z",
+      "started_at": "2026-01-15T09:18:54.763Z",
+      "awaiting_input": true,
+      "awaiting_input_source": "agent-question",
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "high",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/c43bad2a-276d-40d4-a1e5-19fa40e9e482",
+        "events": "/api/v1/sessions/c43bad2a-276d-40d4-a1e5-19fa40e9e482/events",
+        "logs": "/api/v1/sessions/c43bad2a-276d-40d4-a1e5-19fa40e9e482/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Pushed fix/propagator-step-count",
+          "timestamp": 1768469250488
+        },
+        {
+          "type": "session_awaiting_input",
+          "request": "c43bad2a-276d-40d4-a1e5-19fa40e9e482:question:1",
+          "timestamp": 1768469349923
+        },
+        {
+          "type": "agent_question",
+          "request": "c43bad2a-276d-40d4-a1e5-19fa40e9e482:question:1",
+          "kind": "single_choice",
+          "prompt": "Which retry policy should the uploader use?",
+          "options": [
+            {
+              "label": "Exponential backoff",
+              "recommended": true
+            },
+            {
+              "label": "Fixed interval",
+              "recommended": false
+            },
+            {
+              "label": "No retries",
+              "recommended": false
+            }
+          ],
+          "timestamp": 1768469602777
+        }
+      ]
+    },
+    {
+      "id": "34172351-d223-4dab-ab04-a2bd323f69eb",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Fix the off-by-one in the orbit propagator's step counter"
+      },
+      "agent": {
+        "agent": {
+          "software": "Codex",
+          "version": "0.91.3"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-02"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/telemetry-ui.git",
+        "branch": "feat/telemetry-retry-budget",
+        "commit": "389380b1a32d4784a9578528bc50808c"
+      },
+      "status": "running",
+      "createdAt": "2026-01-15T08:38:36.489Z",
+      "updatedAt": "2026-01-15T08:56:21.708Z",
+      "started_at": "2026-01-15T08:38:40.489Z",
+      "awaiting_input": true,
+      "awaiting_input_source": "agent-question",
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/34172351-d223-4dab-ab04-a2bd323f69eb",
+        "events": "/api/v1/sessions/34172351-d223-4dab-ab04-a2bd323f69eb/events",
+        "logs": "/api/v1/sessions/34172351-d223-4dab-ab04-a2bd323f69eb/logs"
+      },
+      "recent_events": [
+        {
+          "type": "session_resumed",
+          "deliverer": "human",
+          "timestamp": 1768467239112
+        },
+        {
+          "type": "session_awaiting_input",
+          "request": "34172351-d223-4dab-ab04-a2bd323f69eb:question:1",
+          "timestamp": 1768467293489
+        },
+        {
+          "type": "agent_question",
+          "request": "34172351-d223-4dab-ab04-a2bd323f69eb:question:1",
+          "kind": "single_choice",
+          "prompt": "Which retry policy should the uploader use?",
+          "options": [
+            {
+              "label": "Exponential backoff",
+              "recommended": true
+            },
+            {
+              "label": "Fixed interval",
+              "recommended": false
+            },
+            {
+              "label": "No retries",
+              "recommended": false
+            }
+          ],
+          "timestamp": 1768467381708
+        }
+      ]
+    },
+    {
+      "id": "2d227ee6-e35f-4b8c-a66e-a60190784c06",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Port the flight planner's route cache to the new storage layer"
+      },
+      "agent": {
+        "agent": {
+          "software": "Gemini",
+          "version": "1.8.2"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-03"
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "running",
+      "createdAt": "2026-01-15T08:08:21.641Z",
+      "updatedAt": "2026-01-15T08:23:26.296Z",
+      "started_at": "2026-01-15T08:08:25.641Z",
+      "awaiting_input": true,
+      "awaiting_input_source": "agent-question",
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/2d227ee6-e35f-4b8c-a66e-a60190784c06",
+        "events": "/api/v1/sessions/2d227ee6-e35f-4b8c-a66e-a60190784c06/events",
+        "logs": "/api/v1/sessions/2d227ee6-e35f-4b8c-a66e-a60190784c06/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Committed 2 files",
+          "timestamp": 1768465102632
+        },
+        {
+          "type": "session_awaiting_input",
+          "request": "2d227ee6-e35f-4b8c-a66e-a60190784c06:question:1",
+          "timestamp": 1768465223519
+        },
+        {
+          "type": "agent_question",
+          "request": "2d227ee6-e35f-4b8c-a66e-a60190784c06:question:1",
+          "kind": "single_choice",
+          "prompt": "Which retry policy should the uploader use?",
+          "options": [
+            {
+              "label": "Exponential backoff",
+              "recommended": true
+            },
+            {
+              "label": "Fixed interval",
+              "recommended": false
+            },
+            {
+              "label": "No retries",
+              "recommended": false
+            }
+          ],
+          "timestamp": 1768465406296
+        }
+      ]
+    },
+    {
+      "id": "0f7754a4-bfe1-4eb4-aa27-68d57b512231",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": ""
+      },
+      "agent": {
+        "agent": {
+          "software": "Opencode",
+          "version": "0.12.7"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "gpu-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/meadow/paperboat.git",
+        "branch": "docs/config-3-migration",
+        "commit": "31687a5fc7674a39a3ac199faace6e55"
+      },
+      "status": "running",
+      "createdAt": "2026-01-15T07:22:20.197Z",
+      "updatedAt": "2026-01-15T07:33:05.922Z",
+      "started_at": "2026-01-15T07:22:24.197Z",
+      "awaiting_input": true,
+      "awaiting_input_source": "agent-question",
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [
+        "prompt"
+      ],
+      "links": {
+        "self": "/api/v1/sessions/0f7754a4-bfe1-4eb4-aa27-68d57b512231",
+        "events": "/api/v1/sessions/0f7754a4-bfe1-4eb4-aa27-68d57b512231/events",
+        "logs": "/api/v1/sessions/0f7754a4-bfe1-4eb4-aa27-68d57b512231/logs"
+      },
+      "recent_events": [
+        {
+          "type": "session_resumed",
+          "deliverer": "human",
+          "timestamp": 1768462311126
+        },
+        {
+          "type": "session_awaiting_input",
+          "request": "0f7754a4-bfe1-4eb4-aa27-68d57b512231:question:1",
+          "timestamp": 1768462343612
+        },
+        {
+          "type": "agent_question",
+          "request": "0f7754a4-bfe1-4eb4-aa27-68d57b512231:question:1",
+          "kind": "single_choice",
+          "prompt": "Which retry policy should the uploader use?",
+          "options": [
+            {
+              "label": "Exponential backoff",
+              "recommended": true
+            },
+            {
+              "label": "Fixed interval",
+              "recommended": false
+            },
+            {
+              "label": "No retries",
+              "recommended": false
+            }
+          ],
+          "timestamp": 1768462385922
+        }
+      ]
+    },
+    {
+      "id": "001177b3-9468-4b2b-a039-dae2c541204c",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Make the dashboard's latency chart readable in the light theme"
+      },
+      "agent": {
+        "agent": {
+          "software": "Claude",
+          "version": "4.2.0"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "mac-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/orbit-sim.git",
+        "branch": "fix/latency-chart-light-theme",
+        "commit": "640afafc04d9476ba5acbf8e80658626"
+      },
+      "status": "running",
+      "createdAt": "2026-01-15T06:51:42.960Z",
+      "updatedAt": "2026-01-15T07:07:50.307Z",
+      "started_at": "2026-01-15T06:51:46.960Z",
+      "awaiting_input": true,
+      "awaiting_input_source": "agent-question",
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/001177b3-9468-4b2b-a039-dae2c541204c",
+        "events": "/api/v1/sessions/001177b3-9468-4b2b-a039-dae2c541204c/events",
+        "logs": "/api/v1/sessions/001177b3-9468-4b2b-a039-dae2c541204c/logs"
+      },
+      "recent_events": [
+        {
+          "type": "session_resumed",
+          "deliverer": "human",
+          "timestamp": 1768460674968
+        },
+        {
+          "type": "session_awaiting_input",
+          "request": "001177b3-9468-4b2b-a039-dae2c541204c:question:1",
+          "timestamp": 1768460834264
+        },
+        {
+          "type": "agent_question",
+          "request": "001177b3-9468-4b2b-a039-dae2c541204c:question:1",
+          "kind": "single_choice",
+          "prompt": "Which retry policy should the uploader use?",
+          "options": [
+            {
+              "label": "Exponential backoff",
+              "recommended": true
+            },
+            {
+              "label": "Fixed interval",
+              "recommended": false
+            },
+            {
+              "label": "No retries",
+              "recommended": false
+            }
+          ],
+          "timestamp": 1768460870307
+        }
+      ]
+    },
+    {
+      "id": "250a2df8-ddcd-4f99-af08-8d1d2ff147e8",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Investigate why the nightly fuzz job times out on the parser"
+      },
+      "agent": {
+        "agent": {
+          "software": "Codex",
+          "version": "0.91.3"
+        },
+        "model": "large",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "win-01"
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "running",
+      "createdAt": "2026-01-15T06:10:46.835Z",
+      "updatedAt": "2026-01-15T06:22:19.528Z",
+      "started_at": "2026-01-15T06:10:50.835Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/250a2df8-ddcd-4f99-af08-8d1d2ff147e8",
+        "events": "/api/v1/sessions/250a2df8-ddcd-4f99-af08-8d1d2ff147e8/events",
+        "logs": "/api/v1/sessions/250a2df8-ddcd-4f99-af08-8d1d2ff147e8/logs"
+      },
+      "recent_events": [
+        {
+          "type": "status",
+          "status": "running",
+          "timestamp": 1768457815702
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Editing src/propagator/step.rs",
+          "timestamp": 1768458055804
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Running the test suite",
+          "timestamp": 1768458139528
+        }
+      ]
+    },
+    {
+      "id": "c5a5cbec-c782-4db1-ab70-77c4e2202ed1",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Split the monolithic scheduler module into three cohesive parts"
+      },
+      "agent": {
+        "agent": {
+          "software": "Gemini",
+          "version": "1.8.2"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/flight-planner.git",
+        "branch": "fix/propagator-step-count",
+        "commit": "04145b3ff5254a41a6af508d0d721822"
+      },
+      "status": "running",
+      "createdAt": "2026-01-15T05:35:44.387Z",
+      "updatedAt": "2026-01-15T05:51:50.230Z",
+      "started_at": "2026-01-15T05:35:48.387Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/c5a5cbec-c782-4db1-ab70-77c4e2202ed1",
+        "events": "/api/v1/sessions/c5a5cbec-c782-4db1-ab70-77c4e2202ed1/events",
+        "logs": "/api/v1/sessions/c5a5cbec-c782-4db1-ab70-77c4e2202ed1/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Running the test suite",
+          "timestamp": 1768455867147
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Committed 2 files",
+          "timestamp": 1768456084958
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Pushed fix/propagator-step-count",
+          "timestamp": 1768456310230
+        }
+      ]
+    },
+    {
+      "id": "6888b754-0240-4510-ac96-74d0f166609b",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": ""
+      },
+      "agent": {
+        "agent": {
+          "software": "Opencode",
+          "version": "0.12.7"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "devcontainer"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-02"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/meadow/paperboat.git",
+        "branch": "feat/telemetry-retry-budget",
+        "commit": "0267b44c2ec945c7a5b976e654d5d938"
+      },
+      "status": "running",
+      "createdAt": "2026-01-15T04:56:40.879Z",
+      "updatedAt": "2026-01-15T05:05:58.721Z",
+      "started_at": "2026-01-15T04:56:44.879Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [
+        "prompt"
+      ],
+      "links": {
+        "self": "/api/v1/sessions/6888b754-0240-4510-ac96-74d0f166609b",
+        "events": "/api/v1/sessions/6888b754-0240-4510-ac96-74d0f166609b/events",
+        "logs": "/api/v1/sessions/6888b754-0240-4510-ac96-74d0f166609b/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Reading docs/configuration.md",
+          "timestamp": 1768453304718
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Running the test suite",
+          "timestamp": 1768453365456
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Reading docs/configuration.md",
+          "timestamp": 1768453558721
+        }
+      ]
+    },
+    {
+      "id": "ca48029a-986a-4f5a-a611-ec7f46cb0e9a",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Profile the paperboat renderer and remove the per-frame allocation"
+      },
+      "agent": {
+        "agent": {
+          "software": "Claude",
+          "version": "4.2.0"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-03"
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "running",
+      "createdAt": "2026-01-15T04:18:27.354Z",
+      "updatedAt": "2026-01-15T04:26:14.893Z",
+      "started_at": "2026-01-15T04:18:31.354Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/ca48029a-986a-4f5a-a611-ec7f46cb0e9a",
+        "events": "/api/v1/sessions/ca48029a-986a-4f5a-a611-ec7f46cb0e9a/events",
+        "logs": "/api/v1/sessions/ca48029a-986a-4f5a-a611-ec7f46cb0e9a/logs"
+      },
+      "recent_events": [
+        {
+          "type": "status",
+          "status": "running",
+          "timestamp": 1768451029083
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Editing src/propagator/step.rs",
+          "timestamp": 1768451105417
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Reading docs/configuration.md",
+          "timestamp": 1768451174893
+        }
+      ]
+    },
+    {
+      "id": "efde67b5-ccda-47e8-ae40-35f2daed03cd",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Document every public function of the units library"
+      },
+      "agent": {
+        "agent": {
+          "software": "Codex",
+          "version": "0.91.3"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "gpu-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/telemetry-ui.git",
+        "branch": "docs/config-3-migration",
+        "commit": "1d75fb1c1fca4ae8a431e55675c53d35"
+      },
+      "status": "running",
+      "createdAt": "2026-01-15T03:44:37.576Z",
+      "updatedAt": "2026-01-15T03:59:05.433Z",
+      "started_at": "2026-01-15T03:44:41.576Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "high",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/efde67b5-ccda-47e8-ae40-35f2daed03cd",
+        "events": "/api/v1/sessions/efde67b5-ccda-47e8-ae40-35f2daed03cd/events",
+        "logs": "/api/v1/sessions/efde67b5-ccda-47e8-ae40-35f2daed03cd/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Pushed fix/propagator-step-count",
+          "timestamp": 1768449421851
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Committed 2 files",
+          "timestamp": 1768449448877
+        },
+        {
+          "type": "session_resumed",
+          "deliverer": "human",
+          "timestamp": 1768449545433
+        }
+      ]
+    },
+    {
+      "id": "f5c3fa78-70b8-4f77-acd1-ec0c3661039f",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Add keyboard navigation to the mission timeline"
+      },
+      "agent": {
+        "agent": {
+          "software": "Gemini",
+          "version": "1.8.2"
+        },
+        "model": "large",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "mac-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/flight-planner.git",
+        "branch": "fix/latency-chart-light-theme",
+        "commit": "29f158bd95ea4335a34c507e7b7041dc"
+      },
+      "status": "running",
+      "createdAt": "2026-01-15T03:03:56.884Z",
+      "updatedAt": "2026-01-15T03:12:41.749Z",
+      "started_at": "2026-01-15T03:04:00.884Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/f5c3fa78-70b8-4f77-acd1-ec0c3661039f",
+        "events": "/api/v1/sessions/f5c3fa78-70b8-4f77-acd1-ec0c3661039f/events",
+        "logs": "/api/v1/sessions/f5c3fa78-70b8-4f77-acd1-ec0c3661039f/logs"
+      },
+      "recent_events": [
+        {
+          "type": "status",
+          "status": "running",
+          "timestamp": 1768446303919
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Reading docs/configuration.md",
+          "timestamp": 1768446509851
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Committed 2 files",
+          "timestamp": 1768446761749
+        }
+      ]
+    },
+    {
+      "id": "efc7e734-1b1c-43a9-ace4-27686602cbba",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": ""
+      },
+      "agent": {
+        "agent": {
+          "software": "Opencode",
+          "version": "0.12.7"
+        },
+        "model": "",
+        "count": 2
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "win-01"
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "running",
+      "createdAt": "2026-01-15T02:30:04.617Z",
+      "updatedAt": "2026-01-15T02:39:46.062Z",
+      "started_at": "2026-01-15T02:30:08.617Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [
+        "prompt"
+      ],
+      "links": {
+        "self": "/api/v1/sessions/efc7e734-1b1c-43a9-ace4-27686602cbba",
+        "events": "/api/v1/sessions/efc7e734-1b1c-43a9-ace4-27686602cbba/events",
+        "logs": "/api/v1/sessions/efc7e734-1b1c-43a9-ace4-27686602cbba/logs"
+      },
+      "recent_events": [
+        {
+          "type": "status",
+          "status": "running",
+          "timestamp": 1768444506007
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Editing src/propagator/step.rs",
+          "timestamp": 1768444640271
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Running the test suite",
+          "timestamp": 1768444786062
+        }
+      ]
+    },
+    {
+      "id": "6b4dea9d-1017-4d06-aad0-53922785b4fa",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Add a retry budget to the telemetry uploader and cover it with tests"
+      },
+      "agent": {
+        "agent": {
+          "software": "Claude",
+          "version": "4.2.0"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/orbit-sim.git",
+        "branch": "fix/propagator-step-count",
+        "commit": "bff2d18ca092467da1e85e705b14c43b"
+      },
+      "status": "running",
+      "createdAt": "2026-01-15T01:56:09.660Z",
+      "updatedAt": "2026-01-15T02:07:01.447Z",
+      "started_at": "2026-01-15T01:56:13.660Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/6b4dea9d-1017-4d06-aad0-53922785b4fa",
+        "events": "/api/v1/sessions/6b4dea9d-1017-4d06-aad0-53922785b4fa/events",
+        "logs": "/api/v1/sessions/6b4dea9d-1017-4d06-aad0-53922785b4fa/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Editing src/propagator/step.rs",
+          "timestamp": 1768442489514
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Reading docs/configuration.md",
+          "timestamp": 1768442620043
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Committed 2 files",
+          "timestamp": 1768442821447
+        }
+      ]
+    },
+    {
+      "id": "bb848a21-a7f2-4efb-a86f-b3b319a68847",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Fix the off-by-one in the orbit propagator's step counter"
+      },
+      "agent": {
+        "agent": {
+          "software": "Codex",
+          "version": "0.91.3"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-02"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/telemetry-ui.git",
+        "branch": "feat/telemetry-retry-budget",
+        "commit": "8b1fc7ba43a041eeaf63b5a92ac07520"
+      },
+      "status": "running",
+      "createdAt": "2026-01-15T01:12:32.987Z",
+      "updatedAt": "2026-01-15T01:21:13.968Z",
+      "started_at": "2026-01-15T01:12:36.987Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/bb848a21-a7f2-4efb-a86f-b3b319a68847",
+        "events": "/api/v1/sessions/bb848a21-a7f2-4efb-a86f-b3b319a68847/events",
+        "logs": "/api/v1/sessions/bb848a21-a7f2-4efb-a86f-b3b319a68847/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Running the test suite",
+          "timestamp": 1768439894808
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Reading docs/configuration.md",
+          "timestamp": 1768440024232
+        },
+        {
+          "type": "session_resumed",
+          "deliverer": "human",
+          "timestamp": 1768440073968
+        }
+      ]
+    },
+    {
+      "id": "587ecf79-9e6c-4af5-ade1-5af5c09038fb",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Port the flight planner's route cache to the new storage layer"
+      },
+      "agent": {
+        "agent": {
+          "software": "Gemini",
+          "version": "1.8.2"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "devcontainer"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-03"
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "queued",
+      "createdAt": "2026-01-15T00:43:25.423Z",
+      "updatedAt": "2026-01-15T00:43:29.423Z",
+      "started_at": null,
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/587ecf79-9e6c-4af5-ade1-5af5c09038fb",
+        "events": "/api/v1/sessions/587ecf79-9e6c-4af5-ade1-5af5c09038fb/events",
+        "logs": "/api/v1/sessions/587ecf79-9e6c-4af5-ade1-5af5c09038fb/logs"
+      },
+      "recent_events": []
+    },
+    {
+      "id": "9588cb04-f021-488b-a33b-f4497fa3dba1",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": ""
+      },
+      "agent": {
+        "agent": {
+          "software": "Opencode",
+          "version": "0.12.7"
+        },
+        "model": "large",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "gpu-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/meadow/paperboat.git",
+        "branch": "docs/config-3-migration",
+        "commit": "7627b94c85f74c4ca8084813cade7292"
+      },
+      "status": "queued",
+      "createdAt": "2026-01-14T23:58:13.354Z",
+      "updatedAt": "2026-01-14T23:58:17.354Z",
+      "started_at": null,
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [
+        "prompt"
+      ],
+      "links": {
+        "self": "/api/v1/sessions/9588cb04-f021-488b-a33b-f4497fa3dba1",
+        "events": "/api/v1/sessions/9588cb04-f021-488b-a33b-f4497fa3dba1/events",
+        "logs": "/api/v1/sessions/9588cb04-f021-488b-a33b-f4497fa3dba1/logs"
+      },
+      "recent_events": []
+    },
+    {
+      "id": "f88efbc0-f76a-4ca8-a40e-c0641fd9aa8f",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Make the dashboard's latency chart readable in the light theme"
+      },
+      "agent": {
+        "agent": {
+          "software": "Claude",
+          "version": "4.2.0"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "mac-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/orbit-sim.git",
+        "branch": "fix/latency-chart-light-theme",
+        "commit": "aed721667a78449fa9752dac14ddcb3e"
+      },
+      "status": "queued",
+      "createdAt": "2026-01-14T23:29:11.850Z",
+      "updatedAt": "2026-01-14T23:29:15.850Z",
+      "started_at": null,
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/f88efbc0-f76a-4ca8-a40e-c0641fd9aa8f",
+        "events": "/api/v1/sessions/f88efbc0-f76a-4ca8-a40e-c0641fd9aa8f/events",
+        "logs": "/api/v1/sessions/f88efbc0-f76a-4ca8-a40e-c0641fd9aa8f/logs"
+      },
+      "recent_events": []
+    },
+    {
+      "id": "cf5812b4-9eed-4419-a939-9299c29cf633",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Investigate why the nightly fuzz job times out on the parser"
+      },
+      "agent": {
+        "agent": {
+          "software": "Codex",
+          "version": "0.91.3"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "win-01"
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "failed",
+      "createdAt": "2026-01-14T22:49:41.060Z",
+      "updatedAt": "2026-01-15T01:18:31.420Z",
+      "started_at": "2026-01-14T22:49:45.060Z",
+      "ended_at": "2026-01-15T01:18:31.420Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/cf5812b4-9eed-4419-a939-9299c29cf633",
+        "events": "/api/v1/sessions/cf5812b4-9eed-4419-a939-9299c29cf633/events",
+        "logs": "/api/v1/sessions/cf5812b4-9eed-4419-a939-9299c29cf633/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Editing src/propagator/step.rs",
+          "timestamp": 1768431318983
+        },
+        {
+          "type": "log",
+          "level": "error",
+          "message": "build failed: 3 tests did not pass",
+          "timestamp": 1768431476028
+        },
+        {
+          "type": "status",
+          "status": "failed",
+          "timestamp": 1768431593959
+        }
+      ]
+    },
+    {
+      "id": "63b113da-8a13-448c-a313-53e31f997ed4",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Split the monolithic scheduler module into three cohesive parts"
+      },
+      "agent": {
+        "agent": {
+          "software": "Gemini",
+          "version": "1.8.2"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/flight-planner.git",
+        "branch": "fix/propagator-step-count",
+        "commit": "82f3a89ebc1d4262a42c006201ebbaf2"
+      },
+      "status": "failed",
+      "createdAt": "2026-01-14T22:07:05.193Z",
+      "updatedAt": "2026-01-15T01:17:17.076Z",
+      "started_at": "2026-01-14T22:07:09.193Z",
+      "ended_at": "2026-01-15T01:17:17.076Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "high",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/63b113da-8a13-448c-a313-53e31f997ed4",
+        "events": "/api/v1/sessions/63b113da-8a13-448c-a313-53e31f997ed4/events",
+        "logs": "/api/v1/sessions/63b113da-8a13-448c-a313-53e31f997ed4/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Reading docs/configuration.md",
+          "timestamp": 1768429068740
+        },
+        {
+          "type": "log",
+          "level": "error",
+          "message": "build failed: 3 tests did not pass",
+          "timestamp": 1768429190814
+        },
+        {
+          "type": "status",
+          "status": "failed",
+          "timestamp": 1768429423344
+        }
+      ]
+    },
+    {
+      "id": "6bba8783-affc-4a47-a9f5-3ac49b38e8c7",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": ""
+      },
+      "agent": {
+        "agent": {
+          "software": "Opencode",
+          "version": "0.12.7"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-02"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/meadow/paperboat.git",
+        "branch": "feat/telemetry-retry-budget",
+        "commit": "f2fa4bea03e34ca7a0c0bc87b2c26652"
+      },
+      "status": "failed",
+      "createdAt": "2026-01-14T21:35:41.393Z",
+      "updatedAt": "2026-01-14T22:23:08.281Z",
+      "started_at": "2026-01-14T21:35:45.393Z",
+      "ended_at": "2026-01-14T22:23:08.281Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [
+        "prompt"
+      ],
+      "links": {
+        "self": "/api/v1/sessions/6bba8783-affc-4a47-a9f5-3ac49b38e8c7",
+        "events": "/api/v1/sessions/6bba8783-affc-4a47-a9f5-3ac49b38e8c7/events",
+        "logs": "/api/v1/sessions/6bba8783-affc-4a47-a9f5-3ac49b38e8c7/logs"
+      },
+      "recent_events": [
+        {
+          "type": "anti_halting_resume_confirmed",
+          "stallType": "idle_turn",
+          "timestamp": 1768427586757
+        },
+        {
+          "type": "log",
+          "level": "error",
+          "message": "workspace provisioning failed: disk quota exceeded",
+          "timestamp": 1768427755393
+        },
+        {
+          "type": "status",
+          "status": "failed",
+          "timestamp": 1768428007956
+        }
+      ]
+    },
+    {
+      "id": "e68df722-130e-4619-acd2-6e578bf43bf7",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Profile the paperboat renderer and remove the per-frame allocation"
+      },
+      "agent": {
+        "agent": {
+          "software": "Claude",
+          "version": "4.2.0"
+        },
+        "model": "large",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-03"
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "failed",
+      "createdAt": "2026-01-14T20:59:45.385Z",
+      "updatedAt": "2026-01-14T23:54:46.667Z",
+      "started_at": "2026-01-14T20:59:49.385Z",
+      "ended_at": "2026-01-14T23:54:46.667Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/e68df722-130e-4619-acd2-6e578bf43bf7",
+        "events": "/api/v1/sessions/e68df722-130e-4619-acd2-6e578bf43bf7/events",
+        "logs": "/api/v1/sessions/e68df722-130e-4619-acd2-6e578bf43bf7/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Running the test suite",
+          "timestamp": 1768425155329
+        },
+        {
+          "type": "log",
+          "level": "error",
+          "message": "build failed: 3 tests did not pass",
+          "timestamp": 1768425196750
+        },
+        {
+          "type": "status",
+          "status": "failed",
+          "timestamp": 1768425308133
+        }
+      ]
+    },
+    {
+      "id": "e581d879-8d00-4d1b-a00d-316924457bc7",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Document every public function of the units library"
+      },
+      "agent": {
+        "agent": {
+          "software": "Codex",
+          "version": "0.91.3"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "devcontainer"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "gpu-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/telemetry-ui.git",
+        "branch": "docs/config-3-migration",
+        "commit": "6c26d6f4ecf74cbfa9003ba0db47bdae"
+      },
+      "status": "failed",
+      "createdAt": "2026-01-14T20:19:13.603Z",
+      "updatedAt": "2026-01-14T22:52:48.449Z",
+      "started_at": "2026-01-14T20:19:17.603Z",
+      "ended_at": "2026-01-14T22:52:48.449Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/e581d879-8d00-4d1b-a00d-316924457bc7",
+        "events": "/api/v1/sessions/e581d879-8d00-4d1b-a00d-316924457bc7/events",
+        "logs": "/api/v1/sessions/e581d879-8d00-4d1b-a00d-316924457bc7/logs"
+      },
+      "recent_events": [
+        {
+          "type": "session_resumed",
+          "deliverer": "human",
+          "timestamp": 1768422964749
+        },
+        {
+          "type": "log",
+          "level": "error",
+          "message": "[exit] status=1",
+          "timestamp": 1768423206169
+        },
+        {
+          "type": "status",
+          "status": "failed",
+          "timestamp": 1768423336423
+        }
+      ]
+    },
+    {
+      "id": "d179f0b9-7450-4aec-a376-d5fc28257ed1",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Add keyboard navigation to the mission timeline"
+      },
+      "agent": {
+        "agent": {
+          "software": "Gemini",
+          "version": "1.8.2"
+        },
+        "model": "",
+        "count": 2
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "mac-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/flight-planner.git",
+        "branch": "fix/latency-chart-light-theme",
+        "commit": "2d678dcd23f54d51af474af9bf986850"
+      },
+      "status": "failed",
+      "createdAt": "2026-01-14T19:46:15.554Z",
+      "updatedAt": "2026-01-14T21:32:32.273Z",
+      "started_at": "2026-01-14T19:46:19.554Z",
+      "ended_at": "2026-01-14T21:32:32.273Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/d179f0b9-7450-4aec-a376-d5fc28257ed1",
+        "events": "/api/v1/sessions/d179f0b9-7450-4aec-a376-d5fc28257ed1/events",
+        "logs": "/api/v1/sessions/d179f0b9-7450-4aec-a376-d5fc28257ed1/logs"
+      },
+      "recent_events": [
+        {
+          "type": "session_resumed",
+          "deliverer": "human",
+          "timestamp": 1768420812049
+        },
+        {
+          "type": "log",
+          "level": "error",
+          "message": "[exit] status=1",
+          "timestamp": 1768420915436
+        },
+        {
+          "type": "status",
+          "status": "failed",
+          "timestamp": 1768420942567
+        }
+      ]
+    },
+    {
+      "id": "6f212579-3708-4ce9-a456-650d34cb67d3",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": ""
+      },
+      "agent": {
+        "agent": {
+          "software": "Opencode",
+          "version": "0.12.7"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "win-01"
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "failed",
+      "createdAt": "2026-01-14T19:03:38.089Z",
+      "updatedAt": "2026-01-14T20:47:57.473Z",
+      "started_at": "2026-01-14T19:03:42.089Z",
+      "ended_at": "2026-01-14T20:47:57.473Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [
+        "prompt"
+      ],
+      "links": {
+        "self": "/api/v1/sessions/6f212579-3708-4ce9-a456-650d34cb67d3",
+        "events": "/api/v1/sessions/6f212579-3708-4ce9-a456-650d34cb67d3/events",
+        "logs": "/api/v1/sessions/6f212579-3708-4ce9-a456-650d34cb67d3/logs"
+      },
+      "recent_events": [
+        {
+          "type": "session_resumed",
+          "deliverer": "human",
+          "timestamp": 1768418567403
+        },
+        {
+          "type": "log",
+          "level": "error",
+          "message": "agent stopped: context window exhausted",
+          "timestamp": 1768418656122
+        },
+        {
+          "type": "status",
+          "status": "failed",
+          "timestamp": 1768418901814
+        }
+      ]
+    },
+    {
+      "id": "0759569c-4732-4057-ac8b-dda64c477652",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Add a retry budget to the telemetry uploader and cover it with tests"
+      },
+      "agent": {
+        "agent": {
+          "software": "Claude",
+          "version": "4.2.0"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/orbit-sim.git",
+        "branch": "fix/propagator-step-count",
+        "commit": "9d9c5879d39e4976ab3f534093712a9c"
+      },
+      "status": "cancelled",
+      "createdAt": "2026-01-14T18:34:46.319Z",
+      "updatedAt": "2026-01-14T19:00:40.240Z",
+      "started_at": "2026-01-14T18:34:50.319Z",
+      "ended_at": "2026-01-14T19:00:40.240Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/0759569c-4732-4057-ac8b-dda64c477652",
+        "events": "/api/v1/sessions/0759569c-4732-4057-ac8b-dda64c477652/events",
+        "logs": "/api/v1/sessions/0759569c-4732-4057-ac8b-dda64c477652/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Pushed fix/propagator-step-count",
+          "timestamp": 1768415982701
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Committed 2 files",
+          "timestamp": 1768416172502
+        },
+        {
+          "type": "status",
+          "status": "cancelled",
+          "timestamp": 1768416202824
+        }
+      ]
+    },
+    {
+      "id": "333cc0ed-167f-4626-ae9b-bc7b066dfe1a",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Fix the off-by-one in the orbit propagator's step counter"
+      },
+      "agent": {
+        "agent": {
+          "software": "Codex",
+          "version": "0.91.3"
+        },
+        "model": "large",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-02"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/telemetry-ui.git",
+        "branch": "feat/telemetry-retry-budget",
+        "commit": "d93a532c4871459fa840d2efefe094dc"
+      },
+      "status": "cancelled",
+      "createdAt": "2026-01-14T17:50:06.721Z",
+      "updatedAt": "2026-01-14T19:37:50.427Z",
+      "started_at": "2026-01-14T17:50:10.721Z",
+      "ended_at": "2026-01-14T19:37:50.427Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/333cc0ed-167f-4626-ae9b-bc7b066dfe1a",
+        "events": "/api/v1/sessions/333cc0ed-167f-4626-ae9b-bc7b066dfe1a/events",
+        "logs": "/api/v1/sessions/333cc0ed-167f-4626-ae9b-bc7b066dfe1a/logs"
+      },
+      "recent_events": [
+        {
+          "type": "session_resumed",
+          "deliverer": "human",
+          "timestamp": 1768413919615
+        },
+        {
+          "type": "anti_halting_resume_confirmed",
+          "stallType": "idle_turn",
+          "timestamp": 1768413986602
+        },
+        {
+          "type": "status",
+          "status": "cancelled",
+          "timestamp": 1768414090501
+        }
+      ]
+    },
+    {
+      "id": "fff61b69-4f5a-4693-a381-4b9c50004a11",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Port the flight planner's route cache to the new storage layer"
+      },
+      "agent": {
+        "agent": {
+          "software": "Gemini",
+          "version": "1.8.2"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-03"
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "stopped",
+      "createdAt": "2026-01-14T17:20:13.771Z",
+      "updatedAt": "2026-01-14T18:42:04.632Z",
+      "started_at": "2026-01-14T17:20:17.771Z",
+      "ended_at": "2026-01-14T18:42:04.632Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/fff61b69-4f5a-4693-a381-4b9c50004a11",
+        "events": "/api/v1/sessions/fff61b69-4f5a-4693-a381-4b9c50004a11/events",
+        "logs": "/api/v1/sessions/fff61b69-4f5a-4693-a381-4b9c50004a11/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Committed 2 files",
+          "timestamp": 1768411748072
+        },
+        {
+          "type": "session_resumed",
+          "deliverer": "human",
+          "timestamp": 1768411851765
+        },
+        {
+          "type": "status",
+          "status": "stopped",
+          "timestamp": 1768412057886
+        }
+      ]
+    },
+    {
+      "id": "33bcd9ce-ad43-4c7e-a3a3-ddd34cdb8c8b",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": ""
+      },
+      "agent": {
+        "agent": {
+          "software": "Opencode",
+          "version": "0.12.7"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "gpu-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/meadow/paperboat.git",
+        "branch": "docs/config-3-migration",
+        "commit": "4afff17ea1a94f90ab5782cad422dddc"
+      },
+      "status": "stopped",
+      "createdAt": "2026-01-14T16:37:19.967Z",
+      "updatedAt": "2026-01-14T18:05:12.079Z",
+      "started_at": "2026-01-14T16:37:23.967Z",
+      "ended_at": "2026-01-14T18:05:12.079Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "high",
+      "withheld": [
+        "prompt"
+      ],
+      "links": {
+        "self": "/api/v1/sessions/33bcd9ce-ad43-4c7e-a3a3-ddd34cdb8c8b",
+        "events": "/api/v1/sessions/33bcd9ce-ad43-4c7e-a3a3-ddd34cdb8c8b/events",
+        "logs": "/api/v1/sessions/33bcd9ce-ad43-4c7e-a3a3-ddd34cdb8c8b/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Reading docs/configuration.md",
+          "timestamp": 1768409145092
+        },
+        {
+          "type": "session_resumed",
+          "deliverer": "human",
+          "timestamp": 1768409326724
+        },
+        {
+          "type": "status",
+          "status": "stopped",
+          "timestamp": 1768409551928
+        }
+      ]
+    },
+    {
+      "id": "e8fa44b7-8a6b-4e6d-a44c-4ce8556867b3",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Make the dashboard's latency chart readable in the light theme"
+      },
+      "agent": {
+        "agent": {
+          "software": "Claude",
+          "version": "4.2.0"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "devcontainer"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "mac-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/orbit-sim.git",
+        "branch": "fix/latency-chart-light-theme",
+        "commit": "bcb39167c9d94c14a13a9e02ab6ef7ef"
+      },
+      "status": "stopped",
+      "createdAt": "2026-01-14T16:03:02.198Z",
+      "updatedAt": "2026-01-14T18:24:36.570Z",
+      "started_at": "2026-01-14T16:03:06.198Z",
+      "ended_at": "2026-01-14T18:24:36.570Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/e8fa44b7-8a6b-4e6d-a44c-4ce8556867b3",
+        "events": "/api/v1/sessions/e8fa44b7-8a6b-4e6d-a44c-4ce8556867b3/events",
+        "logs": "/api/v1/sessions/e8fa44b7-8a6b-4e6d-a44c-4ce8556867b3/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Editing src/propagator/step.rs",
+          "timestamp": 1768407274990
+        },
+        {
+          "type": "anti_halting_resume_confirmed",
+          "stallType": "idle_turn",
+          "timestamp": 1768407424452
+        },
+        {
+          "type": "status",
+          "status": "stopped",
+          "timestamp": 1768407560334
+        }
+      ]
+    },
+    {
+      "id": "cfe7355d-ef20-43c0-a3e5-9822f1337c39",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Investigate why the nightly fuzz job times out on the parser"
+      },
+      "agent": {
+        "agent": {
+          "software": "Codex",
+          "version": "0.91.3"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "win-01"
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "stopped",
+      "createdAt": "2026-01-14T15:23:48.362Z",
+      "updatedAt": "2026-01-14T18:26:29.960Z",
+      "started_at": "2026-01-14T15:23:52.362Z",
+      "ended_at": "2026-01-14T18:26:29.960Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/cfe7355d-ef20-43c0-a3e5-9822f1337c39",
+        "events": "/api/v1/sessions/cfe7355d-ef20-43c0-a3e5-9822f1337c39/events",
+        "logs": "/api/v1/sessions/cfe7355d-ef20-43c0-a3e5-9822f1337c39/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Running the test suite",
+          "timestamp": 1768404752553
+        },
+        {
+          "type": "session_resumed",
+          "deliverer": "human",
+          "timestamp": 1768404768224
+        },
+        {
+          "type": "status",
+          "status": "stopped",
+          "timestamp": 1768404790024
+        }
+      ]
+    },
+    {
+      "id": "9637b1aa-de30-46d1-a204-3432c3ef9343",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Split the monolithic scheduler module into three cohesive parts"
+      },
+      "agent": {
+        "agent": {
+          "software": "Gemini",
+          "version": "1.8.2"
+        },
+        "model": "large",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/flight-planner.git",
+        "branch": "fix/propagator-step-count",
+        "commit": "c51e0b857b9941afa0214678e57040b7"
+      },
+      "status": "stopped",
+      "createdAt": "2026-01-14T14:49:42.902Z",
+      "updatedAt": "2026-01-14T16:22:18.493Z",
+      "started_at": "2026-01-14T14:49:46.902Z",
+      "ended_at": "2026-01-14T16:22:18.493Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/9637b1aa-de30-46d1-a204-3432c3ef9343",
+        "events": "/api/v1/sessions/9637b1aa-de30-46d1-a204-3432c3ef9343/events",
+        "logs": "/api/v1/sessions/9637b1aa-de30-46d1-a204-3432c3ef9343/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Running the test suite",
+          "timestamp": 1768402650046
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Reading docs/configuration.md",
+          "timestamp": 1768402668367
+        },
+        {
+          "type": "status",
+          "status": "stopped",
+          "timestamp": 1768402844019
+        }
+      ]
+    },
+    {
+      "id": "39f5526c-98de-4ddf-a80b-45b03adcaa15",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": ""
+      },
+      "agent": {
+        "agent": {
+          "software": "Opencode",
+          "version": "0.12.7"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-02"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/meadow/paperboat.git",
+        "branch": "feat/telemetry-retry-budget",
+        "commit": "f820ac031dc544f7a678c0599f12b92c"
+      },
+      "status": "stopped",
+      "createdAt": "2026-01-14T14:12:40.432Z",
+      "updatedAt": "2026-01-14T15:39:48.794Z",
+      "started_at": "2026-01-14T14:12:44.432Z",
+      "ended_at": "2026-01-14T15:39:48.794Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [
+        "prompt"
+      ],
+      "links": {
+        "self": "/api/v1/sessions/39f5526c-98de-4ddf-a80b-45b03adcaa15",
+        "events": "/api/v1/sessions/39f5526c-98de-4ddf-a80b-45b03adcaa15/events",
+        "logs": "/api/v1/sessions/39f5526c-98de-4ddf-a80b-45b03adcaa15/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Committed 2 files",
+          "timestamp": 1768400552011
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Committed 2 files",
+          "timestamp": 1768400800040
+        },
+        {
+          "type": "status",
+          "status": "stopped",
+          "timestamp": 1768400836336
+        }
+      ]
+    },
+    {
+      "id": "0763c585-c9bb-4844-a6a8-3461c0c6b437",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Profile the paperboat renderer and remove the per-frame allocation"
+      },
+      "agent": {
+        "agent": {
+          "software": "Claude",
+          "version": "4.2.0"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-03"
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "completed",
+      "createdAt": "2026-01-14T13:37:41.020Z",
+      "updatedAt": "2026-01-14T16:08:04.835Z",
+      "started_at": "2026-01-14T13:37:45.020Z",
+      "ended_at": "2026-01-14T16:08:04.835Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/0763c585-c9bb-4844-a6a8-3461c0c6b437",
+        "events": "/api/v1/sessions/0763c585-c9bb-4844-a6a8-3461c0c6b437/events",
+        "logs": "/api/v1/sessions/0763c585-c9bb-4844-a6a8-3461c0c6b437/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Committed 2 files",
+          "timestamp": 1768398674715
+        },
+        {
+          "type": "anti_halting_resume_confirmed",
+          "stallType": "idle_turn",
+          "timestamp": 1768398785355
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 1768398955753
+        }
+      ]
+    },
+    {
+      "id": "4eb5b7c3-ba35-4d0f-a734-23f0068c3b23",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Document every public function of the units library"
+      },
+      "agent": {
+        "agent": {
+          "software": "Codex",
+          "version": "0.91.3"
+        },
+        "model": "",
+        "count": 2
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "gpu-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/telemetry-ui.git",
+        "branch": "docs/config-3-migration",
+        "commit": "48e5eadb19904d9ead1934389fcb5979"
+      },
+      "status": "completed",
+      "createdAt": "2026-01-14T12:55:24.118Z",
+      "updatedAt": "2026-01-14T15:27:04.199Z",
+      "started_at": "2026-01-14T12:55:28.118Z",
+      "ended_at": "2026-01-14T15:27:04.199Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/4eb5b7c3-ba35-4d0f-a734-23f0068c3b23",
+        "events": "/api/v1/sessions/4eb5b7c3-ba35-4d0f-a734-23f0068c3b23/events",
+        "logs": "/api/v1/sessions/4eb5b7c3-ba35-4d0f-a734-23f0068c3b23/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Editing src/propagator/step.rs",
+          "timestamp": 1768396162615
+        },
+        {
+          "type": "session_resumed",
+          "deliverer": "human",
+          "timestamp": 1768396188377
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 1768396257317
+        }
+      ]
+    },
+    {
+      "id": "742ad84f-ac7f-40cf-a942-ce235816c5f6",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Add keyboard navigation to the mission timeline"
+      },
+      "agent": {
+        "agent": {
+          "software": "Gemini",
+          "version": "1.8.2"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "mac-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/flight-planner.git",
+        "branch": "fix/latency-chart-light-theme",
+        "commit": "e23c942b0403447aacc28e39d22a4c06"
+      },
+      "status": "completed",
+      "createdAt": "2026-01-14T12:16:53.324Z",
+      "updatedAt": "2026-01-14T12:45:42.837Z",
+      "started_at": "2026-01-14T12:16:57.324Z",
+      "ended_at": "2026-01-14T12:45:42.837Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/742ad84f-ac7f-40cf-a942-ce235816c5f6",
+        "events": "/api/v1/sessions/742ad84f-ac7f-40cf-a942-ce235816c5f6/events",
+        "logs": "/api/v1/sessions/742ad84f-ac7f-40cf-a942-ce235816c5f6/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Pushed fix/propagator-step-count",
+          "timestamp": 1768393710147
+        },
+        {
+          "type": "session_resumed",
+          "deliverer": "human",
+          "timestamp": 1768393758909
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 1768393896868
+        }
+      ]
+    },
+    {
+      "id": "9e5e4f0d-79ac-4ba6-addb-a1e9de179fa9",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": ""
+      },
+      "agent": {
+        "agent": {
+          "software": "Opencode",
+          "version": "0.12.7"
+        },
+        "model": "large",
+        "count": 1
+      },
+      "runtime": {
+        "type": "devcontainer"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "win-01"
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "completed",
+      "createdAt": "2026-01-14T11:47:20.877Z",
+      "updatedAt": "2026-01-14T13:08:02.445Z",
+      "started_at": "2026-01-14T11:47:24.877Z",
+      "ended_at": "2026-01-14T13:08:02.445Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [
+        "prompt"
+      ],
+      "links": {
+        "self": "/api/v1/sessions/9e5e4f0d-79ac-4ba6-addb-a1e9de179fa9",
+        "events": "/api/v1/sessions/9e5e4f0d-79ac-4ba6-addb-a1e9de179fa9/events",
+        "logs": "/api/v1/sessions/9e5e4f0d-79ac-4ba6-addb-a1e9de179fa9/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Editing src/propagator/step.rs",
+          "timestamp": 1768391883100
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Pushed fix/propagator-step-count",
+          "timestamp": 1768391991892
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 1768392121956
+        }
+      ]
+    },
+    {
+      "id": "b42d20b5-4b0d-470f-aadb-cf2a08f03f2b",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Add a retry budget to the telemetry uploader and cover it with tests"
+      },
+      "agent": {
+        "agent": {
+          "software": "Claude",
+          "version": "4.2.0"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/orbit-sim.git",
+        "branch": "fix/propagator-step-count",
+        "commit": "5d287ed3e3144a8aae01b2191decf185"
+      },
+      "status": "completed",
+      "createdAt": "2026-01-14T11:09:54.491Z",
+      "updatedAt": "2026-01-14T11:47:45.075Z",
+      "started_at": "2026-01-14T11:09:58.491Z",
+      "ended_at": "2026-01-14T11:47:45.075Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "high",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/b42d20b5-4b0d-470f-aadb-cf2a08f03f2b",
+        "events": "/api/v1/sessions/b42d20b5-4b0d-470f-aadb-cf2a08f03f2b/events",
+        "logs": "/api/v1/sessions/b42d20b5-4b0d-470f-aadb-cf2a08f03f2b/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Reading docs/configuration.md",
+          "timestamp": 1768389868514
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Editing src/propagator/step.rs",
+          "timestamp": 1768389953046
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 1768390000836
+        }
+      ]
+    },
+    {
+      "id": "383bc56d-3995-4906-add8-8c5d5b35c012",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Fix the off-by-one in the orbit propagator's step counter"
+      },
+      "agent": {
+        "agent": {
+          "software": "Codex",
+          "version": "0.91.3"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-02"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/telemetry-ui.git",
+        "branch": "feat/telemetry-retry-budget",
+        "commit": "bb11312cb9214211a8621d0f8a4fea9a"
+      },
+      "status": "completed",
+      "createdAt": "2026-01-14T10:32:47.965Z",
+      "updatedAt": "2026-01-14T11:25:01.966Z",
+      "started_at": "2026-01-14T10:32:51.965Z",
+      "ended_at": "2026-01-14T11:25:01.966Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/383bc56d-3995-4906-add8-8c5d5b35c012",
+        "events": "/api/v1/sessions/383bc56d-3995-4906-add8-8c5d5b35c012/events",
+        "logs": "/api/v1/sessions/383bc56d-3995-4906-add8-8c5d5b35c012/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Pushed fix/propagator-step-count",
+          "timestamp": 1768387220602
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Committed 2 files",
+          "timestamp": 1768387339180
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 1768387367102
+        }
+      ]
+    },
+    {
+      "id": "e279aea7-e82a-42ad-abb0-c02e7390cf70",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Port the flight planner's route cache to the new storage layer"
+      },
+      "agent": {
+        "agent": {
+          "software": "Gemini",
+          "version": "1.8.2"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-03"
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "completed",
+      "createdAt": "2026-01-14T09:52:20.890Z",
+      "updatedAt": "2026-01-14T11:48:25.497Z",
+      "started_at": "2026-01-14T09:52:24.890Z",
+      "ended_at": "2026-01-14T11:48:25.497Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/e279aea7-e82a-42ad-abb0-c02e7390cf70",
+        "events": "/api/v1/sessions/e279aea7-e82a-42ad-abb0-c02e7390cf70/events",
+        "logs": "/api/v1/sessions/e279aea7-e82a-42ad-abb0-c02e7390cf70/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Reading docs/configuration.md",
+          "timestamp": 1768384900641
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Committed 2 files",
+          "timestamp": 1768385025561
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 1768385197286
+        }
+      ]
+    },
+    {
+      "id": "8259d8b6-b22c-4229-ab22-3b7f521445b7",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": ""
+      },
+      "agent": {
+        "agent": {
+          "software": "Opencode",
+          "version": "0.12.7"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "gpu-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/meadow/paperboat.git",
+        "branch": "docs/config-3-migration",
+        "commit": "2e0c6f0c10b84ef3a2e8f73c2007ba0f"
+      },
+      "status": "completed",
+      "createdAt": "2026-01-14T09:13:15.429Z",
+      "updatedAt": "2026-01-14T10:24:10.024Z",
+      "started_at": "2026-01-14T09:13:19.429Z",
+      "ended_at": "2026-01-14T10:24:10.024Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [
+        "prompt"
+      ],
+      "links": {
+        "self": "/api/v1/sessions/8259d8b6-b22c-4229-ab22-3b7f521445b7",
+        "events": "/api/v1/sessions/8259d8b6-b22c-4229-ab22-3b7f521445b7/events",
+        "logs": "/api/v1/sessions/8259d8b6-b22c-4229-ab22-3b7f521445b7/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Running the test suite",
+          "timestamp": 1768382564627
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Reading docs/configuration.md",
+          "timestamp": 1768382782826
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 1768382906808
+        }
+      ]
+    },
+    {
+      "id": "c0404b1c-ce10-47a8-ad46-b15fa453c59b",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Make the dashboard's latency chart readable in the light theme"
+      },
+      "agent": {
+        "agent": {
+          "software": "Claude",
+          "version": "4.2.0"
+        },
+        "model": "large",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "mac-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/orbit-sim.git",
+        "branch": "fix/latency-chart-light-theme",
+        "commit": "73efb0cd0fdb4a7cad10604a5a0e9e50"
+      },
+      "status": "completed",
+      "createdAt": "2026-01-14T08:39:51.282Z",
+      "updatedAt": "2026-01-14T11:48:13.641Z",
+      "started_at": "2026-01-14T08:39:55.282Z",
+      "ended_at": "2026-01-14T11:48:13.641Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/c0404b1c-ce10-47a8-ad46-b15fa453c59b",
+        "events": "/api/v1/sessions/c0404b1c-ce10-47a8-ad46-b15fa453c59b/events",
+        "logs": "/api/v1/sessions/c0404b1c-ce10-47a8-ad46-b15fa453c59b/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Editing src/propagator/step.rs",
+          "timestamp": 1768380377237
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Running the test suite",
+          "timestamp": 1768380393000
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 1768380588858
+        }
+      ]
+    },
+    {
+      "id": "88c57831-6628-43b2-ae9c-1414807880e2",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Investigate why the nightly fuzz job times out on the parser"
+      },
+      "agent": {
+        "agent": {
+          "software": "Codex",
+          "version": "0.91.3"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "win-01"
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "completed",
+      "createdAt": "2026-01-14T07:58:30.079Z",
+      "updatedAt": "2026-01-14T08:21:15.239Z",
+      "started_at": "2026-01-14T07:58:34.079Z",
+      "ended_at": "2026-01-14T08:21:15.239Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/88c57831-6628-43b2-ae9c-1414807880e2",
+        "events": "/api/v1/sessions/88c57831-6628-43b2-ae9c-1414807880e2/events",
+        "logs": "/api/v1/sessions/88c57831-6628-43b2-ae9c-1414807880e2/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Editing src/propagator/step.rs",
+          "timestamp": 1768378160323
+        },
+        {
+          "type": "session_resumed",
+          "deliverer": "human",
+          "timestamp": 1768378316505
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 1768378494223
+        }
+      ]
+    },
+    {
+      "id": "6e80cd0a-03f7-42e4-a9f1-be24544a60d0",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Split the monolithic scheduler module into three cohesive parts"
+      },
+      "agent": {
+        "agent": {
+          "software": "Gemini",
+          "version": "1.8.2"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "devcontainer"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/flight-planner.git",
+        "branch": "fix/propagator-step-count",
+        "commit": "b1aa05891bb84e03ac24bb269d1a8c30"
+      },
+      "status": "completed",
+      "createdAt": "2026-01-14T07:21:13.063Z",
+      "updatedAt": "2026-01-14T08:57:44.288Z",
+      "started_at": "2026-01-14T07:21:17.063Z",
+      "ended_at": "2026-01-14T08:57:44.288Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/6e80cd0a-03f7-42e4-a9f1-be24544a60d0",
+        "events": "/api/v1/sessions/6e80cd0a-03f7-42e4-a9f1-be24544a60d0/events",
+        "logs": "/api/v1/sessions/6e80cd0a-03f7-42e4-a9f1-be24544a60d0/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Reading docs/configuration.md",
+          "timestamp": 1768375676899
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Editing src/propagator/step.rs",
+          "timestamp": 1768375790633
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 1768375949150
+        }
+      ]
+    },
+    {
+      "id": "6804206e-921b-44a2-a0fa-217bf963314d",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": ""
+      },
+      "agent": {
+        "agent": {
+          "software": "Opencode",
+          "version": "0.12.7"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-02"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/meadow/paperboat.git",
+        "branch": "feat/telemetry-retry-budget",
+        "commit": "3befed702018466faaf364024ec0a5e8"
+      },
+      "status": "completed",
+      "createdAt": "2026-01-14T06:44:56.562Z",
+      "updatedAt": "2026-01-14T07:39:15.003Z",
+      "started_at": "2026-01-14T06:45:00.562Z",
+      "ended_at": "2026-01-14T07:39:15.003Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [
+        "prompt"
+      ],
+      "links": {
+        "self": "/api/v1/sessions/6804206e-921b-44a2-a0fa-217bf963314d",
+        "events": "/api/v1/sessions/6804206e-921b-44a2-a0fa-217bf963314d/events",
+        "logs": "/api/v1/sessions/6804206e-921b-44a2-a0fa-217bf963314d/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Running the test suite",
+          "timestamp": 1768373914103
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Reading docs/configuration.md",
+          "timestamp": 1768373975798
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 1768374201325
+        }
+      ]
+    },
+    {
+      "id": "bdf85db5-85d8-46f3-a5c4-da6d5a432ad1",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Profile the paperboat renderer and remove the per-frame allocation"
+      },
+      "agent": {
+        "agent": {
+          "software": "Claude",
+          "version": "4.2.0"
+        },
+        "model": "",
+        "count": 2
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "build-03"
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "completed",
+      "createdAt": "2026-01-14T06:11:10.356Z",
+      "updatedAt": "2026-01-14T07:22:28.930Z",
+      "started_at": "2026-01-14T06:11:14.356Z",
+      "ended_at": "2026-01-14T07:22:28.930Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/bdf85db5-85d8-46f3-a5c4-da6d5a432ad1",
+        "events": "/api/v1/sessions/bdf85db5-85d8-46f3-a5c4-da6d5a432ad1/events",
+        "logs": "/api/v1/sessions/bdf85db5-85d8-46f3-a5c4-da6d5a432ad1/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Running the test suite",
+          "timestamp": 1768371609632
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Reading docs/configuration.md",
+          "timestamp": 1768371837398
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 1768371971518
+        }
+      ]
+    },
+    {
+      "id": "07a022d2-58d5-461f-a9f3-c316679f5361",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Document every public function of the units library"
+      },
+      "agent": {
+        "agent": {
+          "software": "Codex",
+          "version": "0.91.3"
+        },
+        "model": "large",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "gpu-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/telemetry-ui.git",
+        "branch": "docs/config-3-migration",
+        "commit": "094b6e82ccdd4a86a9b09d0b8d4ef1fa"
+      },
+      "status": "completed",
+      "createdAt": "2026-01-14T05:33:52.570Z",
+      "updatedAt": "2026-01-14T07:33:03.303Z",
+      "started_at": "2026-01-14T05:33:56.570Z",
+      "ended_at": "2026-01-14T07:33:03.303Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "high",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/07a022d2-58d5-461f-a9f3-c316679f5361",
+        "events": "/api/v1/sessions/07a022d2-58d5-461f-a9f3-c316679f5361/events",
+        "logs": "/api/v1/sessions/07a022d2-58d5-461f-a9f3-c316679f5361/logs"
+      },
+      "recent_events": [
+        {
+          "type": "session_resumed",
+          "deliverer": "human",
+          "timestamp": 1768369664198
+        },
+        {
+          "type": "anti_halting_resume_confirmed",
+          "stallType": "idle_turn",
+          "timestamp": 1768369886219
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 1768370130534
+        }
+      ]
+    },
+    {
+      "id": "e3998186-50ba-4a4e-a230-9f07cfcbfd73",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Add keyboard navigation to the mission timeline"
+      },
+      "agent": {
+        "agent": {
+          "software": "Gemini",
+          "version": "1.8.2"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "mac-01"
+      },
+      "vcs": {
+        "repo_url": "https://example.org/orbit-labs/flight-planner.git",
+        "branch": "fix/latency-chart-light-theme",
+        "commit": "60e83ce182114417ac9e4f069ce1b758"
+      },
+      "status": "completed",
+      "createdAt": "2026-01-14T04:53:32.925Z",
+      "updatedAt": "2026-01-14T05:56:30.137Z",
+      "started_at": "2026-01-14T04:53:36.925Z",
+      "ended_at": "2026-01-14T05:56:30.137Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [],
+      "links": {
+        "self": "/api/v1/sessions/e3998186-50ba-4a4e-a230-9f07cfcbfd73",
+        "events": "/api/v1/sessions/e3998186-50ba-4a4e-a230-9f07cfcbfd73/events",
+        "logs": "/api/v1/sessions/e3998186-50ba-4a4e-a230-9f07cfcbfd73/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Editing src/propagator/step.rs",
+          "timestamp": 1768366927671
+        },
+        {
+          "type": "anti_halting_resume_confirmed",
+          "stallType": "idle_turn",
+          "timestamp": 1768366974519
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 1768367143069
+        }
+      ]
+    },
+    {
+      "id": "441ab080-a6ab-42a0-a645-b8119776e6d8",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": ""
+      },
+      "agent": {
+        "agent": {
+          "software": "Opencode",
+          "version": "0.12.7"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": "",
+        "host": "win-01"
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "completed",
+      "createdAt": "2026-01-14T04:22:18.783Z",
+      "updatedAt": "2026-01-14T05:39:04.026Z",
+      "started_at": "2026-01-14T04:22:22.783Z",
+      "ended_at": "2026-01-14T05:39:04.026Z",
+      "awaiting_input": false,
+      "cacheWarmth": {
+        "state": "unknown",
+        "confidence": "estimated"
+      },
+      "priority": "normal",
+      "withheld": [
+        "prompt"
+      ],
+      "links": {
+        "self": "/api/v1/sessions/441ab080-a6ab-42a0-a645-b8119776e6d8",
+        "events": "/api/v1/sessions/441ab080-a6ab-42a0-a645-b8119776e6d8/events",
+        "logs": "/api/v1/sessions/441ab080-a6ab-42a0-a645-b8119776e6d8/logs"
+      },
+      "recent_events": [
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Committed 2 files",
+          "timestamp": 1768364894728
+        },
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Running the test suite",
+          "timestamp": 1768365050778
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 1768365239374
+        }
+      ]
+    }
+  ],
+  "total": 48,
+  "nextPage": null
+}

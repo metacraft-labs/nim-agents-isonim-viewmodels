@@ -1,0 +1,52 @@
+{
+  "events": [
+    {
+      "type": "status",
+      "status": "failed",
+      "timestamp": 1768431593959
+    },
+    {
+      "type": "log",
+      "level": "error",
+      "message": "build failed: 3 tests did not pass",
+      "timestamp": 1768431476028
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Editing src/propagator/step.rs",
+      "timestamp": 1768431318983
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Running the test suite",
+      "timestamp": 1768431173837
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768431118818
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "cf5812b4-9eed-4419-a939-9299c29cf633",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Opencode",
+            "version": "0.12.7"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768431078319
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768431078319,
+  "total_count": 6
+}

@@ -1,0 +1,56 @@
+#+TITLE: Telemetry upload retries Milestones
+
+* Document
+  :PROPERTIES:
+  :next_steps: Finish TR-2.
+  :last_updated: 2026-01-14
+  :current_milestone: TR-2
+  :executive_summary: Telemetry upload retries: one milestone done, one in progress, one planned.
+  :END:
+
+* Introduction
+  An invented campaign for the synthetic fixture set.
+
+* Milestones
+
+** TR-1: Groundwork
+   :PROPERTIES:
+   :status: completed
+   :depends_on: 
+   :END:
+
+*** Deliverables
+    - [x] The groundwork is in place.
+
+*** Verification
+    - test_name: just test-tr-1
+      description: The milestone's tests pass.
+      status: passing
+
+** TR-2: The main change
+   :PROPERTIES:
+   :status: in_progress
+   :depends_on: TR-1
+   :END:
+
+*** Deliverables
+    - [ ] The change is in place.
+
+*** Verification
+    - test_name: just test-tr-2
+      description: The milestone's tests pass.
+      status: pending
+
+** TR-3: Polish and release
+   :PROPERTIES:
+   :status: planned
+   :depends_on: TR-2
+   :END:
+
+*** Deliverables
+    - [ ] The release notes is in place.
+
+*** Verification
+    - test_name: just test-tr-3
+      description: The milestone's tests pass.
+      status: pending

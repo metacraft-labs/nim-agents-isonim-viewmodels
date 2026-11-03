@@ -1,0 +1,23 @@
+diff --git a/src/chart/latency.ts b/src/chart/latency.ts
+index 1111111..2222222 100644
+--- a/src/chart/latency.ts
++++ b/src/chart/latency.ts
+@@ -1,1 +1,1 @@
+-  stroke: "#ffffff",
++  stroke: theme.chartLine,
+diff --git a/src/theme/light.ts b/src/theme/light.ts
+index 1111111..2222222 100644
+--- a/src/theme/light.ts
++++ b/src/theme/light.ts
+@@ -1,1 +1,2 @@
+-  chartGrid: grey[200],
++  chartGrid: grey[200],
++  chartLine: grey[800],
+diff --git a/src/theme/dark.ts b/src/theme/dark.ts
+index 1111111..2222222 100644
+--- a/src/theme/dark.ts
++++ b/src/theme/dark.ts
+@@ -1,1 +1,2 @@
+-  chartGrid: grey[700],
++  chartGrid: grey[700],
++  chartLine: grey[100],

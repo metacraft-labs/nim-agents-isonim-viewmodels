@@ -1,0 +1,275 @@
+{
+  "c43bad2a-276d-40d4-a1e5-19fa40e9e482": {
+    "name": "retry-budget-1",
+    "workspace": "orbit-ws-1",
+    "branch": "",
+    "initiative": "Telemetry upload retries",
+    "source": "the terminal window the session runs in"
+  },
+  "34172351-d223-4dab-ab04-a2bd323f69eb": {
+    "name": "propagator-1",
+    "workspace": "orbit-ws-2",
+    "branch": "",
+    "initiative": "Route cache on the new storage layer",
+    "source": "the terminal window the session runs in"
+  },
+  "2d227ee6-e35f-4b8c-a66e-a60190784c06": {
+    "name": "route-cache-1",
+    "workspace": "orbit-ws-3",
+    "branch": "",
+    "initiative": "",
+    "source": "the terminal window the session runs in"
+  },
+  "0f7754a4-bfe1-4eb4-aa27-68d57b512231": {
+    "name": "migration-guide-1",
+    "workspace": "orbit-ws-4",
+    "branch": "",
+    "initiative": "Telemetry upload retries",
+    "source": "the terminal window the session runs in"
+  },
+  "250a2df8-ddcd-4f99-af08-8d1d2ff147e8": {
+    "name": "fuzz-timeout-1",
+    "workspace": "orbit-ws-6",
+    "branch": "",
+    "initiative": "",
+    "source": "the terminal window the session runs in"
+  },
+  "c5a5cbec-c782-4db1-ab70-77c4e2202ed1": {
+    "name": "scheduler-split-1",
+    "workspace": "orbit-ws-1",
+    "branch": "",
+    "initiative": "Telemetry upload retries",
+    "source": "the terminal window the session runs in"
+  },
+  "6888b754-0240-4510-ac96-74d0f166609b": {
+    "name": "retry-budget-2",
+    "workspace": "orbit-ws-2",
+    "branch": "",
+    "initiative": "Route cache on the new storage layer",
+    "source": "the terminal window the session runs in"
+  },
+  "ca48029a-986a-4f5a-a611-ec7f46cb0e9a": {
+    "name": "propagator-2",
+    "workspace": "orbit-ws-3",
+    "branch": "",
+    "initiative": "",
+    "source": "the terminal window the session runs in"
+  },
+  "f5c3fa78-70b8-4f77-acd1-ec0c3661039f": {
+    "name": "migration-guide-2",
+    "workspace": "orbit-ws-5",
+    "branch": "",
+    "initiative": "Route cache on the new storage layer",
+    "source": "the terminal window the session runs in"
+  },
+  "efc7e734-1b1c-43a9-ace4-27686602cbba": {
+    "name": "latency-chart-2",
+    "workspace": "orbit-ws-6",
+    "branch": "",
+    "initiative": "",
+    "source": "the terminal window the session runs in"
+  },
+  "6b4dea9d-1017-4d06-aad0-53922785b4fa": {
+    "name": "fuzz-timeout-2",
+    "workspace": "orbit-ws-1",
+    "branch": "",
+    "initiative": "Telemetry upload retries",
+    "source": "the terminal window the session runs in"
+  },
+  "bb848a21-a7f2-4efb-a86f-b3b319a68847": {
+    "name": "scheduler-split-2",
+    "workspace": "orbit-ws-2",
+    "branch": "",
+    "initiative": "Route cache on the new storage layer",
+    "source": "the terminal window the session runs in"
+  },
+  "9588cb04-f021-488b-a33b-f4497fa3dba1": {
+    "name": "propagator-3",
+    "workspace": "orbit-ws-4",
+    "branch": "",
+    "initiative": "Telemetry upload retries",
+    "source": "the terminal window the session runs in"
+  },
+  "f88efbc0-f76a-4ca8-a40e-c0641fd9aa8f": {
+    "name": "route-cache-3",
+    "workspace": "orbit-ws-5",
+    "branch": "",
+    "initiative": "Route cache on the new storage layer",
+    "source": "the terminal window the session runs in"
+  },
+  "cf5812b4-9eed-4419-a939-9299c29cf633": {
+    "name": "migration-guide-3",
+    "workspace": "orbit-ws-6",
+    "branch": "",
+    "initiative": "",
+    "source": "the terminal window the session runs in"
+  },
+  "63b113da-8a13-448c-a313-53e31f997ed4": {
+    "name": "latency-chart-3",
+    "workspace": "orbit-ws-1",
+    "branch": "",
+    "initiative": "Telemetry upload retries",
+    "source": "the terminal window the session runs in"
+  },
+  "e68df722-130e-4619-acd2-6e578bf43bf7": {
+    "name": "scheduler-split-3",
+    "workspace": "orbit-ws-3",
+    "branch": "",
+    "initiative": "",
+    "source": "the terminal window the session runs in"
+  },
+  "e581d879-8d00-4d1b-a00d-316924457bc7": {
+    "name": "retry-budget-4",
+    "workspace": "orbit-ws-4",
+    "branch": "",
+    "initiative": "Telemetry upload retries",
+    "source": "the terminal window the session runs in"
+  },
+  "d179f0b9-7450-4aec-a376-d5fc28257ed1": {
+    "name": "propagator-4",
+    "workspace": "orbit-ws-5",
+    "branch": "",
+    "initiative": "Route cache on the new storage layer",
+    "source": "the terminal window the session runs in"
+  },
+  "6f212579-3708-4ce9-a456-650d34cb67d3": {
+    "name": "route-cache-4",
+    "workspace": "orbit-ws-6",
+    "branch": "",
+    "initiative": "",
+    "source": "the terminal window the session runs in"
+  },
+  "333cc0ed-167f-4626-ae9b-bc7b066dfe1a": {
+    "name": "latency-chart-4",
+    "workspace": "orbit-ws-2",
+    "branch": "",
+    "initiative": "Route cache on the new storage layer",
+    "source": "the terminal window the session runs in"
+  },
+  "fff61b69-4f5a-4693-a381-4b9c50004a11": {
+    "name": "fuzz-timeout-4",
+    "workspace": "orbit-ws-3",
+    "branch": "",
+    "initiative": "",
+    "source": "the terminal window the session runs in"
+  },
+  "33bcd9ce-ad43-4c7e-a3a3-ddd34cdb8c8b": {
+    "name": "scheduler-split-4",
+    "workspace": "orbit-ws-4",
+    "branch": "",
+    "initiative": "Telemetry upload retries",
+    "source": "the terminal window the session runs in"
+  },
+  "e8fa44b7-8a6b-4e6d-a44c-4ce8556867b3": {
+    "name": "retry-budget-5",
+    "workspace": "orbit-ws-5",
+    "branch": "",
+    "initiative": "Route cache on the new storage layer",
+    "source": "the terminal window the session runs in"
+  },
+  "9637b1aa-de30-46d1-a204-3432c3ef9343": {
+    "name": "route-cache-5",
+    "workspace": "orbit-ws-1",
+    "branch": "",
+    "initiative": "Telemetry upload retries",
+    "source": "the terminal window the session runs in"
+  },
+  "39f5526c-98de-4ddf-a80b-45b03adcaa15": {
+    "name": "migration-guide-5",
+    "workspace": "orbit-ws-2",
+    "branch": "",
+    "initiative": "Route cache on the new storage layer",
+    "source": "the terminal window the session runs in"
+  },
+  "0763c585-c9bb-4844-a6a8-3461c0c6b437": {
+    "name": "latency-chart-5",
+    "workspace": "orbit-ws-3",
+    "branch": "",
+    "initiative": "",
+    "source": "the terminal window the session runs in"
+  },
+  "4eb5b7c3-ba35-4d0f-a734-23f0068c3b23": {
+    "name": "fuzz-timeout-5",
+    "workspace": "orbit-ws-4",
+    "branch": "",
+    "initiative": "Telemetry upload retries",
+    "source": "the terminal window the session runs in"
+  },
+  "9e5e4f0d-79ac-4ba6-addb-a1e9de179fa9": {
+    "name": "retry-budget-6",
+    "workspace": "orbit-ws-6",
+    "branch": "",
+    "initiative": "",
+    "source": "the terminal window the session runs in"
+  },
+  "b42d20b5-4b0d-470f-aadb-cf2a08f03f2b": {
+    "name": "propagator-6",
+    "workspace": "orbit-ws-1",
+    "branch": "",
+    "initiative": "Telemetry upload retries",
+    "source": "the terminal window the session runs in"
+  },
+  "383bc56d-3995-4906-add8-8c5d5b35c012": {
+    "name": "route-cache-6",
+    "workspace": "orbit-ws-2",
+    "branch": "",
+    "initiative": "Route cache on the new storage layer",
+    "source": "the terminal window the session runs in"
+  },
+  "e279aea7-e82a-42ad-abb0-c02e7390cf70": {
+    "name": "migration-guide-6",
+    "workspace": "orbit-ws-3",
+    "branch": "",
+    "initiative": "",
+    "source": "the terminal window the session runs in"
+  },
+  "c0404b1c-ce10-47a8-ad46-b15fa453c59b": {
+    "name": "fuzz-timeout-6",
+    "workspace": "orbit-ws-5",
+    "branch": "",
+    "initiative": "Route cache on the new storage layer",
+    "source": "the terminal window the session runs in"
+  },
+  "88c57831-6628-43b2-ae9c-1414807880e2": {
+    "name": "scheduler-split-6",
+    "workspace": "orbit-ws-6",
+    "branch": "",
+    "initiative": "",
+    "source": "the terminal window the session runs in"
+  },
+  "6e80cd0a-03f7-42e4-a9f1-be24544a60d0": {
+    "name": "retry-budget-7",
+    "workspace": "orbit-ws-1",
+    "branch": "",
+    "initiative": "Telemetry upload retries",
+    "source": "the terminal window the session runs in"
+  },
+  "6804206e-921b-44a2-a0fa-217bf963314d": {
+    "name": "propagator-7",
+    "workspace": "orbit-ws-2",
+    "branch": "",
+    "initiative": "Route cache on the new storage layer",
+    "source": "the terminal window the session runs in"
+  },
+  "07a022d2-58d5-461f-a9f3-c316679f5361": {
+    "name": "migration-guide-7",
+    "workspace": "orbit-ws-4",
+    "branch": "",
+    "initiative": "Telemetry upload retries",
+    "source": "the terminal window the session runs in"
+  },
+  "e3998186-50ba-4a4e-a230-9f07cfcbfd73": {
+    "name": "latency-chart-7",
+    "workspace": "orbit-ws-5",
+    "branch": "",
+    "initiative": "Route cache on the new storage layer",
+    "source": "the terminal window the session runs in"
+  },
+  "441ab080-a6ab-42a0-a645-b8119776e6d8": {
+    "name": "fuzz-timeout-7",
+    "workspace": "orbit-ws-6",
+    "branch": "",
+    "initiative": "",
+    "source": "the terminal window the session runs in"
+  }
+}

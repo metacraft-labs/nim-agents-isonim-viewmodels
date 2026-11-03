@@ -1,0 +1,11 @@
+{
+  "id": "0763c585-c9bb-4844-a6a8-3461c0c6b437",
+  "status": "completed",
+  "fleet": {
+    "leader": "build-03",
+    "followers": []
+  },
+  "endpoints": {
+    "events": "/api/v1/sessions/0763c585-c9bb-4844-a6a8-3461c0c6b437/events"
+  }
+}

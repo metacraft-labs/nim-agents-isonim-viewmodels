@@ -1,0 +1,11 @@
+{
+  "id": "f88efbc0-f76a-4ca8-a40e-c0641fd9aa8f",
+  "status": "queued",
+  "fleet": {
+    "leader": "mac-01",
+    "followers": []
+  },
+  "endpoints": {
+    "events": "/api/v1/sessions/f88efbc0-f76a-4ca8-a40e-c0641fd9aa8f/events"
+  }
+}

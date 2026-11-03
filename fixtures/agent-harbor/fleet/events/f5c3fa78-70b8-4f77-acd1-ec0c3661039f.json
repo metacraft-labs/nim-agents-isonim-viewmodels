@@ -1,0 +1,41 @@
+{
+  "events": [
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Committed 2 files",
+      "timestamp": 1768446761749
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Reading docs/configuration.md",
+      "timestamp": 1768446509851
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768446303919
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "f5c3fa78-70b8-4f77-acd1-ec0c3661039f",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Gemini",
+            "version": "1.8.2"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768446276273
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768446276273,
+  "total_count": 4
+}

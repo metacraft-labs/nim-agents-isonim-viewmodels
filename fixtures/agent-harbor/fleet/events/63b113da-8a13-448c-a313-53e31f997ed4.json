@@ -1,0 +1,64 @@
+{
+  "events": [
+    {
+      "type": "status",
+      "status": "failed",
+      "timestamp": 1768429423344
+    },
+    {
+      "type": "log",
+      "level": "error",
+      "message": "build failed: 3 tests did not pass",
+      "timestamp": 1768429190814
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Reading docs/configuration.md",
+      "timestamp": 1768429068740
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Reading docs/configuration.md",
+      "timestamp": 1768428948804
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Running the test suite",
+      "timestamp": 1768428880980
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Editing src/propagator/step.rs",
+      "timestamp": 1768428746505
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768428652255
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "63b113da-8a13-448c-a313-53e31f997ed4",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Codex",
+            "version": "0.91.3"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768428573311
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768428573311,
+  "total_count": 8
+}

@@ -1,0 +1,51 @@
+{
+  "events": [
+    {
+      "type": "status",
+      "status": "stopped",
+      "timestamp": 1768412057886
+    },
+    {
+      "type": "session_resumed",
+      "deliverer": "human",
+      "timestamp": 1768411851765
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Committed 2 files",
+      "timestamp": 1768411748072
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Reading docs/configuration.md",
+      "timestamp": 1768411672260
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768411616317
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "fff61b69-4f5a-4693-a381-4b9c50004a11",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Opencode",
+            "version": "0.12.7"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768411365923
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768411365923,
+  "total_count": 6
+}

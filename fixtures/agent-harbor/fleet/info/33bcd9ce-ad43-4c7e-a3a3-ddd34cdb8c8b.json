@@ -1,0 +1,11 @@
+{
+  "id": "33bcd9ce-ad43-4c7e-a3a3-ddd34cdb8c8b",
+  "status": "stopped",
+  "fleet": {
+    "leader": "gpu-01",
+    "followers": []
+  },
+  "endpoints": {
+    "events": "/api/v1/sessions/33bcd9ce-ad43-4c7e-a3a3-ddd34cdb8c8b/events"
+  }
+}

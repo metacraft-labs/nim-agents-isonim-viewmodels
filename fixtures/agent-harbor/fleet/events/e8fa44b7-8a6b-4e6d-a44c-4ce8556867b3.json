@@ -1,0 +1,63 @@
+{
+  "events": [
+    {
+      "type": "status",
+      "status": "stopped",
+      "timestamp": 1768407560334
+    },
+    {
+      "type": "anti_halting_resume_confirmed",
+      "stallType": "idle_turn",
+      "timestamp": 1768407424452
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Editing src/propagator/step.rs",
+      "timestamp": 1768407274990
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Pushed fix/propagator-step-count",
+      "timestamp": 1768407078166
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Pushed fix/propagator-step-count",
+      "timestamp": 1768406871858
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Committed 2 files",
+      "timestamp": 1768406850065
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768406675460
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "e8fa44b7-8a6b-4e6d-a44c-4ce8556867b3",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Claude",
+            "version": "4.2.0"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768406643915
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768406643915,
+  "total_count": 8
+}

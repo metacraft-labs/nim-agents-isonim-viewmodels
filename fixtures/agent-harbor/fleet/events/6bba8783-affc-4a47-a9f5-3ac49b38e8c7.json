@@ -1,0 +1,63 @@
+{
+  "events": [
+    {
+      "type": "status",
+      "status": "failed",
+      "timestamp": 1768428007956
+    },
+    {
+      "type": "log",
+      "level": "error",
+      "message": "workspace provisioning failed: disk quota exceeded",
+      "timestamp": 1768427755393
+    },
+    {
+      "type": "anti_halting_resume_confirmed",
+      "stallType": "idle_turn",
+      "timestamp": 1768427586757
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Running the test suite",
+      "timestamp": 1768427568680
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Editing src/propagator/step.rs",
+      "timestamp": 1768427421969
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Pushed fix/propagator-step-count",
+      "timestamp": 1768427242515
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768427017404
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "6bba8783-affc-4a47-a9f5-3ac49b38e8c7",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Codex",
+            "version": "0.91.3"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768426775174
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768426775174,
+  "total_count": 8
+}

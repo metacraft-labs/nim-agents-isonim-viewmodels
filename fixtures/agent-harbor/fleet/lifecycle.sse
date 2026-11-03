@@ -1,0 +1,271 @@
+event: lifecycle
+data: {"kind":"session_created","sessionId":"c43bad2a-276d-40d4-a1e5-19fa40e9e482","status":"queued","agent":"claude","executor":"executor-1","at":"2026-01-15T09:18:50.763Z"}
+id: 5e7a1c0de0f1a2b3-1
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"c43bad2a-276d-40d4-a1e5-19fa40e9e482","status":"running","previousStatus":"queued","agent":"claude","executor":"executor-1","at":"2026-01-15T09:18:54.763Z"}
+id: 5e7a1c0de0f1a2b3-2
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"34172351-d223-4dab-ab04-a2bd323f69eb","status":"queued","agent":"codex","executor":"executor-2","at":"2026-01-15T08:38:36.489Z"}
+id: 5e7a1c0de0f1a2b3-3
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"34172351-d223-4dab-ab04-a2bd323f69eb","status":"running","previousStatus":"queued","agent":"codex","executor":"executor-2","at":"2026-01-15T08:38:40.489Z"}
+id: 5e7a1c0de0f1a2b3-4
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"2d227ee6-e35f-4b8c-a66e-a60190784c06","status":"queued","agent":"gemini","executor":"executor-3","at":"2026-01-15T08:08:21.641Z"}
+id: 5e7a1c0de0f1a2b3-5
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"2d227ee6-e35f-4b8c-a66e-a60190784c06","status":"running","previousStatus":"queued","agent":"gemini","executor":"executor-3","at":"2026-01-15T08:08:25.641Z"}
+id: 5e7a1c0de0f1a2b3-6
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"0f7754a4-bfe1-4eb4-aa27-68d57b512231","status":"queued","agent":"opencode","executor":"executor-1","at":"2026-01-15T07:22:20.197Z"}
+id: 5e7a1c0de0f1a2b3-7
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"0f7754a4-bfe1-4eb4-aa27-68d57b512231","status":"running","previousStatus":"queued","agent":"opencode","executor":"executor-1","at":"2026-01-15T07:22:24.197Z"}
+id: 5e7a1c0de0f1a2b3-8
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"001177b3-9468-4b2b-a039-dae2c541204c","status":"queued","agent":"claude","executor":"executor-2","at":"2026-01-15T06:51:42.960Z"}
+id: 5e7a1c0de0f1a2b3-9
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"001177b3-9468-4b2b-a039-dae2c541204c","status":"running","previousStatus":"queued","agent":"claude","executor":"executor-2","at":"2026-01-15T06:51:46.960Z"}
+id: 5e7a1c0de0f1a2b3-10
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"250a2df8-ddcd-4f99-af08-8d1d2ff147e8","status":"queued","agent":"codex","executor":"executor-3","at":"2026-01-15T06:10:46.835Z"}
+id: 5e7a1c0de0f1a2b3-11
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"250a2df8-ddcd-4f99-af08-8d1d2ff147e8","status":"running","previousStatus":"queued","agent":"codex","executor":"executor-3","at":"2026-01-15T06:10:50.835Z"}
+id: 5e7a1c0de0f1a2b3-12
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"c5a5cbec-c782-4db1-ab70-77c4e2202ed1","status":"queued","agent":"gemini","executor":"executor-1","at":"2026-01-15T05:35:44.387Z"}
+id: 5e7a1c0de0f1a2b3-13
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"c5a5cbec-c782-4db1-ab70-77c4e2202ed1","status":"running","previousStatus":"queued","agent":"gemini","executor":"executor-1","at":"2026-01-15T05:35:48.387Z"}
+id: 5e7a1c0de0f1a2b3-14
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"6888b754-0240-4510-ac96-74d0f166609b","status":"queued","agent":"opencode","executor":"executor-2","at":"2026-01-15T04:56:40.879Z"}
+id: 5e7a1c0de0f1a2b3-15
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"6888b754-0240-4510-ac96-74d0f166609b","status":"running","previousStatus":"queued","agent":"opencode","executor":"executor-2","at":"2026-01-15T04:56:44.879Z"}
+id: 5e7a1c0de0f1a2b3-16
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"ca48029a-986a-4f5a-a611-ec7f46cb0e9a","status":"queued","agent":"claude","executor":"executor-3","at":"2026-01-15T04:18:27.354Z"}
+id: 5e7a1c0de0f1a2b3-17
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"ca48029a-986a-4f5a-a611-ec7f46cb0e9a","status":"running","previousStatus":"queued","agent":"claude","executor":"executor-3","at":"2026-01-15T04:18:31.354Z"}
+id: 5e7a1c0de0f1a2b3-18
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"efde67b5-ccda-47e8-ae40-35f2daed03cd","status":"queued","agent":"codex","executor":"executor-1","at":"2026-01-15T03:44:37.576Z"}
+id: 5e7a1c0de0f1a2b3-19
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"efde67b5-ccda-47e8-ae40-35f2daed03cd","status":"running","previousStatus":"queued","agent":"codex","executor":"executor-1","at":"2026-01-15T03:44:41.576Z"}
+id: 5e7a1c0de0f1a2b3-20
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"f5c3fa78-70b8-4f77-acd1-ec0c3661039f","status":"queued","agent":"gemini","executor":"executor-2","at":"2026-01-15T03:03:56.884Z"}
+id: 5e7a1c0de0f1a2b3-21
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"f5c3fa78-70b8-4f77-acd1-ec0c3661039f","status":"running","previousStatus":"queued","agent":"gemini","executor":"executor-2","at":"2026-01-15T03:04:00.884Z"}
+id: 5e7a1c0de0f1a2b3-22
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"efc7e734-1b1c-43a9-ace4-27686602cbba","status":"queued","agent":"opencode","executor":"executor-3","at":"2026-01-15T02:30:04.617Z"}
+id: 5e7a1c0de0f1a2b3-23
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"efc7e734-1b1c-43a9-ace4-27686602cbba","status":"running","previousStatus":"queued","agent":"opencode","executor":"executor-3","at":"2026-01-15T02:30:08.617Z"}
+id: 5e7a1c0de0f1a2b3-24
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"6b4dea9d-1017-4d06-aad0-53922785b4fa","status":"queued","agent":"claude","executor":"executor-1","at":"2026-01-15T01:56:09.660Z"}
+id: 5e7a1c0de0f1a2b3-25
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"6b4dea9d-1017-4d06-aad0-53922785b4fa","status":"running","previousStatus":"queued","agent":"claude","executor":"executor-1","at":"2026-01-15T01:56:13.660Z"}
+id: 5e7a1c0de0f1a2b3-26
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"bb848a21-a7f2-4efb-a86f-b3b319a68847","status":"queued","agent":"codex","executor":"executor-2","at":"2026-01-15T01:12:32.987Z"}
+id: 5e7a1c0de0f1a2b3-27
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"bb848a21-a7f2-4efb-a86f-b3b319a68847","status":"running","previousStatus":"queued","agent":"codex","executor":"executor-2","at":"2026-01-15T01:12:36.987Z"}
+id: 5e7a1c0de0f1a2b3-28
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"587ecf79-9e6c-4af5-ade1-5af5c09038fb","status":"queued","agent":"gemini","executor":"executor-3","at":"2026-01-15T00:43:25.423Z"}
+id: 5e7a1c0de0f1a2b3-29
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"9588cb04-f021-488b-a33b-f4497fa3dba1","status":"queued","agent":"opencode","executor":"executor-1","at":"2026-01-14T23:58:13.354Z"}
+id: 5e7a1c0de0f1a2b3-30
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"f88efbc0-f76a-4ca8-a40e-c0641fd9aa8f","status":"queued","agent":"claude","executor":"executor-2","at":"2026-01-14T23:29:11.850Z"}
+id: 5e7a1c0de0f1a2b3-31
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"b42d20b5-4b0d-470f-aadb-cf2a08f03f2b","status":"queued","agent":"claude","executor":"executor-1","at":"2026-01-14T11:09:54.491Z"}
+id: 5e7a1c0de0f1a2b3-32
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"b42d20b5-4b0d-470f-aadb-cf2a08f03f2b","status":"running","previousStatus":"queued","agent":"claude","executor":"executor-1","at":"2026-01-14T11:09:58.491Z"}
+id: 5e7a1c0de0f1a2b3-33
+
+event: lifecycle
+data: {"kind":"session_completed","sessionId":"b42d20b5-4b0d-470f-aadb-cf2a08f03f2b","status":"completed","previousStatus":"running","agent":"claude","executor":"executor-1","at":"2026-01-14T11:47:45.075Z"}
+id: 5e7a1c0de0f1a2b3-34
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"383bc56d-3995-4906-add8-8c5d5b35c012","status":"queued","agent":"codex","executor":"executor-2","at":"2026-01-14T10:32:47.965Z"}
+id: 5e7a1c0de0f1a2b3-35
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"383bc56d-3995-4906-add8-8c5d5b35c012","status":"running","previousStatus":"queued","agent":"codex","executor":"executor-2","at":"2026-01-14T10:32:51.965Z"}
+id: 5e7a1c0de0f1a2b3-36
+
+event: lifecycle
+data: {"kind":"session_completed","sessionId":"383bc56d-3995-4906-add8-8c5d5b35c012","status":"completed","previousStatus":"running","agent":"codex","executor":"executor-2","at":"2026-01-14T11:25:01.966Z"}
+id: 5e7a1c0de0f1a2b3-37
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"e279aea7-e82a-42ad-abb0-c02e7390cf70","status":"queued","agent":"gemini","executor":"executor-3","at":"2026-01-14T09:52:20.890Z"}
+id: 5e7a1c0de0f1a2b3-38
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"e279aea7-e82a-42ad-abb0-c02e7390cf70","status":"running","previousStatus":"queued","agent":"gemini","executor":"executor-3","at":"2026-01-14T09:52:24.890Z"}
+id: 5e7a1c0de0f1a2b3-39
+
+event: lifecycle
+data: {"kind":"session_completed","sessionId":"e279aea7-e82a-42ad-abb0-c02e7390cf70","status":"completed","previousStatus":"running","agent":"gemini","executor":"executor-3","at":"2026-01-14T11:48:25.497Z"}
+id: 5e7a1c0de0f1a2b3-40
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"8259d8b6-b22c-4229-ab22-3b7f521445b7","status":"queued","agent":"opencode","executor":"executor-1","at":"2026-01-14T09:13:15.429Z"}
+id: 5e7a1c0de0f1a2b3-41
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"8259d8b6-b22c-4229-ab22-3b7f521445b7","status":"running","previousStatus":"queued","agent":"opencode","executor":"executor-1","at":"2026-01-14T09:13:19.429Z"}
+id: 5e7a1c0de0f1a2b3-42
+
+event: lifecycle
+data: {"kind":"session_completed","sessionId":"8259d8b6-b22c-4229-ab22-3b7f521445b7","status":"completed","previousStatus":"running","agent":"opencode","executor":"executor-1","at":"2026-01-14T10:24:10.024Z"}
+id: 5e7a1c0de0f1a2b3-43
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"c0404b1c-ce10-47a8-ad46-b15fa453c59b","status":"queued","agent":"claude","executor":"executor-2","at":"2026-01-14T08:39:51.282Z"}
+id: 5e7a1c0de0f1a2b3-44
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"c0404b1c-ce10-47a8-ad46-b15fa453c59b","status":"running","previousStatus":"queued","agent":"claude","executor":"executor-2","at":"2026-01-14T08:39:55.282Z"}
+id: 5e7a1c0de0f1a2b3-45
+
+event: lifecycle
+data: {"kind":"session_completed","sessionId":"c0404b1c-ce10-47a8-ad46-b15fa453c59b","status":"completed","previousStatus":"running","agent":"claude","executor":"executor-2","at":"2026-01-14T11:48:13.641Z"}
+id: 5e7a1c0de0f1a2b3-46
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"88c57831-6628-43b2-ae9c-1414807880e2","status":"queued","agent":"codex","executor":"executor-3","at":"2026-01-14T07:58:30.079Z"}
+id: 5e7a1c0de0f1a2b3-47
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"88c57831-6628-43b2-ae9c-1414807880e2","status":"running","previousStatus":"queued","agent":"codex","executor":"executor-3","at":"2026-01-14T07:58:34.079Z"}
+id: 5e7a1c0de0f1a2b3-48
+
+event: lifecycle
+data: {"kind":"session_completed","sessionId":"88c57831-6628-43b2-ae9c-1414807880e2","status":"completed","previousStatus":"running","agent":"codex","executor":"executor-3","at":"2026-01-14T08:21:15.239Z"}
+id: 5e7a1c0de0f1a2b3-49
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"6e80cd0a-03f7-42e4-a9f1-be24544a60d0","status":"queued","agent":"gemini","executor":"executor-1","at":"2026-01-14T07:21:13.063Z"}
+id: 5e7a1c0de0f1a2b3-50
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"6e80cd0a-03f7-42e4-a9f1-be24544a60d0","status":"running","previousStatus":"queued","agent":"gemini","executor":"executor-1","at":"2026-01-14T07:21:17.063Z"}
+id: 5e7a1c0de0f1a2b3-51
+
+event: lifecycle
+data: {"kind":"session_completed","sessionId":"6e80cd0a-03f7-42e4-a9f1-be24544a60d0","status":"completed","previousStatus":"running","agent":"gemini","executor":"executor-1","at":"2026-01-14T08:57:44.288Z"}
+id: 5e7a1c0de0f1a2b3-52
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"6804206e-921b-44a2-a0fa-217bf963314d","status":"queued","agent":"opencode","executor":"executor-2","at":"2026-01-14T06:44:56.562Z"}
+id: 5e7a1c0de0f1a2b3-53
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"6804206e-921b-44a2-a0fa-217bf963314d","status":"running","previousStatus":"queued","agent":"opencode","executor":"executor-2","at":"2026-01-14T06:45:00.562Z"}
+id: 5e7a1c0de0f1a2b3-54
+
+event: lifecycle
+data: {"kind":"session_completed","sessionId":"6804206e-921b-44a2-a0fa-217bf963314d","status":"completed","previousStatus":"running","agent":"opencode","executor":"executor-2","at":"2026-01-14T07:39:15.003Z"}
+id: 5e7a1c0de0f1a2b3-55
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"bdf85db5-85d8-46f3-a5c4-da6d5a432ad1","status":"queued","agent":"claude","executor":"executor-3","at":"2026-01-14T06:11:10.356Z"}
+id: 5e7a1c0de0f1a2b3-56
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"bdf85db5-85d8-46f3-a5c4-da6d5a432ad1","status":"running","previousStatus":"queued","agent":"claude","executor":"executor-3","at":"2026-01-14T06:11:14.356Z"}
+id: 5e7a1c0de0f1a2b3-57
+
+event: lifecycle
+data: {"kind":"session_completed","sessionId":"bdf85db5-85d8-46f3-a5c4-da6d5a432ad1","status":"completed","previousStatus":"running","agent":"claude","executor":"executor-3","at":"2026-01-14T07:22:28.930Z"}
+id: 5e7a1c0de0f1a2b3-58
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"07a022d2-58d5-461f-a9f3-c316679f5361","status":"queued","agent":"codex","executor":"executor-1","at":"2026-01-14T05:33:52.570Z"}
+id: 5e7a1c0de0f1a2b3-59
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"07a022d2-58d5-461f-a9f3-c316679f5361","status":"running","previousStatus":"queued","agent":"codex","executor":"executor-1","at":"2026-01-14T05:33:56.570Z"}
+id: 5e7a1c0de0f1a2b3-60
+
+event: lifecycle
+data: {"kind":"session_completed","sessionId":"07a022d2-58d5-461f-a9f3-c316679f5361","status":"completed","previousStatus":"running","agent":"codex","executor":"executor-1","at":"2026-01-14T07:33:03.303Z"}
+id: 5e7a1c0de0f1a2b3-61
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"e3998186-50ba-4a4e-a230-9f07cfcbfd73","status":"queued","agent":"gemini","executor":"executor-2","at":"2026-01-14T04:53:32.925Z"}
+id: 5e7a1c0de0f1a2b3-62
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"e3998186-50ba-4a4e-a230-9f07cfcbfd73","status":"running","previousStatus":"queued","agent":"gemini","executor":"executor-2","at":"2026-01-14T04:53:36.925Z"}
+id: 5e7a1c0de0f1a2b3-63
+
+event: lifecycle
+data: {"kind":"session_completed","sessionId":"e3998186-50ba-4a4e-a230-9f07cfcbfd73","status":"completed","previousStatus":"running","agent":"gemini","executor":"executor-2","at":"2026-01-14T05:56:30.137Z"}
+id: 5e7a1c0de0f1a2b3-64
+
+event: lifecycle
+data: {"kind":"session_created","sessionId":"441ab080-a6ab-42a0-a645-b8119776e6d8","status":"queued","agent":"opencode","executor":"executor-3","at":"2026-01-14T04:22:18.783Z"}
+id: 5e7a1c0de0f1a2b3-65
+
+event: lifecycle
+data: {"kind":"session_status_changed","sessionId":"441ab080-a6ab-42a0-a645-b8119776e6d8","status":"running","previousStatus":"queued","agent":"opencode","executor":"executor-3","at":"2026-01-14T04:22:22.783Z"}
+id: 5e7a1c0de0f1a2b3-66
+
+event: lifecycle
+data: {"kind":"session_completed","sessionId":"441ab080-a6ab-42a0-a645-b8119776e6d8","status":"completed","previousStatus":"running","agent":"opencode","executor":"executor-3","at":"2026-01-14T05:39:04.026Z"}
+id: 5e7a1c0de0f1a2b3-67
+
+event: caught_up
+data: {"cursor":"5e7a1c0de0f1a2b3-67"}
+

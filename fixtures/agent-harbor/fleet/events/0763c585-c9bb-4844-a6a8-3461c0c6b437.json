@@ -1,0 +1,57 @@
+{
+  "events": [
+    {
+      "type": "status",
+      "status": "completed",
+      "timestamp": 1768398955753
+    },
+    {
+      "type": "anti_halting_resume_confirmed",
+      "stallType": "idle_turn",
+      "timestamp": 1768398785355
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Committed 2 files",
+      "timestamp": 1768398674715
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Reading docs/configuration.md",
+      "timestamp": 1768398499622
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Editing src/propagator/step.rs",
+      "timestamp": 1768398384707
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768398133812
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "0763c585-c9bb-4844-a6a8-3461c0c6b437",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Gemini",
+            "version": "1.8.2"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768397902320
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768397902320,
+  "total_count": 7
+}

@@ -1,0 +1,41 @@
+{
+  "events": [
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Reading docs/configuration.md",
+      "timestamp": 1768451174893
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Editing src/propagator/step.rs",
+      "timestamp": 1768451105417
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768451029083
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "ca48029a-986a-4f5a-a611-ec7f46cb0e9a",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Opencode",
+            "version": "0.12.7"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768450873731
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768450873731,
+  "total_count": 4
+}

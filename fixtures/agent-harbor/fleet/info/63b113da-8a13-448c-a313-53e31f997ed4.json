@@ -1,0 +1,11 @@
+{
+  "id": "63b113da-8a13-448c-a313-53e31f997ed4",
+  "status": "failed",
+  "fleet": {
+    "leader": "build-01",
+    "followers": []
+  },
+  "endpoints": {
+    "events": "/api/v1/sessions/63b113da-8a13-448c-a313-53e31f997ed4/events"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "events": [
+    {
+      "type": "status",
+      "status": "completed",
+      "timestamp": 0
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "assistant: deleted 3 generated files",
+      "timestamp": 0
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "agent permission request: delete build/generated (allow once, reject once); allowed once",
+      "timestamp": 0
+    },
+    {
+      "type": "user_input",
+      "input_type": "text",
+      "content": "Ask before deleting the generated files",
+      "timestamp": 0
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 0
+    },
+    {
+      "type": "status",
+      "status": "queued",
+      "timestamp": 0
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 0,
+  "total_count": 6
+}

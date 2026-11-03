@@ -1,0 +1,46 @@
+{
+  "events": [
+    {
+      "type": "status",
+      "status": "stopped",
+      "timestamp": 1768402844019
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Reading docs/configuration.md",
+      "timestamp": 1768402668367
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Running the test suite",
+      "timestamp": 1768402650046
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768402465520
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "9637b1aa-de30-46d1-a204-3432c3ef9343",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Codex",
+            "version": "0.91.3"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768402389434
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768402389434,
+  "total_count": 5
+}

@@ -1,0 +1,73 @@
+{
+  "events": [
+    {
+      "type": "agent_question",
+      "request": "c43bad2a-276d-40d4-a1e5-19fa40e9e482:question:1",
+      "kind": "single_choice",
+      "prompt": "Which retry policy should the uploader use?",
+      "options": [
+        {
+          "label": "Exponential backoff",
+          "recommended": true
+        },
+        {
+          "label": "Fixed interval",
+          "recommended": false
+        },
+        {
+          "label": "No retries",
+          "recommended": false
+        }
+      ],
+      "timestamp": 1768469602777
+    },
+    {
+      "type": "session_awaiting_input",
+      "request": "c43bad2a-276d-40d4-a1e5-19fa40e9e482:question:1",
+      "timestamp": 1768469349923
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Pushed fix/propagator-step-count",
+      "timestamp": 1768469250488
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Running the test suite",
+      "timestamp": 1768469029649
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Pushed fix/propagator-step-count",
+      "timestamp": 1768468971261
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768468836978
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "c43bad2a-276d-40d4-a1e5-19fa40e9e482",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Opencode",
+            "version": "0.12.7"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768468814396
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768468814396,
+  "total_count": 7
+}

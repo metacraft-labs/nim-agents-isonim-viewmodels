@@ -7,25 +7,30 @@ build: build-native build-js
 
 build-native:
     nim c {{paths}} tests/test_activity_vm.nim
+    nim c {{paths}} tests/test_agent_harbor_fleet_vm.nim
     nim c {{paths}} tests/test_nimcache_is_worktree_local.nim
 
 build-js:
     nim js {{paths}} tests/test_activity_vm.nim
+    nim js {{paths}} tests/test_agent_harbor_fleet_vm.nim
 
 test: test-native test-js
 
 test-native:
     nim c -r {{paths}} tests/test_activity_vm.nim
+    nim c -r {{paths}} tests/test_agent_harbor_fleet_vm.nim
     nim c -r {{paths}} tests/test_nimcache_is_worktree_local.nim
 
 test-js:
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_activity_vm.nim
+    bash tools/nim-js-test-gate.sh {{paths}} tests/test_agent_harbor_fleet_vm.nim
 
 lint: lint-nim lint-nix
 
 lint-nim:
     nim check {{paths}} src/nim_agents_isonim_viewmodels.nim
     nim check {{paths}} tests/test_activity_vm.nim
+    nim check {{paths}} tests/test_agent_harbor_fleet_vm.nim
     nim check {{paths}} tests/test_nimcache_is_worktree_local.nim
 
 lint-nix:
@@ -34,7 +39,7 @@ lint-nix:
 format: format-nim format-nix
 
 format-nim:
-    nimpretty src/nim_agents_isonim_viewmodels.nim src/nim_agents_isonim_viewmodels/*.nim tests/*.nim
+    nimpretty src/nim_agents_isonim_viewmodels.nim src/nim_agents_isonim_viewmodels/*.nim src/nim_agents_isonim_viewmodels/agent_harbor/*.nim tests/*.nim
 
 format-nix:
     nixfmt flake.nix

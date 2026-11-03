@@ -1,0 +1,189 @@
+[
+  {
+    "kind": "run-started",
+    "testRunId": "synthetic-units-library-tests",
+    "platform": [
+      "os.linux",
+      "arch.x86_64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct"
+  },
+  {
+    "kind": "test-started",
+    "testRunId": "synthetic-units-library-tests",
+    "platform": [
+      "os.linux",
+      "arch.x86_64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_convert.py::test_metres_to_feet"
+  },
+  {
+    "kind": "test-finished",
+    "testRunId": "synthetic-units-library-tests",
+    "platform": [
+      "os.linux",
+      "arch.x86_64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_convert.py::test_metres_to_feet",
+    "status": "passed",
+    "durationMs": 12,
+    "reused": false
+  },
+  {
+    "kind": "test-started",
+    "testRunId": "synthetic-units-library-tests",
+    "platform": [
+      "os.linux",
+      "arch.x86_64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_convert.py::test_feet_to_metres"
+  },
+  {
+    "kind": "test-finished",
+    "testRunId": "synthetic-units-library-tests",
+    "platform": [
+      "os.linux",
+      "arch.x86_64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_convert.py::test_feet_to_metres",
+    "status": "passed",
+    "durationMs": 9,
+    "reused": false
+  },
+  {
+    "kind": "test-started",
+    "testRunId": "synthetic-units-library-tests",
+    "platform": [
+      "os.linux",
+      "arch.x86_64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_convert.py::test_round_trip"
+  },
+  {
+    "kind": "failure",
+    "testRunId": "synthetic-units-library-tests",
+    "platform": [
+      "os.linux",
+      "arch.x86_64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_convert.py::test_round_trip",
+    "message": "assert 3.2808 == 3.28084",
+    "location": null
+  },
+  {
+    "kind": "test-finished",
+    "testRunId": "synthetic-units-library-tests",
+    "platform": [
+      "os.linux",
+      "arch.x86_64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_convert.py::test_round_trip",
+    "status": "failed",
+    "durationMs": 31,
+    "reused": false
+  },
+  {
+    "kind": "test-started",
+    "testRunId": "synthetic-units-library-tests",
+    "platform": [
+      "os.linux",
+      "arch.x86_64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_parse.py::test_parse_with_unit"
+  },
+  {
+    "kind": "test-finished",
+    "testRunId": "synthetic-units-library-tests",
+    "platform": [
+      "os.linux",
+      "arch.x86_64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_parse.py::test_parse_with_unit",
+    "status": "passed",
+    "durationMs": 7,
+    "reused": false
+  },
+  {
+    "kind": "test-started",
+    "testRunId": "synthetic-units-library-tests",
+    "platform": [
+      "os.linux",
+      "arch.x86_64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_parse.py::test_parse_scientific"
+  },
+  {
+    "kind": "test-finished",
+    "testRunId": "synthetic-units-library-tests",
+    "platform": [
+      "os.linux",
+      "arch.x86_64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_parse.py::test_parse_scientific",
+    "status": "skipped",
+    "durationMs": 0,
+    "reused": false
+  },
+  {
+    "kind": "trace-started",
+    "testRunId": "synthetic-units-library-tests",
+    "platform": [
+      "os.linux",
+      "arch.x86_64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_convert.py::test_metres_to_feet",
+    "recorder": "ct"
+  },
+  {
+    "kind": "trace-created",
+    "testRunId": "synthetic-units-library-tests",
+    "platform": [
+      "os.linux",
+      "arch.x86_64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "testId": "ct/python-pytest/python/pytest/tests/test_convert.py::test_metres_to_feet",
+    "trace": "agent-harbor://trace/synthetic-trace-units-library-tests"
+  },
+  {
+    "kind": "run-finished",
+    "testRunId": "synthetic-units-library-tests",
+    "platform": [
+      "os.linux",
+      "arch.x86_64"
+    ],
+    "backend": "local-ct",
+    "runner": "ct",
+    "totals": {
+      "passed": 3,
+      "failed": 1,
+      "skipped": 1
+    }
+  }
+]

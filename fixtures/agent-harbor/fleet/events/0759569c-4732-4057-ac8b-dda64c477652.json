@@ -1,0 +1,46 @@
+{
+  "events": [
+    {
+      "type": "status",
+      "status": "cancelled",
+      "timestamp": 1768416202824
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Committed 2 files",
+      "timestamp": 1768416172502
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Pushed fix/propagator-step-count",
+      "timestamp": 1768415982701
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768415875175
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "0759569c-4732-4057-ac8b-dda64c477652",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Codex",
+            "version": "0.91.3"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768415731373
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768415731373,
+  "total_count": 5
+}

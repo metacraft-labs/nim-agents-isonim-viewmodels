@@ -1,0 +1,11 @@
+{
+  "id": "6888b754-0240-4510-ac96-74d0f166609b",
+  "status": "running",
+  "fleet": {
+    "leader": "build-02",
+    "followers": []
+  },
+  "endpoints": {
+    "events": "/api/v1/sessions/6888b754-0240-4510-ac96-74d0f166609b/events"
+  }
+}

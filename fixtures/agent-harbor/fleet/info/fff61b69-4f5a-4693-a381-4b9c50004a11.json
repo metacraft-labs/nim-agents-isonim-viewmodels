@@ -1,0 +1,11 @@
+{
+  "id": "fff61b69-4f5a-4693-a381-4b9c50004a11",
+  "status": "stopped",
+  "fleet": {
+    "leader": "build-03",
+    "followers": []
+  },
+  "endpoints": {
+    "events": "/api/v1/sessions/fff61b69-4f5a-4693-a381-4b9c50004a11/events"
+  }
+}

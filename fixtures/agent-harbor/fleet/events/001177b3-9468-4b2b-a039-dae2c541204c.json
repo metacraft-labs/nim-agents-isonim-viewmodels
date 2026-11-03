@@ -1,0 +1,78 @@
+{
+  "events": [
+    {
+      "type": "agent_question",
+      "request": "001177b3-9468-4b2b-a039-dae2c541204c:question:1",
+      "kind": "single_choice",
+      "prompt": "Which retry policy should the uploader use?",
+      "options": [
+        {
+          "label": "Exponential backoff",
+          "recommended": true
+        },
+        {
+          "label": "Fixed interval",
+          "recommended": false
+        },
+        {
+          "label": "No retries",
+          "recommended": false
+        }
+      ],
+      "timestamp": 1768460870307
+    },
+    {
+      "type": "session_awaiting_input",
+      "request": "001177b3-9468-4b2b-a039-dae2c541204c:question:1",
+      "timestamp": 1768460834264
+    },
+    {
+      "type": "session_resumed",
+      "deliverer": "human",
+      "timestamp": 1768460674968
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Reading docs/configuration.md",
+      "timestamp": 1768460632462
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Running the test suite",
+      "timestamp": 1768460432495
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Pushed fix/propagator-step-count",
+      "timestamp": 1768460191579
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768460176283
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "001177b3-9468-4b2b-a039-dae2c541204c",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Codex",
+            "version": "0.91.3"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768460129419
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768460129419,
+  "total_count": 8
+}

@@ -1,0 +1,69 @@
+{
+  "events": [
+    {
+      "type": "status",
+      "status": "failed",
+      "timestamp": 1768418901814
+    },
+    {
+      "type": "log",
+      "level": "error",
+      "message": "agent stopped: context window exhausted",
+      "timestamp": 1768418656122
+    },
+    {
+      "type": "session_resumed",
+      "deliverer": "human",
+      "timestamp": 1768418567403
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Committed 2 files",
+      "timestamp": 1768418530708
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Reading docs/configuration.md",
+      "timestamp": 1768418362571
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Reading docs/configuration.md",
+      "timestamp": 1768418148560
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "Reading docs/configuration.md",
+      "timestamp": 1768417955881
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 1768417729214
+    },
+    {
+      "type": "orchestration",
+      "kind": "session_metadata",
+      "targetSessionId": "6f212579-3708-4ce9-a456-650d34cb67d3",
+      "description": "foreground session metadata",
+      "payload": {
+        "agent": {
+          "agent": {
+            "software": "Gemini",
+            "version": "1.8.2"
+          },
+          "model": "default",
+          "count": 1
+        }
+      },
+      "timestamp": 1768417630727
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 1768417630727,
+  "total_count": 9
+}
