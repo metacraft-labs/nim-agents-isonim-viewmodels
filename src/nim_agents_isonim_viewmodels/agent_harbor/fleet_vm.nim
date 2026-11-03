@@ -160,18 +160,12 @@ proc failureOf*(session: FleetSession): string =
   ## process's exit, `[exit] status=143`, at info level), else the reason
   ## the data source found in the session's history, else nothing --
   ## a failure the server gave no reason for shows no invented one.
+  ## The listing and the history are judged by the same rule
+  ## (`failureReasonOf`), so a line a capture scrubbed is never a reason in
+  ## either.
   if session.category != fcFailed: return ""
-  for i in countdown(session.recent.high, 0):
-    let event = session.recent[i]
-    if event.kind == fakLog and event.level == "error":
-      return event.text
-  for i in countdown(session.recent.high, 0):
-    let event = session.recent[i]
-    # A line a capture replaced because it quoted a prompt is no reason.
-    if event.kind == fakLog and event.text.strip.len > 0 and
-        not event.text.startsWith("[scrubbed"):
-      return event.text
-  session.failureReason
+  result = failureReasonOf(session.recent.reversed)
+  if result.len == 0: result = session.failureReason
 
 proc titleOf*(session: FleetSession): tuple[text, source: string] =
   ## What a row is titled, in order of preference: the prompt's first line;

@@ -113,6 +113,16 @@ suite "Agent Harbor records":
     session.recent.add(FleetActivity(kind: fakLog, level: "info",
                                      text: "[scrubbed: quoted prompt text]"))
     check session.failureOf == ""
+    # An error-level scrubbed line is no reason either, in the listing or in
+    # a history.
+    session.recent.add(FleetActivity(kind: fakLog, level: "error",
+                                     text: "[scrubbed: quoted prompt text]"))
+    check session.failureOf == ""
+    check failureReasonOf([FleetActivity(kind: fakLog, level: "error",
+                                         text: "[scrubbed: quoted prompt text]"),
+                           FleetActivity(kind: fakLog, level: "info",
+                                         text: "[exit] status=2")]) ==
+      "[exit] status=2"
     session.failureReason = "[exit] status=1"
     check session.failureOf == "[exit] status=1"
     check failureReasonOf([FleetActivity(kind: fakStatus, text: "Status: failed"),
@@ -273,6 +283,8 @@ suite "FixtureDataSource":
           source.manifest{"fleet", "events"}.hasKey(session.id):
         inc withHistory
         if session.failureOf.len > 0: inc withReason
+      # No row shows a line the capture scrubbed as its failure.
+      check not session.failureOf.startsWith("[scrubbed")
     check withHistory > 0
     check withReason > 0
 

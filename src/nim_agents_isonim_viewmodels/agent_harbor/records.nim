@@ -414,15 +414,21 @@ proc sessionLabelsFromJson*(node: JsonNode): seq[(string, SessionLabel)] =
                                  initiative: entry.str("initiative"),
                                  source: entry.str("source"))))
 
+proc isReasonLine*(event: FleetActivity): bool =
+  ## A log line that can say why a session failed. A line a capture replaced
+  ## because it quoted a prompt (`[scrubbed: …]`) is no reason, whatever its
+  ## level, and neither is an empty one.
+  event.kind == fakLog and event.text.strip.len > 0 and
+    not event.text.startsWith("[scrubbed")
+
 proc failureReasonOf*(newestFirst: openArray[FleetActivity]): string =
   ## The reason a history gives for a failure: its newest error-level log
-  ## line, else its newest log line of any level (`[exit] status=143`).
+  ## line, else its newest log line of any level (`[exit] status=143`); only
+  ## lines `isReasonLine` accepts count.
   for event in newestFirst:
-    if event.kind == fakLog and event.level == "error": return event.text
+    if event.isReasonLine and event.level == "error": return event.text
   for event in newestFirst:
-    if event.kind == fakLog and event.text.strip.len > 0 and
-        not event.text.startsWith("[scrubbed"):
-      return event.text
+    if event.isReasonLine: return event.text
   ""
 
 proc applyLabel*(session: var FleetSession; label: SessionLabel) =
