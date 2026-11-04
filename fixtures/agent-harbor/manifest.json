@@ -92,14 +92,24 @@
       "campaign": "Telemetry upload retries",
       "visibility": "synthetic",
       "revision": "",
-      "file": "plans/Telemetry-Retry.milestones.org"
+      "file": "plans/Telemetry-Retry.milestones.org",
+      "initiative": {
+        "id": "telemetry-retry",
+        "repository": "orbit-labs/telemetry",
+        "manager": "tr-manager"
+      }
     },
     {
       "name": "Route-Cache.milestones.org",
       "campaign": "Route cache on the new storage layer",
       "visibility": "synthetic",
       "revision": "",
-      "file": "plans/Route-Cache.milestones.org"
+      "file": "plans/Route-Cache.milestones.org",
+      "initiative": {
+        "id": "route-cache",
+        "repository": "orbit-labs/flight-planner",
+        "manager": ""
+      }
     }
   ],
   "diffs": [
@@ -174,8 +184,64 @@
       "sessionList": "scenarios/permission-granted.sessions.json",
       "events": "scenarios/permission-granted.events.json",
       "acpTranscript": "scenarios/permission-granted.acp-transcript.json"
+    },
+    {
+      "name": "storage-choice",
+      "scenario": "storage-choice.yaml",
+      "sessionStatus": "completed",
+      "eventCount": 8,
+      "acpStopReason": "end_turn",
+      "acpMessageCount": 6,
+      "session": "scenarios/storage-choice.session.json",
+      "sessionList": "scenarios/storage-choice.sessions.json",
+      "events": "scenarios/storage-choice.events.json",
+      "acpTranscript": "scenarios/storage-choice.acp-transcript.json"
     }
   ],
+  "workingSets": {
+    "scenario": [
+      {
+        "from": "scenario",
+        "scenarioRun": "storage-choice",
+        "at": "question",
+        "origin": "webui",
+        "plan": "Route-Cache.milestones.org",
+        "stated": "invented, like every value of this set"
+      },
+      {
+        "from": "scenario",
+        "scenarioRun": "edit-and-test",
+        "at": 4,
+        "origin": "codetracer",
+        "plan": "Telemetry-Retry.milestones.org",
+        "stated": "invented, like every value of this set"
+      },
+      {
+        "from": "scenario",
+        "scenarioRun": "permission-granted",
+        "at": "end",
+        "origin": "tui",
+        "plan": "Telemetry-Retry.milestones.org",
+        "stated": "invented, like every value of this set"
+      }
+    ],
+    "real": [
+      {
+        "from": "fleet",
+        "sessionId": "c43bad2a-276d-40d4-a1e5-19fa40e9e482",
+        "origin": "cli",
+        "plan": "Route-Cache.milestones.org",
+        "stated": "invented, like every value of this set"
+      },
+      {
+        "from": "fleet",
+        "sessionId": "cf5812b4-9eed-4419-a939-9299c29cf633",
+        "origin": "ah-lite",
+        "plan": "",
+        "stated": "invented, like every value of this set"
+      }
+    ]
+  },
   "files": {
     "diffs/orbit-sim-propagator-step-count.diff": "452ebc4a46f569265f7fee09a3781693be8007fbc3caab231ae81b76bb811a38",
     "diffs/telemetry-ui-latency-chart-light-theme.diff": "77f8fb354cf84f90fd087835641573535ca0056d2e06fc32270e6f53c761a0a7",
@@ -254,8 +320,8 @@
     "fleet/labels.json": "60875590f5fe5f8dd1d784930eacc152d2c07bdcfedd4baae9f5a472cd2ef7a4",
     "fleet/lifecycle.sse": "baf70b90c159d0f551227be200f27cec9c9fe890ae9c444ef9d8c1daa561b473",
     "fleet/sessions.json": "8f7385cf967b7f116388f0e476996776a888af44e77cd26a676f2923429f8573",
-    "plans/Route-Cache.milestones.org": "e9a4a088747bc6738e1e99cd3187d7379d5ff1fad83e97de5d7f3a939168a7cf",
-    "plans/Telemetry-Retry.milestones.org": "bb20d681d9134d94985ada4caa5af78862e9d43ceae748254dfafaba6c3e71a8",
+    "plans/Route-Cache.milestones.org": "5bd82ce604b4107b799dcfd168249e221c47a7f0a54e6295790a9dee24c7a26d",
+    "plans/Telemetry-Retry.milestones.org": "f08fbb44270f6f4b9e59f1039c32868a842b7c172ac9d5e5b4daecd8b399bc35",
     "scenarios/edit-and-test.acp-transcript.json": "28d3e0ed31f8e1e7e21168b261a3a41302a502bdfae3eda19002a44a43a99f1b",
     "scenarios/edit-and-test.events.json": "6877e49d361d962fc5ccd44219f8ae6201cf42809bddef2b9a102be0911c1f31",
     "scenarios/edit-and-test.session.json": "72d61d248f38b8eaf1a691cc84bc3b457b261e5834056cde50412cba1e53eb52",
@@ -264,6 +330,10 @@
     "scenarios/permission-granted.events.json": "d94bd30673cb12d4bc9c61707b924f17c9b3c840d88830dd7fa031a5ed8dc71f",
     "scenarios/permission-granted.session.json": "2fb7424ebad08eab1f699cafc7b5c249d5e20c4c475e68ad6d9ada9d63a5ebd3",
     "scenarios/permission-granted.sessions.json": "8c374ef6c9f6444f19bcdad96af659e7cf7038c66403d9cbe01f735bb82417c1",
+    "scenarios/storage-choice.acp-transcript.json": "a434f21c96f073b45908d69f65a5d7d0d517ae9556b75f28844d725ec4dcf83e",
+    "scenarios/storage-choice.events.json": "467d9ee308c43f628a573c411b7b914c8c3e042e5174db03b0e632388c12276d",
+    "scenarios/storage-choice.session.json": "c11834ff69ebf7837e3190d83585270bb524f42788ff28393f2686f44e69f8bc",
+    "scenarios/storage-choice.sessions.json": "110504be6dec3342e6923ddf909c67adec6808a4b576b7d9ec3e2ebfc5aa7982",
     "tests/scheduler-tests.ct-events.jsonl": "7e12fab22bf4e07be446d6e462f6012533ffe67d0a30b461577452c718457c44",
     "tests/scheduler-tests.test-run-events.json": "9914538c459fb62450b975e9e8da9ac9673253c6aca81cdf5ca388f4c6f4d967",
     "tests/units-library-tests.ct-events.jsonl": "319ee820d13d4ed90fdaa150efcc2329350bc1df943d29c2890e452365ad0894",

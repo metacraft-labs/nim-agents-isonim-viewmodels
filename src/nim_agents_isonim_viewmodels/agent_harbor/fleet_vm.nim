@@ -1,6 +1,9 @@
-## `FleetSnapshotVM`: the reactive view of an Agent Harbor fleet's sessions,
-## the data behind a fleet overview panel (the counterpart of the
-## AH WebUI's session feed, inventory items INV-P2-01 and INV-P2-12).
+## `FleetSnapshotVM`: the sessions family's LIST variant -- the reactive view
+## of an Agent Harbor fleet's sessions, the data behind a fleet overview panel
+## (a scannable table of every session, waiting-for-a-person first; the
+## counterpart of the AH WebUI's session feed, inventory items INV-P2-01 and
+## INV-P2-12). The tab-strip variant over the same domain is
+## `session_tabs_vm.nim`.
 ##
 ## It reads through an `AgentHarborDataSource` and publishes:
 ##
@@ -15,18 +18,25 @@
 ##
 ## Text formatting (agent labels, ages, activity lines) is done here rather
 ## than in a view so every front-end, and every headless test, reads the same
-## words.
+## words. The rules beneath it -- effective status, the title's fallback, the
+## activity digest -- are nim-agents' (`nim_agents/agent_harbor/*`).
+##
+## A row's activity is a digest (`digestActivity`): every distinct recent
+## line once, counted, the most informative first. A row shows the first line;
+## `expandedId` names the one row that shows them all.
 
 import std/[algorithm, strutils]
 import isonim/core/[signals, computation]
 import isonim/viewmodel
+import nim_agents/agent_harbor/[session_directory, activity_digest]
 import ./data_source
 
-export data_source, viewmodel, signals, computation
+export data_source, viewmodel, signals, computation, activity_digest
 
 const
   FleetActivityLineLimit* = 3
-    ## Activity lines per row, as the AH WebUI shows (inventory INV-P2-25).
+    ## The most activity lines an expanded row shows (the AH WebUI shows
+    ## three, inventory INV-P2-25); a collapsed row shows one.
   FleetWithheldPromptText* = "prompt withheld"
     ## Said beside a title that is not the prompt, when the server withheld it.
   FleetEmptyPromptText* = "no prompt"
@@ -65,13 +75,19 @@ type
     inputSource*: string
     failureText*: string
     activity*: seq[string]
+      ## The digest's lines as shown, most informative first, at most
+      ## `FleetActivityLineLimit`.
     activityLevels*: seq[string]
+    activityMore*: int
+      ## Distinct lines beyond those in `activity`.
     selected*: bool
+    expanded*: bool
 
   FleetCounts* = object
     total*: int                ## sessions the server reports in all
     listed*: int               ## sessions this snapshot holds
     byCategory*: array[FleetCategory, int]
+    withheldPrompts*: int      ## sessions whose prompt the server withheld
 
   FleetSnapshotVM* = ref object of ViewModel
     source: AgentHarborDataSource
@@ -82,6 +98,8 @@ type
     error*: Signal[string]
     filter*: Signal[FleetFilter]
     selectedId*: Signal[string]
+    expandedId*: Signal[string]
+      ## The row that shows all its activity lines ("" for none).
     selectedEvents*: Signal[SessionEventHistory]
     eventsState*: Signal[AsyncState]
     eventsError*: Signal[string]
@@ -100,6 +118,7 @@ proc newFleetSnapshotVM*(source: AgentHarborDataSource): FleetSnapshotVM =
       error: createSignal(""),
       filter: createSignal(ffAll),
       selectedId: createSignal(""),
+      expandedId: createSignal(""),
       selectedEvents: createSignal(SessionEventHistory()),
       eventsState: createSignal(asIdle),
       eventsError: createSignal(""))
@@ -139,11 +158,6 @@ proc matches(filter: FleetFilter; category: FleetCategory): bool =
   of ffFailed: category == fcFailed
   of ffEnded: category == fcEnded
 
-proc lastActivityMs(session: FleetSession): int64 =
-  result = max(session.updatedAtMs, max(session.startedAtMs, session.createdAtMs))
-  for event in session.recent:
-    result = max(result, event.timestampMs)
-
 proc repositoryLabel(url: string): string =
   ## `owner/name` of a repository URL; the URL itself when it has no path.
   var s = url
@@ -167,40 +181,12 @@ proc failureOf*(session: FleetSession): string =
   result = failureReasonOf(session.recent.reversed)
   if result.len == 0: result = session.failureReason
 
-proc titleOf*(session: FleetSession): tuple[text, source: string] =
-  ## What a row is titled, in order of preference: the prompt's first line;
-  ## when the prompt is withheld or empty, what a person calls the session --
-  ## its name, its branch, its workspace; and only when nothing is known, its
-  ## short id. Every session therefore gets a title that tells it apart from
-  ## its neighbours.
-  let shortId = if session.id.len > 8: session.id[0 ..< 8] else: session.id
-  if session.prompt.strip.len > 0: (session.prompt.strip.splitLines()[0], "prompt")
-  elif session.name.strip.len > 0: (session.name.strip, "name")
-  elif session.branch.strip.len > 0: (session.branch.strip, "branch")
-  elif session.workspaceName.strip.len > 0: (session.workspaceName.strip, "workspace")
-  else: ("Session " & shortId, "id")
-
-proc activityLines*(recent: openArray[FleetActivity];
-                    limit = FleetActivityLineLimit): (seq[string], seq[string]) =
-  ## The newest `limit` activity lines, oldest first, with their levels. A run
-  ## of identical consecutive lines is one line marked `×N`, so a stalled
-  ## session that resumed three times reads as one line, not three.
-  var texts, levels: seq[string]
-  var counts: seq[int]
-  for event in recent:
-    if texts.len > 0 and texts[^1] == event.text and levels[^1] == event.level:
-      inc counts[^1]
-    else:
-      texts.add(event.text)
-      levels.add(event.level)
-      counts.add(1)
-  let start = max(0, texts.len - limit)
-  for i in start ..< texts.len:
-    result[0].add(if counts[i] > 1: texts[i] & " \xC3\x97" & $counts[i] else: texts[i])
-    result[1].add(levels[i])
-
-proc toRow(session: FleetSession; nowMs: int64; selected: string): FleetRow =
-  let (title, source) = session.titleOf
+proc toRow(session: FleetSession; nowMs: int64; selected: string;
+           expanded = ""): FleetRow =
+  # nim-agents' rule (`session_directory.titleOf`): the prompt, else the
+  # session's name, branch or workspace, else its short id.
+  let (title, labelSource) = session_directory.titleOf(session)
+  let source = $labelSource
   result = FleetRow(
     id: session.id,
     shortId: if session.id.len > 8: session.id[0 ..< 8] else: session.id,
@@ -232,11 +218,17 @@ proc toRow(session: FleetSession; nowMs: int64; selected: string): FleetRow =
     needsInput: session.category == fcNeedsInput,
     inputSource: session.awaitingInputSource,
     failureText: session.failureOf,
-    selected: session.id == selected)
-  (result.activity, result.activityLevels) = activityLines(session.recent)
+    selected: session.id == selected,
+    expanded: session.id == expanded)
+  let digest = digestActivity(session.recent, currentStatus = session.rawStatus)
+  let shown = min(digest.len, FleetActivityLineLimit)
+  for i in 0 ..< shown:
+    result.activity.add digest[i].lineText
+    result.activityLevels.add digest[i].level
+  result.activityMore = digest.len - shown
 
 proc rowsOf*(snapshot: FleetSnapshot; filter: FleetFilter;
-             selected = ""): seq[FleetRow] =
+             selected = ""; expanded = ""): seq[FleetRow] =
   ## The ordering every front-end shows, untracked: sessions waiting for a
   ## person first, then running, queued, failed and ended; within a category
   ## the most recently active first, the session id breaking ties so the
@@ -250,19 +242,21 @@ proc rowsOf*(snapshot: FleetSnapshot; filter: FleetFilter;
     if result == 0: result = cmp(b.lastActivityMs, a.lastActivityMs)
     if result == 0: result = cmp(a.id, b.id)
   for session in sessions:
-    result.add(session.toRow(snapshot.capturedAtMs, selected))
+    result.add(session.toRow(snapshot.capturedAtMs, selected, expanded))
 
 proc rows*(vm: FleetSnapshotVM): seq[FleetRow] =
   ## Tracked: depends on the snapshot, the filter and the selection.
   discard vm.revision.val
-  rowsOf(vm.snapshot, vm.filter.val, vm.selectedId.val)
+  rowsOf(vm.snapshot, vm.filter.val, vm.selectedId.val, vm.expandedId.val)
 
 proc counts*(vm: FleetSnapshotVM): FleetCounts =
   ## Tracked: depends on the snapshot only, so a filter change does not move
   ## the counts.
   discard vm.revision.val
-  FleetCounts(total: vm.snapshot.total, listed: vm.snapshot.sessions.len,
-              byCategory: categoryCounts(vm.snapshot.sessions))
+  result = FleetCounts(total: vm.snapshot.total, listed: vm.snapshot.sessions.len,
+                       byCategory: categoryCounts(vm.snapshot.sessions))
+  for session in vm.snapshot.sessions:
+    if session.promptWithheld: inc result.withheldPrompts
 
 proc capturedAgeLabel*(vm: FleetSnapshotVM): string =
   ## When the snapshot was taken, as `YYYY-MM-DD HH:MM UTC`; empty if unknown.
@@ -286,6 +280,10 @@ proc capturedAgeLabel*(vm: FleetSnapshotVM): string =
 
 proc setFilter*(vm: FleetSnapshotVM; filter: FleetFilter) =
   vm.filter.val = filter
+
+proc toggleExpanded*(vm: FleetSnapshotVM; sessionId: string) =
+  ## Shows all of a row's activity lines, or folds them back to one.
+  vm.expandedId.val = if vm.expandedId.val == sessionId: "" else: sessionId
 
 proc select*(vm: FleetSnapshotVM; sessionId: string) =
   ## Selects a session and loads its event history; selecting the selected

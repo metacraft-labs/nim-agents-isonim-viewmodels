@@ -133,30 +133,42 @@ suite "Agent Harbor records":
       FleetActivity(kind: fakLog, level: "error", text: "late error")])
     check session.failureOf == ""
 
-  test "repeated activity lines collapse into one, counted":
-    let a = FleetActivity(text: "Resumed by human", level: "")
-    let b = FleetActivity(text: "Waiting for input", level: "")
-    let (texts, levels) = activityLines([b, a, a, a, b])
-    check texts == @["Waiting for input", "Resumed by human \xC3\x973", "Waiting for input"]
-    check levels.len == 3
-    let (newest, _) = activityLines([a, b, a, b, a], limit = 2)
-    check newest == @["Waiting for input", "Resumed by human"]
+  test "a row's activity collapses repeats and leads with what says most":
+    # Manager note 4(3): the routine "Resumed by human" / "Waiting for input"
+    # events collapse, counted, and the most informative recent event leads.
+    let a = FleetActivity(kind: fakResumed, text: "Resumed by human", level: "")
+    let b = FleetActivity(kind: fakAwaitingInput, text: "Waiting for input", level: "")
+    let c = FleetActivity(kind: fakLog, text: "assistant: wrote the migration", level: "info")
+    var row = rowsOf(FleetSnapshot(sessions: @[FleetSession(id: "s1",
+      status: fsRunning, recent: @[c, b, a, a, a, b])]), ffAll)[0]
+    check row.activity == @["assistant: wrote the migration",
+                            "Waiting for input \xC3\x972", "Resumed by human \xC3\x973"]
+    check row.activityLevels.len == 3
+    check row.activityMore == 0
+    check not row.expanded
+    # More distinct lines than a row shows are counted, not dropped silently.
+    row = rowsOf(FleetSnapshot(sessions: @[FleetSession(id: "s1", status: fsRunning,
+      recent: @[c, b, a, FleetActivity(kind: fakStatus, text: "Status: running")])]),
+      ffAll, expanded = "s1")[0]
+    check row.activity.len == FleetActivityLineLimit
+    check row.activityMore == 1
+    check row.expanded
 
   test "a withheld prompt falls back to what a person calls the session":
     var session = FleetSession(id: "0123456789abcdef", promptWithheld: true,
                                withheld: @["prompt"])
-    check session.titleOf == ("Session 01234567", "id")
+    check session.titleOf == ("Session 01234567", lsId)
     session.workspaceName = "orbit-ws-2"
-    check session.titleOf == ("orbit-ws-2", "workspace")
+    check session.titleOf == ("orbit-ws-2", lsWorkspace)
     session.branch = "fix/step-count"
-    check session.titleOf == ("fix/step-count", "branch")
+    check session.titleOf == ("fix/step-count", lsBranch)
     session.applyLabel(SessionLabel(name: "propagator", workspaceName: "ignored",
                                     initiative: "Retries", source: "a window"))
-    check session.titleOf == ("propagator", "name")
+    check session.titleOf == ("propagator", lsName)
     check session.workspaceName == "orbit-ws-2" # the listing's value wins
     check session.initiative == "Retries"
     session.prompt = "Fix the step counter\nand its tests"
-    check session.titleOf == ("Fix the step counter", "prompt")
+    check session.titleOf == ("Fix the step counter", lsPrompt)
     let row = rowsOf(FleetSnapshot(sessions: @[FleetSession(id: "abcdef0123",
       promptWithheld: true, name: "propagator", status: fsRunning)]), ffAll)[0]
     check row.title == "propagator"
@@ -272,7 +284,7 @@ suite "FixtureDataSource":
         inc named
         check session.name == table[session.id]["name"].getStr
         if session.prompt.len == 0:
-          check session.titleOf.source == "name"
+          check session.titleOf.source == lsName
     check named > 0
 
   test "failed sessions with a captured history carry its reason":

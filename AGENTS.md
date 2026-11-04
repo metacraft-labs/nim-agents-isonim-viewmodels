@@ -12,6 +12,17 @@ Domain logic (what an event changes) belongs in `nim-agents`, not here. A
 viewmodel here publishes reducer state through signals and adds only
 presentation state that needs reactivity.
 
+Alternative viewmodels (README.md): a concern may have several viewmodels,
+one per UI pattern (a tab strip and a list of the same sessions). Keep the
+domain single and signal-free in `nim-agents`, make the choices variants
+legitimately differ on into policies there, put a shared contract where one
+fits (`agent_harbor/session_items.nim`), give each variant its own module
+whose header names its UI pattern, and give each variant its own tests and
+stories. Keep viewmodels front-end neutral: no web-only assumption (a
+measured width is a number in the renderer's unit, pixels or cells), and
+feed them only through the data-source seam, so a live or playback source
+can drive them event by event.
+
 Commands:
 - `just build`: compile native and JS targets.
 - `just test`: run native and JS tests.
@@ -24,8 +35,12 @@ Siblings are expected next to this checkout (`../nim-agents`, `../isonim`, …);
 Structure:
 - `src/nim_agents_isonim_viewmodels/activity_vm.nim`: reactive view over `ActivityTimeline`.
 - `src/nim_agents_isonim_viewmodels/agent_harbor/`: the Agent Harbor front-end
-  prototypes' viewmodels (`fleet_vm.nim` `FleetSnapshotVM`), their records
-  (`records.nim`) and the data-source seam they read through
+  prototypes' viewmodels (`fleet_vm.nim` `FleetSnapshotVM`, the fleet list;
+  `session_tabs_vm.nim` `SessionTabStripVM`, sessions as tabs, over the
+  `session_items.nim` contract; `initiatives_vm.nim`,
+  `initiative_progress_vm.nim`), invented working sets for the states no
+  capture shows (`synthetic_fleet.nim`), their records (`records.nim`, a
+  re-export of nim-agents' `fleet_records`) and the data-source seam they read through
   (`data_source.nim` `AgentHarborDataSource`, with state sources for loading,
   error and empty; `fixture_source.nim` `FixtureDataSource`). A live source
   over `nim-agent-harbor` implements the same seam later.

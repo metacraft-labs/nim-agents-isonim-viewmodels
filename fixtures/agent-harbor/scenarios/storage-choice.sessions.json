@@ -1,0 +1,63 @@
+{
+  "items": [
+    {
+      "id": "2cb29042-2178-4a52-a2ca-b65e1955e5f3",
+      "org_id": "00000000-0000-0000-0000-000000000000",
+      "task": {
+        "prompt": "Move the route cache to the new storage layer; ask me which backend if unsure"
+      },
+      "agent": {
+        "agent": {
+          "software": "Claude",
+          "version": "latest"
+        },
+        "model": "",
+        "count": 1
+      },
+      "runtime": {
+        "type": "local"
+      },
+      "workspace": {
+        "snapshotProvider": "git",
+        "mountPath": ""
+      },
+      "vcs": {
+        "repo_url": null,
+        "branch": null,
+        "commit": null
+      },
+      "status": "completed",
+      "createdAt": "1970-01-01T00:00:00Z",
+      "updatedAt": "2026-01-15T10:00:00.000Z",
+      "started_at": "1970-01-01T00:00:00Z",
+      "ended_at": "2026-01-15T10:00:00.000Z",
+      "awaiting_input": false,
+      "recent_events": [
+        {
+          "type": "tool_use",
+          "status": "started",
+          "tool_name": "runCmd",
+          "tool_execution_id": "tool-1",
+          "tool_args": {
+            "command": "make test-cache"
+          },
+          "timestamp": 0
+        },
+        {
+          "type": "tool_result",
+          "status": "completed",
+          "tool_name": "runCmd",
+          "tool_execution_id": "tool-1",
+          "timestamp": 0
+        },
+        {
+          "type": "status",
+          "status": "completed",
+          "timestamp": 0
+        }
+      ]
+    }
+  ],
+  "total": 1,
+  "nextPage": null
+}

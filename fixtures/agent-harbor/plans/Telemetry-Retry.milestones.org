@@ -2,9 +2,9 @@
 
 * Document
   :PROPERTIES:
-  :next_steps: Finish TR-2.
+  :next_steps: Finish TR-M2.
   :last_updated: 2026-01-14
-  :current_milestone: TR-2
+  :current_milestone: TR-M2
   :executive_summary: Telemetry upload retries: one milestone done, one in progress, one planned.
   :END:
 
@@ -13,7 +13,7 @@
 
 * Milestones
 
-** TR-1: Groundwork
+** TR-M1: Groundwork
    :PROPERTIES:
    :status: completed
    :depends_on: 
@@ -23,34 +23,34 @@
     - [x] The groundwork is in place.
 
 *** Verification
-    - test_name: just test-tr-1
+    - test_name: just test-tr-m1
       description: The milestone's tests pass.
       status: passing
 
-** TR-2: The main change
+** TR-M2: The main change
    :PROPERTIES:
    :status: in_progress
-   :depends_on: TR-1
+   :depends_on: TR-M1
    :END:
 
 *** Deliverables
     - [ ] The change is in place.
 
 *** Verification
-    - test_name: just test-tr-2
+    - test_name: just test-tr-m2
       description: The milestone's tests pass.
       status: pending
 
-** TR-3: Polish and release
+** TR-M3: Polish and release
    :PROPERTIES:
    :status: planned
-   :depends_on: TR-2
+   :depends_on: TR-M2
    :END:
 
 *** Deliverables
     - [ ] The release notes is in place.
 
 *** Verification
-    - test_name: just test-tr-3
+    - test_name: just test-tr-m3
       description: The milestone's tests pass.
       status: pending

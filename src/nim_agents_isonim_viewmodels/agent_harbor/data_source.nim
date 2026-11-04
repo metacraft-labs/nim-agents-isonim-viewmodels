@@ -26,9 +26,10 @@
 ## source that serves only part of the surface fails loudly and visibly
 ## rather than rendering an empty panel that looks like an empty fleet.
 
+import nim_agents/agent_harbor/initiatives
 import ./records
 
-export records
+export records, initiatives
 
 type
   DataResult*[T] = object
@@ -80,6 +81,7 @@ type
   DiffsCallback* = proc(answer: DataResult[seq[BranchDiff]]) {.closure.}
   TestRunsCallback* = proc(answer: DataResult[seq[TestRunCapture]]) {.closure.}
   ScenarioRunsCallback* = proc(answer: DataResult[seq[ScenarioRunCapture]]) {.closure.}
+  InitiativesCallback* = proc(answer: DataResult[seq[Initiative]]) {.closure.}
 
   AgentHarborDataSource* = ref object of RootObj
     ## The interface. `label` names the source in a panel's chrome ("fleet
@@ -123,6 +125,12 @@ method loadScenarioRuns*(source: AgentHarborDataSource;
                          done: ScenarioRunsCallback) {.base.} =
   done(failure[seq[ScenarioRunCapture]](source.unsupported("scenario runs")))
 
+method loadInitiatives*(source: AgentHarborDataSource;
+                        done: InitiativesCallback) {.base.} =
+  ## The running plans the server knows, each with its progress and the
+  ## sessions launched for it (the proposed `GET /api/v1/initiatives`).
+  done(failure[seq[Initiative]](source.unsupported("initiatives")))
+
 # ---------------------------------------------------------------------------
 # State sources: the states no capture shows
 # ---------------------------------------------------------------------------
@@ -132,6 +140,7 @@ type
     ## Never answers: a server that accepted the request and has not replied.
     ## Holds the callbacks so a test can prove none was called.
     pendingFleet*: seq[FleetCallback]
+    pendingInitiatives*: seq[InitiativesCallback]
 
   FailingDataSource* = ref object of AgentHarborDataSource
     ## Answers every load with the same error.
@@ -139,8 +148,10 @@ type
 
   SnapshotDataSource* = ref object of AgentHarborDataSource
     ## Answers the session list with a given snapshot (an empty fleet, or a
-    ## synthetic one larger than any capture).
+    ## synthetic one larger than any capture), and the initiatives with given
+    ## ones.
     snapshot*: FleetSnapshot
+    initiatives*: seq[Initiative]
 
 proc newPendingDataSource*(label = "waiting for the server"): PendingDataSource =
   PendingDataSource(label: label)
@@ -154,6 +165,9 @@ method loadLifecycle*(source: PendingDataSource; done: LifecycleCallback) =
 method loadSessionEvents*(source: PendingDataSource; sessionId: string;
                           done: EventsCallback) =
   discard
+
+method loadInitiatives*(source: PendingDataSource; done: InitiativesCallback) =
+  source.pendingInitiatives.add(done)
 
 proc newFailingDataSource*(error: string;
                            label = "unreachable server"): FailingDataSource =
@@ -169,9 +183,16 @@ method loadSessionEvents*(source: FailingDataSource; sessionId: string;
                           done: EventsCallback) =
   done(failure[SessionEventHistory](source.error))
 
+method loadInitiatives*(source: FailingDataSource; done: InitiativesCallback) =
+  done(failure[seq[Initiative]](source.error))
+
 proc newSnapshotDataSource*(snapshot: FleetSnapshot;
-                            label = "synthetic fleet"): SnapshotDataSource =
-  SnapshotDataSource(label: label, snapshot: snapshot)
+                            label = "synthetic fleet";
+                            initiatives: seq[Initiative] = @[]): SnapshotDataSource =
+  SnapshotDataSource(label: label, snapshot: snapshot, initiatives: initiatives)
 
 method loadFleet*(source: SnapshotDataSource; done: FleetCallback) =
   done(success(source.snapshot))
+
+method loadInitiatives*(source: SnapshotDataSource; done: InitiativesCallback) =
+  done(success(source.initiatives))

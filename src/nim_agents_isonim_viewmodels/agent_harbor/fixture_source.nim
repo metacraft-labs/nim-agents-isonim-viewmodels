@@ -32,6 +32,7 @@
 ## a fixture set and its manifest cannot drift apart unnoticed.
 
 import std/[json, os, strutils, tables]
+import nim_agents/agent_harbor/session_replay
 import ./data_source
 
 export data_source
@@ -213,3 +214,168 @@ method loadScenarioRuns*(source: FixtureDataSource;
         sessionJson: source.files[entry{"session"}.getStr],
         eventsJson: source.files[entry{"events"}.getStr]))
     runs
+
+# ---------------------------------------------------------------------------
+# The working set and the initiatives
+# ---------------------------------------------------------------------------
+#
+# A fixture set's `workingSets` name, each, the sessions an operator works
+# with -- the ones a front-end shows as tabs -- among its captured sessions,
+# and state what no server serves yet: the front-end each session was started
+# from and the plan it was launched for. The plans' `initiative` entries name
+# the initiative a server would list for each plan. Every set is coherent --
+# never real and invented data in one story:
+#
+# - `scenario`: scenario runs (each shown at a stated moment of its history:
+#   its end, right after the agent's first question, or after a number of
+#   events) and the INVENTED plans they are launched for;
+# - `real`: sessions of the fleet snapshot and the REAL plans, associated
+#   only where the association is known (Agent Harbor reports none yet).
+#
+# `workingSet` and `initiativesOf` assemble these into the records a live
+# source would decode from the wire, so the viewmodels cannot tell the two
+# apart.
+
+type
+  WorkingSetKind* = enum
+    wsScenario = "scenario"
+    wsReal = "real"
+
+proc planIsInvented(entry: JsonNode): bool =
+  entry{"visibility"}.getStr == "invented"
+
+proc planMatches(entry: JsonNode; kind: WorkingSetKind): bool =
+  ## Which plans a set may hold: invented ones for the scenario set, real
+  ## ones for the real set. The synthetic fixture set's plans are all
+  ## invented and stand in for both.
+  let visibility = entry{"visibility"}.getStr
+  if visibility == "synthetic": true
+  elif kind == wsScenario: visibility == "invented"
+  else: visibility != "invented"
+
+const
+  WorkingSetSpacingMs = 7 * 60_000'i64
+    ## Scenario runs carry no wall-clock time of their own (their events are
+    ## timed from the run's start); they are placed this far apart before the
+    ## capture's instant, the first entry earliest, so a front-end that
+    ## orders by launch shows them in working-set order and ages read as a
+    ## working day.
+
+proc planInitiativeIds(source: FixtureDataSource): Table[string, (string, string)] =
+  ## Plan file name -> (initiative id, campaign title).
+  for entry in source.manifest{"plans"}.getElems:
+    let id = entry{"initiative", "id"}.getStr
+    if id.len > 0:
+      result[entry{"name"}.getStr] = (id, entry{"campaign"}.getStr)
+
+proc scenarioRunEntry(source: FixtureDataSource; name: string): JsonNode =
+  for entry in source.manifest{"scenarioRuns"}.getElems:
+    if entry{"name"}.getStr == name: return entry
+  raise newException(KeyError, "the working set names a scenario run the set does not hold: " & name)
+
+proc workingSet*(source: FixtureDataSource;
+                 kind = wsScenario): FleetSnapshot =
+  ## The working set `kind` as a snapshot, in working-set order. Raises
+  ## `KeyError` / `ValueError` when the manifest names what the set lacks,
+  ## or a plan the set may not hold.
+  result = FleetSnapshot(capturedAtMs: source.capturedAtMs,
+                         sourceLabel: (if kind == wsScenario: "scenario runs"
+                                       else: "fleet sessions"))
+  let plans = source.planInitiativeIds
+  var planEntries = initTable[string, JsonNode]()
+  for entry in source.manifest{"plans"}.getElems: planEntries[entry{"name"}.getStr] = entry
+  var fleet: FleetSnapshot
+  var fleetLoaded = false
+  let entries = source.manifest{"workingSets", $kind}.getElems
+  for i, entry in entries:
+    var session: FleetSession
+    case entry{"from"}.getStr
+    of "scenario":
+      let run = source.scenarioRunEntry(entry{"scenarioRun"}.getStr)
+      let listed = fleetSessionFromJson(parseJson(source.files[run{"session"}.getStr]))
+      let events = eventsOldestFirst(parseJson(source.files[run{"events"}.getStr]))
+      let at = entry{"at"}
+      let count =
+        if at.isNil or (at.kind == JString and at.getStr == "end"): events.len
+        elif at.kind == JInt: at.getInt
+        elif at.kind == JString and at.getStr == "question":
+          let questions = questionIndexes(events)
+          if questions.len == 0:
+            raise newException(ValueError, "scenario run " & run{"name"}.getStr &
+                               " has no question to stop at")
+          questions[0] + 1
+        else:
+          raise newException(ValueError, "unknown working-set moment " & $at)
+      let startMs = source.capturedAtMs - int64(entries.len - i) * WorkingSetSpacingMs
+      session = sessionAt(listed, events, count, startMs)
+      # A scenario runs in a throw-away scratch workspace whose name is an id.
+      session.workspaceName = ""
+      session.labelSource = "scenario run " & run{"scenario"}.getStr
+    of "fleet":
+      if not fleetLoaded:
+        source.loadFleet proc(answer: DataResult[FleetSnapshot]) =
+          if not answer.ok: raise newException(ValueError, answer.error)
+          fleet = answer.value
+        fleetLoaded = true
+      let id = entry{"sessionId"}.getStr
+      var found = false
+      for candidate in fleet.sessions:
+        if candidate.id == id:
+          session = candidate
+          found = true
+          break
+      if not found:
+        raise newException(KeyError, "the working set names a session the snapshot lacks: " & id)
+    else:
+      raise newException(ValueError, "unknown working-set source " & entry{"from"}.getStr)
+    session.originFrontEnd = entry{"origin"}.getStr
+    let plan = entry{"plan"}.getStr
+    if plan.len > 0:
+      if plan notin plans:
+        raise newException(KeyError, "the working set names a plan with no initiative: " & plan)
+      if not planEntries[plan].planMatches(kind):
+        raise newException(ValueError, "the " & $kind & " working set names a plan it may not hold: " & plan)
+      (session.planId, session.initiative) = plans[plan]
+    result.sessions.add session
+  result.total = result.sessions.len
+
+proc initiativesOf*(source: FixtureDataSource; kind: WorkingSetKind): seq[Initiative] =
+  ## The initiatives of the working set `kind`: its plans (invented for the
+  ## scenario set, real for the real set), each with the set's sessions
+  ## launched for it.
+  var sessionPlans: seq[(string, string)]
+  if not source.manifest{"workingSets", $kind}.isNil:
+    for session in source.workingSet(kind).sessions:
+      sessionPlans.add (session.id, session.planId)
+  for entry in source.manifest{"plans"}.getElems:
+    let meta = entry{"initiative"}
+    if meta.isNil or meta{"id"}.getStr.len == 0 or not entry.planMatches(kind): continue
+    block:
+      let text = source.files[entry{"file"}.getStr]
+      var initiative = Initiative(
+        id: meta{"id"}.getStr, title: entry{"campaign"}.getStr,
+        repository: meta{"repository"}.getStr, manager: meta{"manager"}.getStr,
+        planPath: entry{"name"}.getStr,
+        executiveSummary: planExecutiveSummary(text),
+        progress: parseMilestoneFile(entry{"name"}.getStr, text))
+      for (id, plan) in sessionPlans:
+        if plan == initiative.id: initiative.sessionIds.add id
+      # Through the proposed wire shape and back: what a live source would
+      # decode is exactly what the views get.
+      result.add initiativeFromJson(initiative.toJson)
+
+method loadInitiatives*(source: FixtureDataSource; done: InitiativesCallback) =
+  ## The real plans (the fixture source stands for a real server).
+  answer[seq[Initiative]](done):
+    source.initiativesOf(wsReal)
+
+proc newWorkingSetDataSource*(kind = wsScenario;
+                              fixtures = newFixtureDataSource()): SnapshotDataSource =
+  ## The working set `kind` and its initiatives, served the way a live server
+  ## would serve an operator's sessions and running plans: the scenario set
+  ## (scenario runs and the invented plans they are launched for) or the real
+  ## set (fleet sessions and the real plans). Never a mixture.
+  let label = (if kind == wsScenario: "scenario runs with invented plans"
+               else: "real fleet sessions and plans, ") &
+              (if kind == wsReal: fixtures.label.replace("fleet snapshot, ", "") else: "")
+  newSnapshotDataSource(fixtures.workingSet(kind), label, fixtures.initiativesOf(kind))

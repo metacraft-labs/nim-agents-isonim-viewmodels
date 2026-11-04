@@ -1,0 +1,57 @@
+{
+  "events": [
+    {
+      "type": "status",
+      "status": "completed",
+      "timestamp": 0
+    },
+    {
+      "type": "tool_result",
+      "status": "completed",
+      "tool_name": "runCmd",
+      "tool_execution_id": "tool-1",
+      "timestamp": 0
+    },
+    {
+      "type": "tool_use",
+      "status": "started",
+      "tool_name": "runCmd",
+      "tool_execution_id": "tool-1",
+      "tool_args": {
+        "command": "make test-cache"
+      },
+      "timestamp": 0
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "assistant: Using the embedded key-value store, as chosen.",
+      "timestamp": 0
+    },
+    {
+      "type": "log",
+      "level": "info",
+      "message": "agent question (Claude Code): tool=AskUserQuestion",
+      "timestamp": 0
+    },
+    {
+      "type": "user_input",
+      "input_type": "text",
+      "content": "Move the route cache to the new storage layer; ask me which backend if unsure",
+      "timestamp": 0
+    },
+    {
+      "type": "status",
+      "status": "running",
+      "timestamp": 0
+    },
+    {
+      "type": "status",
+      "status": "queued",
+      "timestamp": 0
+    }
+  ],
+  "has_more": false,
+  "oldest_timestamp": 0,
+  "total_count": 8
+}
