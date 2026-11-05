@@ -25,7 +25,7 @@ type
     title*: string
     repository*: string
     manager*: string
-    currentMilestone*: string     ## `CTF-P2: Prototypes: …`, "" when none
+    currentMilestone*: string     ## `RC-M2: Core change` (id and title), "" when none
     progressText*: string         ## `3/19 · 16%`
     progressLong*: string         ## `3 of 19 milestones · 16%`, for a tooltip
     state*: InitiativeState       ## its state at a glance, from its sessions

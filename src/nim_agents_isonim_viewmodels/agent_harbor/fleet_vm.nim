@@ -258,6 +258,15 @@ proc counts*(vm: FleetSnapshotVM): FleetCounts =
   for session in vm.snapshot.sessions:
     if session.promptWithheld: inc result.withheldPrompts
 
+proc anyInitiative*(vm: FleetSnapshotVM): bool =
+  ## Tracked: whether any session of the snapshot names an initiative -- over
+  ## the whole snapshot, not the filtered rows, so a filter that leaves few
+  ## rows (or none) does not change which columns a wide list draws.
+  discard vm.revision.val
+  for session in vm.snapshot.sessions:
+    if session.initiative.len > 0: return true
+  false
+
 proc capturedAgeLabel*(vm: FleetSnapshotVM): string =
   ## When the snapshot was taken, as `YYYY-MM-DD HH:MM UTC`; empty if unknown.
   discard vm.revision.val

@@ -14,8 +14,11 @@
 ##   switcher's numbered buttons (`recordingButtonsOf`; the host says which
 ##   recordings it has loaded, `setRecordings`);
 ## - the progress popup of the initiative under the pointer (`popupOf`);
-## - `[N agent harbor sessions]`: the sessions started elsewhere that no tab
-##   shows yet (`elsewhere`), each opened as a tab by `openSession`;
+## - `N agent harbor sessions` (`elsewhereCount` and `elsewhereLabel`, which a
+##   view draws as a count badge and its label): the sessions started on another front-end
+##   that no tab shows yet (`elsewhere`), each with its initiative and state,
+##   brought into view by `openSession` -- as a tab of its own, or selected
+##   inside its initiative's tab;
 ## - Previous / Next over the sessions waiting for the operator
 ##   (`stepInbox`), and auto-switch: when the active session stops waiting
 ##   because its instruction arrived, Next is taken on its own.
@@ -100,20 +103,23 @@ const
   InitiativeTabMinWidthPx* = 192
     ## An initiative tab's narrowest on the web: 12rem (a mark, a name and
     ## `n/m`; the active one also holds its recording buttons).
-  InitiativeBarControlsPx* = 180 + 240 + 50
-    ## `[N agent harbor sessions]`, Previous/Next with the position and
-    ## `Auto-switch: off`, the overflow chip and "+" with their gaps, on the
-    ## web (measured at 1440px: about 470).
-  InitiativeBarCompactControlsPx* = 40 + 140 + 90
-    ## The same, compact: `[N]`, the two steps and `Auto: off`, the chip and
-    ## "+" with their gaps.
+  InitiativeBarControlsPx* = 425 + 32 + 46
+    ## Everything on the tabs' line that is not a tab, on the web: the
+    ## right-hand group (the sessions started elsewhere as a count badge and
+    ## its label, Previous/Next with the position, `Auto-switch: off`; 425px
+    ## measured at 1440px), "+" after the last tab (32) and the overflow chip
+    ## (46), with their gaps.
+  InitiativeBarCompactControlsPx* = 161 + 32 + 46
+    ## The same, compact: the badge alone, the two steps and `Auto: off`
+    ## (161px measured at 760px), "+" and the chip.
   InitiativeBarCompactBelowPx* = 960
     ## Narrower than this, the bar is compact.
   InitiativeBarStackedBelowPx* = 480
     ## Narrower than this, the controls take a second line under the tabs:
     ## beside even one tab they would push "+" out of the bar.
-  InitiativeBarChipPx* = 50
-    ## The overflow chip and its gap, which stays on the tabs' line.
+  InitiativeBarChipPx* = 46 + 32
+    ## The overflow chip and "+" with their gaps, which stay on the tabs'
+    ## line of a stacked bar.
   ActiveInitiativeExtraPx* = 110
     ## The room the active tab takes beyond the narrowest: its recording
     ## buttons (on a compact bar one and `+N`: ActiveInitiativeExtraCompactPx).
@@ -155,10 +161,15 @@ proc initiativeIndex(vm: InitiativeTabStripVM; id: string): int =
     if initiative.id == id: return i
   -1
 
+proc inInitiativeTab(vm: InitiativeTabStripVM; s: FleetSession): bool =
+  ## A session launched for an initiative this bar has a tab for is shown
+  ## inside that tab; any other session gets a tab of its own.
+  s.planId.len > 0 and vm.initiativeIndex(s.planId) >= 0
+
 proc firstTabKey(vm: InitiativeTabStripVM): string =
   if vm.initiatives.len > 0: return initiativeKey(vm.initiatives[0].id)
   for s in vm.directory.sessions:
-    if s.planId.len == 0 and s.id in vm.openIds: return sessionKey(s.id)
+    if not vm.inInitiativeTab(s) and s.id in vm.openIds: return sessionKey(s.id)
   ""
 
 proc load*(vm: InitiativeTabStripVM) =
@@ -241,7 +252,7 @@ proc tabs*(vm: InitiativeTabStripVM): seq[StripTab] =
         progress & " milestones",
       active: active == initiativeKey(initiative.id))
   for s in vm.directory.sessions:
-    if s.planId.len == 0 and s.id in vm.openIds:
+    if not vm.inInitiativeTab(s) and s.id in vm.openIds:
       let item = vm.itemOf(s)
       result.add StripTab(kind: stkSession, id: s.id, title: item.title,
                           session: item, tooltip: item.tooltip,
@@ -279,18 +290,32 @@ proc singleLine*(vm: InitiativeTabStripVM): SingleLineLayout =
   singleLineLayout(tabs.len, active, capacity)
 
 proc elsewhere*(vm: InitiativeTabStripVM): seq[ElsewhereSession] =
-  ## Tracked: `[N agent harbor sessions]` -- sessions started on another
-  ## front-end, launched for no initiative, that no tab shows; newest first.
+  ## Tracked: the sessions started on another front-end that no tab shows
+  ## yet, newest first, each with its initiative's title ("" for none). A
+  ## session of an initiative is among them until it is brought into view
+  ## (inside its initiative's tab); its initiative's popup lists it anyway.
   discard vm.revision.val
   for i in countdown(vm.directory.sessions.high, 0):
     let s = vm.directory.sessions[i]
-    if s.planId.len == 0 and s.id notin vm.openIds:
-      result.add ElsewhereSession(item: vm.itemOf(s))
+    if s.id notin vm.openIds:
+      let item = vm.itemOf(s)
+      result.add ElsewhereSession(item: item, initiativeTitle: item.initiativeTitle)
+
+proc elsewhereCount*(vm: InitiativeTabStripVM): int =
+  ## Tracked: how many sessions wait to be brought into view (the badge).
+  vm.elsewhere.len
 
 proc elsewhereLabel*(vm: InitiativeTabStripVM): string =
-  ## `[3 agent harbor sessions]`; "" when there are none (the item is hidden).
-  let n = vm.elsewhere.len
-  if n == 0: "" else: "[" & $n & " agent harbor session" & (if n == 1: "]" else: "s]")
+  ## `agent harbor sessions` (`session` for one): the words beside the
+  ## count; "" when there are none (the item is hidden).
+  let n = vm.elsewhereCount
+  if n == 0: "" elif n == 1: "agent harbor session" else: "agent harbor sessions"
+
+proc elsewhereTooltip*(vm: InitiativeTabStripVM): string =
+  ## `5 agent harbor sessions started elsewhere: choose one to open it`.
+  let n = vm.elsewhereCount
+  if n == 0: "" else: $n & " " & vm.elsewhereLabel &
+    " started elsewhere: choose one to open it"
 
 proc activate*(vm: InitiativeTabStripVM; key: string): bool =
   if vm.activeTab.val == key: return false
@@ -305,17 +330,18 @@ proc showSession*(vm: InitiativeTabStripVM; sessionId: string): bool =
   let at = vm.directory.find(sessionId)
   if at < 0: return false
   let s = vm.directory.sessions[at]
-  if s.planId.len > 0 and vm.initiativeIndex(s.planId) >= 0:
+  if sessionId notin vm.openIds: vm.openIds.add sessionId
+  if vm.inInitiativeTab(s):
     vm.selectedSession[s.planId] = sessionId
     discard vm.activate(initiativeKey(s.planId))
   else:
-    if sessionId notin vm.openIds: vm.openIds.add sessionId
     discard vm.activate(sessionKey(sessionId))
   vm.bump()
   true
 
 proc openSession*(vm: InitiativeTabStripVM; sessionId: string): bool =
-  ## Chosen from `[N agent harbor sessions]`: opened as a tab.
+  ## Chosen from the sessions started elsewhere: brought into view, as a
+  ## tab of its own or inside its initiative's tab.
   vm.showSession(sessionId)
 
 proc selectedSessionOf*(vm: InitiativeTabStripVM; initiativeId: string): string =

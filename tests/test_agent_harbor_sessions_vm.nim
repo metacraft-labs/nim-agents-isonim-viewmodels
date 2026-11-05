@@ -146,6 +146,59 @@ suite "the working sets and initiatives of the fixture set":
     check got.ok
     check got.value.len == fixtures.initiativesOf(wsReal).len
 
+suite "the invented working sets are coherent":
+  # A story shows one coherent set: a session under an initiative works on
+  # that initiative, no two sessions share a title, and no captured scenario
+  # run is passed off as work of an invented initiative.
+  let scenarioTitles = block:
+    var titles = initHashSet[string]()
+    for session in newFixtureDataSource().workingSet(wsScenario).sessions:
+      titles.incl session.prompt
+    titles
+
+  # A template, not a proc: `check` inside a plain proc would not fail the
+  # test that calls it.
+  template checkCoherent(sessionCount, initiativeCount: int; long = false) =
+    let generated = syntheticWorkingSet(sessionCount, initiativeCount, Now, long)
+    let snapshot = generated.snapshot
+    let plans = generated.initiatives
+    var seen = initHashSet[string]()
+    var planIds = initHashSet[string]()
+    for plan in plans: planIds.incl plan.id
+    for session in snapshot.sessions:
+      check session.prompt notin seen
+      seen.incl session.prompt
+      check session.prompt notin scenarioTitles
+      if session.planId.len > 0: check session.planId in planIds
+      var belongs = false
+      for title in syntheticTitlesOf(session.planId):
+        if session.prompt == title or long and session.prompt.startsWith(title & " "):
+          belongs = true
+      if not belongs: echo "  incoherent: ", session.prompt, " under ", session.planId
+      check belongs
+
+  test "the default set":
+    checkCoherent(DefaultSessions, DefaultInitiatives)
+  test "forty sessions over five initiatives":
+    checkCoherent(40, 5)
+  test "long names":
+    checkCoherent(4, 5, long = true)
+  test "a small set":
+    checkCoherent(3, 2)
+  test "a set larger than its initiatives' titles still repeats none":
+    var seen = initHashSet[string]()
+    for session in syntheticWorkingSet(60, 2, Now).snapshot.sessions:
+      check session.prompt notin seen
+      seen.incl session.prompt
+  test "every initiative of the default set has sessions, and one session has none":
+    let (snapshot, plans) = defaultWorkingSet(Now)
+    check plans.len == DefaultInitiatives
+    for plan in plans: check plan.sessionIds.len > 0
+    var loose = 0
+    for session in snapshot.sessions:
+      if session.planId.len == 0: inc loose
+    check loose > 0
+
 suite "the tab strip":
   test "tabs come in launch order, keep it, and the first becomes active":
     withVM(proc(): SessionTabStripVM = newSessionTabStripVM(newWorkingSetDataSource())) do (vm: SessionTabStripVM):
@@ -441,23 +494,64 @@ suite "the initiative tab bar":
       # Synthetic session 0 waits on a question and belongs to the first plan.
       check vm.tabs[0].state == isNeedsInput
 
-  test "sessions started elsewhere wait behind [N agent harbor sessions] until opened":
+  test "sessions started elsewhere wait behind the count badge until opened":
     let (snapshot, _) = syntheticWorkingSet(12, 0, Now)   # no initiatives at all
     withVM(proc(): InitiativeTabStripVM = newInitiativeTabStripVM(newSnapshotDataSource(snapshot))) do (vm: InitiativeTabStripVM):
       vm.load()
       var own, others = 0
       for s in snapshot.sessions:
         if s.originFrontEnd == OwnFrontEnd: inc own else: inc others
+      check own > 0 and others > 1
       check vm.tabs.len == own
+      check vm.elsewhereCount == others
       check vm.elsewhere.len == others
-      check vm.elsewhereLabel == "[" & $others & " agent harbor sessions]"
+      # A count and its words, never bracketed; the tooltip says it whole.
+      check vm.elsewhereLabel == "agent harbor sessions"
+      check vm.elsewhereTooltip.startsWith($others & " agent harbor sessions started elsewhere")
+      check '[' notin vm.elsewhereLabel and '[' notin vm.elsewhereTooltip
+      for entry in vm.elsewhere: check entry.initiativeTitle == ""
       let chosen = vm.elsewhere[0].item.id
       check vm.openSession(chosen)
       check vm.elsewhere.len == others - 1
       check vm.activeTab.val == sessionKey(chosen)
     withVM(proc(): InitiativeTabStripVM = newInitiativeTabStripVM(newSnapshotDataSource(FleetSnapshot()))) do (vm: InitiativeTabStripVM):
       vm.load()
+      check vm.elsewhereCount == 0
       check vm.elsewhereLabel == ""
+
+  test "a session of an initiative started elsewhere is listed with its initiative and opens inside its tab":
+    let (snapshot, initiatives) = syntheticWorkingSet(DefaultSessions, DefaultInitiatives, Now)
+    withVM(proc(): InitiativeTabStripVM =
+        newInitiativeTabStripVM(newSnapshotDataSource(snapshot, "x", initiatives))) do (vm: InitiativeTabStripVM):
+      vm.load()
+      var titles = initTable[string, string]()
+      for initiative in initiatives: titles[initiative.id] = initiative.title
+      var expected = 0
+      for s in snapshot.sessions:
+        if s.originFrontEnd != OwnFrontEnd: inc expected
+      check vm.elsewhereCount == expected
+      var ofInitiative = ""
+      for entry in vm.elsewhere:
+        var session: FleetSession
+        for s in snapshot.sessions:
+          if s.id == entry.item.id: session = s
+        check session.originFrontEnd != OwnFrontEnd
+        # Each entry names its initiative ("" for none) beside its state.
+        check entry.initiativeTitle == titles.getOrDefault(session.planId, "")
+        check entry.item.statusLabel.len > 0
+        if ofInitiative.len == 0 and session.planId.len > 0: ofInitiative = session.id
+      check ofInitiative.len > 0
+      var plan = ""
+      for s in snapshot.sessions:
+        if s.id == ofInitiative: plan = s.planId
+      let before = vm.tabs.len
+      check vm.openSession(ofInitiative)
+      # Brought into view inside its initiative's tab, not as a tab of its own.
+      check vm.tabs.len == before
+      check vm.activeTab.val == initiativeKey(plan)
+      check vm.selectedSessionOf(plan) == ofInitiative
+      check vm.elsewhereCount == expected - 1
+      for entry in vm.elsewhere: check entry.item.id != ofInitiative
 
   test "Next and Previous walk the waiting sessions; auto-switch moves on":
     let (snapshot, initiatives) = syntheticWorkingSet(20, 3, Now)
@@ -589,6 +683,15 @@ suite "the initiatives tree (sidebar and docked)":
       vm.stripWidth.val = 360
       check vm.compact and vm.stacked
       check vm.singleLine.visible == @[4]   # the active tab, alone
+      # The active tab is wider than the others by its recording buttons, and
+      # the bar counts that room: at these widths it decides how many tabs
+      # fit (without it, one more tab would be drawn than has room).
+      vm.stripWidth.val = 1300
+      check not vm.compact
+      check vm.singleLine.visible.len == 3
+      vm.stripWidth.val = 840
+      check vm.compact and not vm.stacked
+      check vm.singleLine.visible.len == 2
 
   test "a list in attention order puts the most urgent initiative first":
     let (snapshot, initiatives) = syntheticWorkingSet(20, 3, Now)

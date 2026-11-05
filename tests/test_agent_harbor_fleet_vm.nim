@@ -419,6 +419,22 @@ suite "FleetSnapshotVM":
       vm.dispose()
       disposeRoot()
 
+  test "whether any session names an initiative is the snapshot's, not the filter's":
+    createRoot proc(disposeRoot: proc()) =
+      let (snapshot, plans) = syntheticWorkingSet(3, 2, 1_800_000_000_000'i64)
+      let vm = newFleetSnapshotVM(newSnapshotDataSource(snapshot, "invented", plans))
+      vm.load()
+      check vm.anyInitiative
+      vm.setFilter(ffQueued)
+      check vm.rows.len == 0
+      check vm.anyInitiative          # a wide list keeps its columns
+      vm.dispose()
+      let none = newFleetSnapshotVM(newSnapshotDataSource(syntheticWorkingSet(3, 0, 1_800_000_000_000'i64).snapshot))
+      none.load()
+      check not none.anyInitiative
+      none.dispose()
+      disposeRoot()
+
   test "selecting a session loads its events; an uncaptured one errors":
     createRoot proc(disposeRoot: proc()) =
       let source = newFixtureDataSource()

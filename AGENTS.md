@@ -38,7 +38,8 @@ Structure:
   prototypes' viewmodels (`fleet_vm.nim` `FleetSnapshotVM`, the fleet list;
   `session_tabs_vm.nim` `SessionTabStripVM`, sessions as tabs, over the
   `session_items.nim` contract; `initiatives_vm.nim`,
-  `initiative_progress_vm.nim`), invented working sets for the states no
+  `initiative_progress_vm.nim`), invented working sets -- a coherent
+  default set (each session titled from its own initiative) and the states no
   capture shows (`synthetic_fleet.nim`), their records (`records.nim`, a
   re-export of nim-agents' `fleet_records`) and the data-source seam they read through
   (`data_source.nim` `AgentHarborDataSource`, with state sources for loading,
