@@ -287,6 +287,23 @@ suite "FixtureDataSource":
           check session.titleOf.source == lsName
     check named > 0
 
+  test "no two sessions of the embedded fleet share a title":
+    # `titleOf` promises every session a title that tells it apart from its
+    # neighbours, and a fleet panel over this set is how a person picks one
+    # session out of the list (the IsoNim Editor smoke in CodeTracer checks
+    # the rendered rows for exactly this). A set whose sessions repeat each
+    # other's prompts or names renders rows nobody can tell apart.
+    let source = newFixtureDataSource()
+    var seen = initHashSet[string]()
+    var repeated: seq[string]
+    for session in source.snapshotOf.sessions:
+      let title = session.titleOf.text
+      if title in seen: repeated.add(title)
+      seen.incl(title)
+    check repeated.len == 0
+    if repeated.len > 0:
+      checkpoint "titles shared by more than one session: " & $repeated
+
   test "failed sessions with a captured history carry its reason":
     let source = newFixtureDataSource()
     var withHistory, withReason = 0

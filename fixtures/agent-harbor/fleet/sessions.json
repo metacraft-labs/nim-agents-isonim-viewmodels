@@ -320,7 +320,7 @@
       "id": "001177b3-9468-4b2b-a039-dae2c541204c",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Make the dashboard's latency chart readable in the light theme"
+        "prompt": "Write the migration guide for the 3.0 configuration format"
       },
       "agent": {
         "agent": {
@@ -398,7 +398,7 @@
       "id": "250a2df8-ddcd-4f99-af08-8d1d2ff147e8",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Investigate why the nightly fuzz job times out on the parser"
+        "prompt": "Make the dashboard's latency chart readable in the light theme"
       },
       "agent": {
         "agent": {
@@ -461,7 +461,7 @@
       "id": "c5a5cbec-c782-4db1-ab70-77c4e2202ed1",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Split the monolithic scheduler module into three cohesive parts"
+        "prompt": "Investigate why the nightly fuzz job times out on the parser"
       },
       "agent": {
         "agent": {
@@ -591,7 +591,7 @@
       "id": "ca48029a-986a-4f5a-a611-ec7f46cb0e9a",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Profile the paperboat renderer and remove the per-frame allocation"
+        "prompt": "Split the monolithic scheduler module into three cohesive parts"
       },
       "agent": {
         "agent": {
@@ -654,7 +654,7 @@
       "id": "efde67b5-ccda-47e8-ae40-35f2daed03cd",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Document every public function of the units library"
+        "prompt": "Replace the hand-rolled JSON writer with the shared serializer"
       },
       "agent": {
         "agent": {
@@ -717,7 +717,7 @@
       "id": "f5c3fa78-70b8-4f77-acd1-ec0c3661039f",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Add keyboard navigation to the mission timeline"
+        "prompt": "Profile the paperboat renderer and remove the per-frame allocation"
       },
       "agent": {
         "agent": {
@@ -845,7 +845,7 @@
       "id": "6b4dea9d-1017-4d06-aad0-53922785b4fa",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Add a retry budget to the telemetry uploader and cover it with tests"
+        "prompt": "Document every public function of the units library"
       },
       "agent": {
         "agent": {
@@ -909,7 +909,7 @@
       "id": "bb848a21-a7f2-4efb-a86f-b3b319a68847",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Fix the off-by-one in the orbit propagator's step counter"
+        "prompt": "Add keyboard navigation to the mission timeline"
       },
       "agent": {
         "agent": {
@@ -972,7 +972,7 @@
       "id": "587ecf79-9e6c-4af5-ade1-5af5c09038fb",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Port the flight planner's route cache to the new storage layer"
+        "prompt": "Teach the importer to accept gzip-compressed telemetry archives"
       },
       "agent": {
         "agent": {
@@ -1064,7 +1064,7 @@
       "id": "f88efbc0-f76a-4ca8-a40e-c0641fd9aa8f",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Make the dashboard's latency chart readable in the light theme"
+        "prompt": "Cache the ephemeris tables between propagator runs"
       },
       "agent": {
         "agent": {
@@ -1109,7 +1109,7 @@
       "id": "cf5812b4-9eed-4419-a939-9299c29cf633",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Investigate why the nightly fuzz job times out on the parser"
+        "prompt": "Show the upload queue's depth on the status page"
       },
       "agent": {
         "agent": {
@@ -1173,7 +1173,7 @@
       "id": "63b113da-8a13-448c-a313-53e31f997ed4",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Split the monolithic scheduler module into three cohesive parts"
+        "prompt": "Reject route plans whose waypoints leave the mission corridor"
       },
       "agent": {
         "agent": {
@@ -1302,7 +1302,7 @@
       "id": "e68df722-130e-4619-acd2-6e578bf43bf7",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Profile the paperboat renderer and remove the per-frame allocation"
+        "prompt": "Rename the legacy config keys and keep the old names as aliases"
       },
       "agent": {
         "agent": {
@@ -1366,7 +1366,7 @@
       "id": "e581d879-8d00-4d1b-a00d-316924457bc7",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Document every public function of the units library"
+        "prompt": "Give the latency chart a percentile selector"
       },
       "agent": {
         "agent": {
@@ -1429,7 +1429,7 @@
       "id": "d179f0b9-7450-4aec-a376-d5fc28257ed1",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Add keyboard navigation to the mission timeline"
+        "prompt": "Shrink the parser's fuzz corpus without losing coverage"
       },
       "agent": {
         "agent": {
@@ -1557,7 +1557,7 @@
       "id": "0759569c-4732-4057-ac8b-dda64c477652",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Add a retry budget to the telemetry uploader and cover it with tests"
+        "prompt": "Move the scheduler's clock behind an injectable interface"
       },
       "agent": {
         "agent": {
@@ -1621,7 +1621,7 @@
       "id": "333cc0ed-167f-4626-ae9b-bc7b066dfe1a",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Fix the off-by-one in the orbit propagator's step counter"
+        "prompt": "Stream large telemetry exports instead of buffering them"
       },
       "agent": {
         "agent": {
@@ -1683,7 +1683,7 @@
       "id": "fff61b69-4f5a-4693-a381-4b9c50004a11",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Port the flight planner's route cache to the new storage layer"
+        "prompt": "Fix the paperboat renderer's flicker on window resize"
       },
       "agent": {
         "agent": {
@@ -1811,7 +1811,7 @@
       "id": "e8fa44b7-8a6b-4e6d-a44c-4ce8556867b3",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Make the dashboard's latency chart readable in the light theme"
+        "prompt": "Generate the units library's reference pages from its doc comments"
       },
       "agent": {
         "agent": {
@@ -1874,7 +1874,7 @@
       "id": "cfe7355d-ef20-43c0-a3e5-9822f1337c39",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Investigate why the nightly fuzz job times out on the parser"
+        "prompt": "Let the mission timeline zoom to a selected range"
       },
       "agent": {
         "agent": {
@@ -1937,7 +1937,7 @@
       "id": "9637b1aa-de30-46d1-a204-3432c3ef9343",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Split the monolithic scheduler module into three cohesive parts"
+        "prompt": "Validate archive checksums before the importer unpacks them"
       },
       "agent": {
         "agent": {
@@ -2067,7 +2067,7 @@
       "id": "0763c585-c9bb-4844-a6a8-3461c0c6b437",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Profile the paperboat renderer and remove the per-frame allocation"
+        "prompt": "Parallelise the orbit propagator's batch mode"
       },
       "agent": {
         "agent": {
@@ -2130,7 +2130,7 @@
       "id": "4eb5b7c3-ba35-4d0f-a734-23f0068c3b23",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Document every public function of the units library"
+        "prompt": "Retry failed uploads after a network change, not only on a timer"
       },
       "agent": {
         "agent": {
@@ -2193,7 +2193,7 @@
       "id": "742ad84f-ac7f-40cf-a942-ce235816c5f6",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Add keyboard navigation to the mission timeline"
+        "prompt": "Store route cache entries with their expiry time"
       },
       "agent": {
         "agent": {
@@ -2322,7 +2322,7 @@
       "id": "b42d20b5-4b0d-470f-aadb-cf2a08f03f2b",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Add a retry budget to the telemetry uploader and cover it with tests"
+        "prompt": "Add a dry-run flag to the configuration migrator"
       },
       "agent": {
         "agent": {
@@ -2386,7 +2386,7 @@
       "id": "383bc56d-3995-4906-add8-8c5d5b35c012",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Fix the off-by-one in the orbit propagator's step counter"
+        "prompt": "Draw the latency chart's gridlines from the theme tokens"
       },
       "agent": {
         "agent": {
@@ -2450,7 +2450,7 @@
       "id": "e279aea7-e82a-42ad-abb0-c02e7390cf70",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Port the flight planner's route cache to the new storage layer"
+        "prompt": "Bisect the commit that made the fuzz job slow"
       },
       "agent": {
         "agent": {
@@ -2580,7 +2580,7 @@
       "id": "c0404b1c-ce10-47a8-ad46-b15fa453c59b",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Make the dashboard's latency chart readable in the light theme"
+        "prompt": "Document the scheduler's three new modules"
       },
       "agent": {
         "agent": {
@@ -2644,7 +2644,7 @@
       "id": "88c57831-6628-43b2-ae9c-1414807880e2",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Investigate why the nightly fuzz job times out on the parser"
+        "prompt": "Benchmark the shared serializer against the hand-rolled writer"
       },
       "agent": {
         "agent": {
@@ -2707,7 +2707,7 @@
       "id": "6e80cd0a-03f7-42e4-a9f1-be24544a60d0",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Split the monolithic scheduler module into three cohesive parts"
+        "prompt": "Batch the paperboat renderer's draw calls per layer"
       },
       "agent": {
         "agent": {
@@ -2837,7 +2837,7 @@
       "id": "bdf85db5-85d8-46f3-a5c4-da6d5a432ad1",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Profile the paperboat renderer and remove the per-frame allocation"
+        "prompt": "Mark the units library's deprecated functions in its index"
       },
       "agent": {
         "agent": {
@@ -2901,7 +2901,7 @@
       "id": "07a022d2-58d5-461f-a9f3-c316679f5361",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Document every public function of the units library"
+        "prompt": "Show conflicting events on the mission timeline"
       },
       "agent": {
         "agent": {
@@ -2963,7 +2963,7 @@
       "id": "e3998186-50ba-4a4e-a230-9f07cfcbfd73",
       "org_id": "00000000-0000-0000-0000-000000000000",
       "task": {
-        "prompt": "Add keyboard navigation to the mission timeline"
+        "prompt": "Log which telemetry archives the importer skipped, and why"
       },
       "agent": {
         "agent": {
