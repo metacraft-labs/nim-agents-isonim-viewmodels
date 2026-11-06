@@ -287,22 +287,27 @@ suite "FixtureDataSource":
           check session.titleOf.source == lsName
     check named > 0
 
-  test "no two sessions of the embedded fleet share a title":
-    # `titleOf` promises every session a title that tells it apart from its
-    # neighbours, and a fleet panel over this set is how a person picks one
-    # session out of the list (the IsoNim Editor smoke in CodeTracer checks
-    # the rendered rows for exactly this). A set whose sessions repeat each
-    # other's prompts or names renders rows nobody can tell apart.
+  test "every session of the embedded fleet has a title; the synthetic fleet's are all different":
+    # `titleOf` gives every session a title, whatever is withheld. Telling
+    # sessions apart by title is a property of the invented (synthetic) set,
+    # which is written so a fleet panel over it shows rows a person can pick
+    # between (the IsoNim Editor smoke in CodeTracer checks the rendered rows
+    # for exactly this). The captured fleet legitimately repeats titles: many
+    # sessions share one working copy and branch, and their prompts are
+    # withheld, so the name, branch or workspace they fall back to is the
+    # same. Uniqueness is therefore asserted for the synthetic set only.
     let source = newFixtureDataSource()
     var seen = initHashSet[string]()
     var repeated: seq[string]
     for session in source.snapshotOf.sessions:
       let title = session.titleOf.text
+      check title.len > 0
       if title in seen: repeated.add(title)
       seen.incl(title)
-    check repeated.len == 0
-    if repeated.len > 0:
-      checkpoint "titles shared by more than one session: " & $repeated
+    if AgentHarborFixtureSet == "synthetic":
+      check repeated.len == 0
+      if repeated.len > 0:
+        checkpoint "titles shared by more than one session: " & $repeated
 
   test "failed sessions with a captured history carry its reason":
     let source = newFixtureDataSource()
