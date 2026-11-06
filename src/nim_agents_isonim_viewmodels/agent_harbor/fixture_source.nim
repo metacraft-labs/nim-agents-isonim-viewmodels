@@ -24,6 +24,13 @@
 ## `AgentHarborFixtureSet` says which one a build embedded, so a story or a
 ## test can name it.
 ##
+## Nim does not track inputs 2 and 3: a `nim c -r` with an unchanged command
+## line and sources re-runs the previous binary. Inside this checkout the
+## repo-root `config.nims` keys the nimcache on them (its FIXTURE SETS
+## paragraph), so a switch rebuilds. A consumer that compiles this module with
+## `-r` from elsewhere and switches sets through them needs the same, or
+## `-d:agentHarborFixtures`, which is part of the command line.
+##
 ## The files are embedded at compile time (`staticRead`), so the same binary
 ## or JS bundle answers identically on every run, with no file system or
 ## network at run time. That is what lets a StoryBook bundle and a native unit
@@ -44,6 +51,7 @@ const
   syntheticFixtureRoot = repositoryRoot / "fixtures" / "agent-harbor"
   privateFixtureRoot = repositoryRoot.parentDir / "codetracer-pm" / "design" /
     "agent-harbor-front-end" / "fixtures"
+    ## The repo-root `config.nims` names the same path in its nimcache key.
 
 proc shellQuoted(path: string): string {.compileTime.} =
   ## POSIX single quoting, written out because `os.quoteShell` is not

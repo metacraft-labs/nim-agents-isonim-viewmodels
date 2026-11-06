@@ -32,9 +32,26 @@
 ## config is bypassed; its `--skipParentCfg` negative control proves the probe
 ## can see a shared cache at all.
 ##
+## FIXTURE SETS.  `fixture_source.nim` picks its Agent Harbor fixture set at
+## compile time from two inputs Nim's change detection cannot see: the
+## `AGENT_HARBOR_FIXTURES` environment variable and whether the private set's
+## `manifest.json` exists beside this checkout.  `nim c -r` skips the whole
+## compile when its nimcache records the same command line, config files and
+## source hashes, so without help a run asked for one set silently re-runs a
+## binary that embeds another.  Those inputs are therefore part of the cache
+## key: `-fixtures-synthetic` when the variable is `synthetic`,
+## `-fixtures-dir-<hash>` for any other non-empty value, `-fixtures-private`
+## when it is unset and the private manifest exists, and nothing at all when it
+## is unset and the private set is absent (a standalone clone, public CI).  A
+## different set then means a different nimcache, which has no record of the
+## current binary and so rebuilds it.
+## `tests/test_fixture_set_rebuilds_on_switch.nim` checks it end to end.
+##
 ## WINDOWS.  Nim turns the `/` below into `\` on a Windows host.  The layout adds
 ## `\.nimcache\<module dir>\<module>_d\` in front of Nim's own object file names,
 ## so keep the checkout root short (about 80 characters) to stay inside MAX_PATH.
+import std/[hashes, strutils]
+
 block worktreeLocalNimcache:
   var project = projectName()
   if project.len > 4 and project[^4 .. ^1] == ".nim":
@@ -66,7 +83,18 @@ block worktreeLocalNimcache:
     if getCommand() == "check": "_check"
     elif defined(release) or defined(danger): "_r"
     else: "_d"
+  # The fixture-set inputs (see FIXTURE SETS above).  The private path must
+  # stay the one `privateFixtureRoot` in fixture_source.nim names.
+  let fixturesFromEnv = getEnv("AGENT_HARBOR_FIXTURES")
+  let fixtureKey =
+    if fixturesFromEnv == "synthetic": "-fixtures-synthetic"
+    elif fixturesFromEnv.len > 0:
+      "-fixtures-dir-" & toHex(cast[uint32](hash(fixturesFromEnv)))
+    elif fileExists(root & "/../codetracer-pm/design/agent-harbor-front-end/" &
+                    "fixtures/manifest.json"): "-fixtures-private"
+    else: ""
+
   var cacheDir = root & "/.nimcache"
   if rel.len > 0:
     cacheDir.add("/" & rel)
-  switch("nimcache", cacheDir & "/" & project & suffix)
+  switch("nimcache", cacheDir & "/" & project & suffix & fixtureKey)

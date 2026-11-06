@@ -18,7 +18,9 @@
 ##   2. LAYOUT.  `nim dump` reports exactly the documented directory for this
 ##      file (from the repo root and from its own directory) and for the main
 ##      modules below, in debug (`_d`) and with -d:release (`_r`); and an
-##      explicit `--nimcache:` on the command line still wins.
+##      explicit `--nimcache:` on the command line still wins.  These probes
+##      run with `AGENT_HARBOR_FIXTURES` removed, and once with it set to
+##      `synthetic`, because config.nims appends a fixture-set key.
 ##   3. CONTROL.  The same probe with `--skipParentCfg`, which switches the
 ##      repo-root config off, must resolve OUTSIDE the checkout.  If it does
 ##      not, the probe cannot tell a shared cache from a local one, every
@@ -127,13 +129,35 @@ proc nimcacheOf(workDir, project: string; extra: seq[string] = @[];
   fail(what & " printed no JSON:\n" & output)
   ""
 
-proc expectedFor(projectRel, suffix: string): string =
-  ## The layout config.nims promises: <checkout>/.nimcache/<rel dir>/<name><suffix>.
+proc envWith(fixtures: string): StringTableRef =
+  ## This process's environment with `AGENT_HARBOR_FIXTURES` set to
+  ## `fixtures`, or removed when it is "".
+  result = newStringTable(modeCaseSensitive)
+  for k, v in envPairs():
+    if k != "AGENT_HARBOR_FIXTURES":
+      result[k] = v
+  if fixtures.len > 0:
+    result["AGENT_HARBOR_FIXTURES"] = fixtures
+
+# The layout probes below run with `AGENT_HARBOR_FIXTURES` removed, so the
+# fixture key config.nims appends (its FIXTURE SETS paragraph) depends only on
+# whether the private set is beside this checkout.
+let layoutEnv = envWith("")
+let defaultFixtureKey =
+  if fileExists(root.parentDir / "codetracer-pm" / "design" /
+                "agent-harbor-front-end" / "fixtures" / "manifest.json"):
+    "-fixtures-private"
+  else: ""
+
+proc expectedFor(projectRel, suffix: string;
+                 fixtureKey = defaultFixtureKey): string =
+  ## The layout config.nims promises:
+  ## <checkout>/.nimcache/<rel dir>/<name><suffix><fixture key>.
   let dir = projectRel.parentDir
   var d = root / ".nimcache"
   if dir.len > 0 and dir != ".":
     d = d / dir
-  d / (projectRel.splitFile.name & suffix)
+  d / (projectRel.splitFile.name & suffix & fixtureKey)
 
 proc checkLayout(label, got, want: string) =
   if got.len == 0:
@@ -160,20 +184,28 @@ else:
 # ---------------------------------------------------------------------------
 echo "nimcache-locality: [2] the documented layout"
 checkLayout(selfRel & " (from the checkout root)",
-            nimcacheOf(root, selfRel), expectedFor(selfRel, "_d"))
+            nimcacheOf(root, selfRel, env = layoutEnv),
+            expectedFor(selfRel, "_d"))
 checkLayout(selfRel & " (from its own directory)",
-            nimcacheOf(selfFile.parentDir, selfFile.extractFilename),
+            nimcacheOf(selfFile.parentDir, selfFile.extractFilename,
+                       env = layoutEnv),
             expectedFor(selfRel, "_d"))
 for m in MainModules:
   if not fileExists(root / m):
     fail(m & ": listed as a main module to probe, but it does not exist")
     continue
-  checkLayout(m & " (debug)", nimcacheOf(root, m), expectedFor(m, "_d"))
-  checkLayout(m & " (-d:release)", nimcacheOf(root, m, @["-d:release"]),
+  checkLayout(m & " (debug)", nimcacheOf(root, m, env = layoutEnv),
+              expectedFor(m, "_d"))
+  checkLayout(m & " (-d:release)",
+              nimcacheOf(root, m, @["-d:release"], layoutEnv),
               expectedFor(m, "_r"))
+checkLayout(selfRel & " (AGENT_HARBOR_FIXTURES=synthetic)",
+            nimcacheOf(root, selfRel, env = envWith("synthetic")),
+            expectedFor(selfRel, "_d", "-fixtures-synthetic"))
 
 let explicitDir = getTempDir() / "nimcache-locality-explicit"
-let explicitGot = nimcacheOf(root, selfRel, @["--nimcache:" & explicitDir])
+let explicitGot = nimcacheOf(root, selfRel, @["--nimcache:" & explicitDir],
+                             layoutEnv)
 if explicitGot.len > 0:
   if sameDir(explicitGot, explicitDir):
     pass("an explicit --nimcache: on the command line still wins")
