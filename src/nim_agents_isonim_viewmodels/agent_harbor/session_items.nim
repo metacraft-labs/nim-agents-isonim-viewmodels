@@ -49,6 +49,16 @@ proc attentionWord*(attention: SessionAttention): string =
   of saFailed: "failed"
   of saEnded: "ended"
 
+proc lastActivityLine*(item: SessionItem): string =
+  ## The one line a session row or tab shows of what the session last did:
+  ## why it failed, for a failed session; else its most informative recent
+  ## activity (`activity[0]`); "" when it has none. Every sessions view
+  ## draws this line, so a story whose sessions repeat one reads as a list
+  ## of copies.
+  if item.failureText.len > 0: item.failureText
+  elif item.activity.len > 0: item.activity[0].lineText
+  else: ""
+
 proc sessionItemOf*(session: FleetSession; nowMs: int64; policy: SessionPolicy;
                     active = false): SessionItem =
   let (title, source) = session.titleOf(policy.labels)
@@ -98,6 +108,6 @@ proc sessionItemOf*(session: FleetSession; nowMs: int64; policy: SessionPolicy;
   if result.durationLabel.len > 0: facts.add result.durationLabel
   if facts.len > 0: lines.add facts.join(" \xC2\xB7 ")
   if result.initiativeTitle.len > 0: lines.add "initiative: " & result.initiativeTitle
-  if result.failureText.len > 0: lines.add result.failureText
-  elif result.activity.len > 0: lines.add result.activity[0].lineText
+  let last = result.lastActivityLine
+  if last.len > 0: lines.add last
   result.tooltip = lines.join("\n")

@@ -14,7 +14,7 @@
 ##   switcher's numbered buttons (`recordingButtonsOf`; the host says which
 ##   recordings it has loaded, `setRecordings`);
 ## - the progress popup of the initiative under the pointer (`popupOf`);
-## - `N agent harbor sessions` (`elsewhereCount` and `elsewhereLabel`, which a
+## - `N Agent Harbor sessions` (`elsewhereCount` and `elsewhereLabel`, which a
 ##   view draws as a count badge and its label): the sessions started on another front-end
 ##   that no tab shows yet (`elsewhere`), each with its initiative and state,
 ##   brought into view by `openSession` -- as a tab of its own, or selected
@@ -95,7 +95,7 @@ type
     tabMinWidth*: int
       ## A tab's narrowest in that unit.
     controlsWidth*: int
-      ## Previous/Next, `[N agent harbor sessions]`, the overflow chip and
+      ## Previous/Next, `N Agent Harbor sessions`, the overflow chip and
       ## "+" together, in that unit.
     loadToken: int
 
@@ -131,7 +131,7 @@ const
     ## A compact bar draws only the active recording and `+N`.
   OwnFrontEnd* = "codetracer"
     ## Sessions this front-end started open as tabs on their own; the others
-    ## wait behind `[N agent harbor sessions]`.
+    ## wait behind `N Agent Harbor sessions`.
 
 proc initiativeKey*(id: string): string = "initiative:" & id
 proc sessionKey*(id: string): string = "session:" & id
@@ -306,13 +306,14 @@ proc elsewhereCount*(vm: InitiativeTabStripVM): int =
   vm.elsewhere.len
 
 proc elsewhereLabel*(vm: InitiativeTabStripVM): string =
-  ## `agent harbor sessions` (`session` for one): the words beside the
+  ## `Agent Harbor sessions` (`session` for one; the product name as it is
+  ## written): the words beside the
   ## count; "" when there are none (the item is hidden).
   let n = vm.elsewhereCount
-  if n == 0: "" elif n == 1: "agent harbor session" else: "agent harbor sessions"
+  if n == 0: "" elif n == 1: "Agent Harbor session" else: "Agent Harbor sessions"
 
 proc elsewhereTooltip*(vm: InitiativeTabStripVM): string =
-  ## `5 agent harbor sessions started elsewhere: choose one to open it`.
+  ## `5 Agent Harbor sessions started elsewhere: choose one to open it`.
   let n = vm.elsewhereCount
   if n == 0: "" else: $n & " " & vm.elsewhereLabel &
     " started elsewhere: choose one to open it"

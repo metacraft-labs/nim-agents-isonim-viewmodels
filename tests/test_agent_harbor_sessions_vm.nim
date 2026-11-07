@@ -176,6 +176,24 @@ suite "the invented working sets are coherent":
           belongs = true
       if not belongs: echo "  incoherent: ", session.prompt, " under ", session.planId
       check belongs
+    # Every session says its own last thing (the line a row or tab shows),
+    # one that follows from its own task: no two of a set alike.
+    var lastLines = initHashSet[string]()
+    for session in snapshot.sessions:
+      let last = sessionItemOf(session, Now, tabStripSessionPolicy()).lastActivityLine
+      check last.len > 0
+      if last in lastLines: echo "  two sessions last said: ", last
+      check last notin lastLines
+      lastLines.incl last
+    # An initiative's executive summary is prose about its work, not its
+    # header restated (title, milestone count, current milestone).
+    var summaries = initHashSet[string]()
+    for plan in plans:
+      check plan.executiveSummary.len > 80
+      check "milestones done" notin plan.executiveSummary
+      check not plan.executiveSummary.startsWith(plan.title)
+      check plan.executiveSummary notin summaries
+      summaries.incl plan.executiveSummary
 
   test "the default set":
     checkCoherent(DefaultSessions, DefaultInitiatives)
@@ -190,6 +208,11 @@ suite "the invented working sets are coherent":
     for session in syntheticWorkingSet(60, 2, Now).snapshot.sessions:
       check session.prompt notin seen
       seen.incl session.prompt
+    var lastLines = initHashSet[string]()
+    for session in syntheticWorkingSet(60, 2, Now).snapshot.sessions:
+      let last = sessionItemOf(session, Now, tabStripSessionPolicy()).lastActivityLine
+      check last notin lastLines
+      lastLines.incl last
   test "every initiative of the default set has sessions, and one session has none":
     let (snapshot, plans) = defaultWorkingSet(Now)
     check plans.len == DefaultInitiatives
@@ -506,8 +529,8 @@ suite "the initiative tab bar":
       check vm.elsewhereCount == others
       check vm.elsewhere.len == others
       # A count and its words, never bracketed; the tooltip says it whole.
-      check vm.elsewhereLabel == "agent harbor sessions"
-      check vm.elsewhereTooltip.startsWith($others & " agent harbor sessions started elsewhere")
+      check vm.elsewhereLabel == "Agent Harbor sessions"
+      check vm.elsewhereTooltip.startsWith($others & " Agent Harbor sessions started elsewhere")
       check '[' notin vm.elsewhereLabel and '[' notin vm.elsewhereTooltip
       for entry in vm.elsewhere: check entry.initiativeTitle == ""
       let chosen = vm.elsewhere[0].item.id
