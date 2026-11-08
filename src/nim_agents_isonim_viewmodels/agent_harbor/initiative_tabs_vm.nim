@@ -26,7 +26,9 @@
 ## Like the session tab strip (`session_tabs_vm.nim`), it reads through the
 ## data-source seam (`loadFleet`, `loadInitiatives`) and folds lifecycle
 ## frames (`applyFrame`), so a live or playback source drives it event by
-## event. Front-end neutral: no width, no pixels.
+## event. Front-end neutral: every width it counts is a field in the
+## renderer's unit, set to the web's pixels by default; a terminal front-end
+## sets cells.
 
 import std/[strutils, tables]
 import isonim/core/[signals, computation]
@@ -93,10 +95,27 @@ type
       ## The width the tab bar has, in the renderer's unit (0: unknown, every
       ## tab is drawn).
     tabMinWidth*: int
-      ## A tab's narrowest in that unit.
+      ## A tab's narrowest in that unit (`InitiativeTabMinWidthPx` on the
+      ## web).
+    tabGap*: int
+      ## The space between two tabs, in that unit (`TabGapPx` on the web).
     controlsWidth*: int
       ## Previous/Next, `[N agent harbor sessions]`, the overflow chip and
-      ## "+" together, in that unit.
+      ## "+" together, in that unit (`InitiativeBarControlsPx` on the web).
+    compactControlsWidth*: int
+      ## The same on a compact bar (`InitiativeBarCompactControlsPx`).
+    stackedControlsWidth*: int
+      ## What stays on the tabs' line of a stacked bar: the overflow chip and
+      ## "+" (`InitiativeBarChipPx`).
+    activeTabExtra*: int
+      ## How much wider than `tabMinWidth` the active tab is drawn
+      ## (`ActiveInitiativeExtraPx`).
+    compactActiveTabExtra*: int
+      ## The same on a compact bar (`ActiveInitiativeExtraCompactPx`).
+    compactBelow*: int
+      ## Narrower than this, the bar is compact (`InitiativeBarCompactBelowPx`).
+    stackedBelow*: int
+      ## Narrower than this, the bar is stacked (`InitiativeBarStackedBelowPx`).
     loadToken: int
 
 const
@@ -149,7 +168,13 @@ proc newInitiativeTabStripVM*(source: AgentHarborDataSource;
       popupId: createSignal(""), elsewhereOpen: createSignal(false),
       autoSwitch: createSignal(false), overflowOpen: createSignal(false),
       stripWidth: createSignal(0), tabMinWidth: InitiativeTabMinWidthPx,
-      controlsWidth: InitiativeBarControlsPx)
+      tabGap: TabGapPx, controlsWidth: InitiativeBarControlsPx,
+      compactControlsWidth: InitiativeBarCompactControlsPx,
+      stackedControlsWidth: InitiativeBarChipPx,
+      activeTabExtra: ActiveInitiativeExtraPx,
+      compactActiveTabExtra: ActiveInitiativeExtraCompactPx,
+      compactBelow: InitiativeBarCompactBelowPx,
+      stackedBelow: InitiativeBarStackedBelowPx)
 
 proc sourceLabel*(vm: InitiativeTabStripVM): string =
   if vm.source.isNil: "" else: vm.source.label
@@ -262,13 +287,13 @@ proc compact*(vm: InitiativeTabStripVM): bool =
   ## A narrow bar: Previous/Next without the position, auto-switch as
   ## `Auto: on|off`, and `[N]` for the sessions started elsewhere.
   let w = vm.stripWidth.val
-  w > 0 and w < InitiativeBarCompactBelowPx
+  w > 0 and w < vm.compactBelow
 
 proc stacked*(vm: InitiativeTabStripVM): bool =
   ## A bar too narrow for the controls beside a tab: they take a line of
   ## their own under the tabs (the bar grows), so "+" stays in view.
   let w = vm.stripWidth.val
-  w > 0 and w < InitiativeBarStackedBelowPx
+  w > 0 and w < vm.stackedBelow
 
 proc singleLine*(vm: InitiativeTabStripVM): SingleLineLayout =
   ## Tracked: which tabs the bar draws and which go to its overflow menu;
@@ -281,11 +306,11 @@ proc singleLine*(vm: InitiativeTabStripVM): SingleLineLayout =
   # the overflow chip does); the active tab is wider by its recording
   # buttons.
   let controls =
-    if vm.stacked: InitiativeBarChipPx
-    elif vm.compact: InitiativeBarCompactControlsPx
+    if vm.stacked: vm.stackedControlsWidth
+    elif vm.compact: vm.compactControlsWidth
     else: vm.controlsWidth
-  let extra = if vm.compact: ActiveInitiativeExtraCompactPx else: ActiveInitiativeExtraPx
-  let capacity = singleLineCapacity(vm.stripWidth.val, vm.tabMinWidth, TabGapPx,
+  let extra = if vm.compact: vm.compactActiveTabExtra else: vm.activeTabExtra
+  let capacity = singleLineCapacity(vm.stripWidth.val, vm.tabMinWidth, vm.tabGap,
                                     controls + extra)
   singleLineLayout(tabs.len, active, capacity)
 

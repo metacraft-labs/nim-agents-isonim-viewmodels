@@ -311,6 +311,30 @@ suite "the tab strip":
       vm.grouped.val = false
       check vm.groups.len == 1
 
+  test "a terminal sets every width in cells, the gap between tabs too":
+    # The strip's widths are in the renderer's unit. A terminal that sets
+    # cells must get a gap in cells: counted at the web's 4px, 80 cells keep
+    # four 12-cell tabs where five fit.
+    let (snapshot, initiatives) = syntheticWorkingSet(40, 5, Now)
+    withVM(proc(): SessionTabStripVM =
+        newSessionTabStripVM(newSnapshotDataSource(snapshot, "x", initiatives))) do (vm: SessionTabStripVM):
+      vm.load()
+      check vm.tabGap == TabGapPx       # the web's pixels by default
+      vm.stripWidthPx.val = 80
+      vm.tabMinWidth = 12
+      vm.tabGap = 1
+      vm.tabControlsWidth = 6
+      vm.activeTabExtra = 0
+      # 6 + 5 * 12 + 4 * 1 = 70 <= 80; a sixth tab needs 83.
+      check vm.singleLine.visible.len == 5
+      vm.stripWidthPx.val = 82
+      check vm.singleLine.visible.len == 5
+      vm.stripWidthPx.val = 83
+      check vm.singleLine.visible.len == 6
+      vm.tabGap = 0
+      vm.stripWidthPx.val = 78
+      check vm.singleLine.visible.len == 6   # 6 + 6 * 12 = 78
+
   test "focusing an initiative highlights and activates its tabs":
     let (snapshot, initiatives) = syntheticWorkingSet(12, 3, Now)
     withVM(proc(): SessionTabStripVM =
@@ -692,6 +716,54 @@ suite "the initiatives tree (sidebar and docked)":
       vm.stripWidth.val = 840
       check vm.compact and not vm.stacked
       check vm.singleLine.visible.len == 2
+
+  test "a terminal sets the initiative bar's widths and thresholds in cells":
+    # Every width the bar counts is a field in the renderer's unit. Left at
+    # the web's pixels, a 160-column terminal would read as compact (below
+    # 960) and stacked (below 480) and keep one tab where three fit.
+    let (snapshot, initiatives) = syntheticWorkingSet(40, 5, Now)
+    withVM(proc(): InitiativeTabStripVM =
+        newInitiativeTabStripVM(newSnapshotDataSource(snapshot, "x", initiatives))) do (vm: InitiativeTabStripVM):
+      vm.load()
+      check vm.tabGap == TabGapPx
+      check vm.compactBelow == InitiativeBarCompactBelowPx
+      check vm.stackedBelow == InitiativeBarStackedBelowPx
+      check vm.stackedControlsWidth == InitiativeBarChipPx
+      vm.tabMinWidth = 24
+      vm.tabGap = 1
+      vm.controlsWidth = 50
+      vm.compactControlsWidth = 20
+      vm.stackedControlsWidth = 6
+      vm.activeTabExtra = 12
+      vm.compactActiveTabExtra = 4
+      vm.compactBelow = 120
+      vm.stackedBelow = 60
+      vm.stripWidth.val = 160
+      check not vm.compact and not vm.stacked
+      # 50 + 12 + 4 * 24 + 3 * 1 = 161 > 160: three tabs; at 161, four.
+      check vm.singleLine.visible.len == 3
+      vm.stripWidth.val = 161
+      check vm.singleLine.visible.len == 4
+      vm.stripWidth.val = 100
+      check vm.compact and not vm.stacked
+      # 20 + 4 + 3 * 24 + 2 * 1 = 98 <= 100; a fourth tab needs 123.
+      check vm.singleLine.visible.len == 3
+      vm.stripWidth.val = 40
+      check vm.compact and vm.stacked
+      # Only the chip and "+" stay beside the tabs: 6 + 4 + 24 = 34.
+      check vm.singleLine.visible.len == 1
+      vm.stripWidth.val = 59
+      check vm.singleLine.visible.len == 2   # 6 + 4 + 2 * 24 + 1 = 59
+      # The active tab's recording buttons follow the threshold in cells too:
+      # five on the 160-cell bar, which the web's 960px would call compact.
+      var entries: seq[RecordingEntry]
+      for i in 0 ..< 8:
+        entries.add RecordingEntry(id: "r" & $i, name: "trace " & $i)
+      vm.setRecordings(initiatives[0].id, entries)
+      vm.stripWidth.val = 160
+      check vm.recordingButtonsOf(initiatives[0].id).buttons.len == RecordingSlots
+      vm.stripWidth.val = 100
+      check vm.recordingButtonsOf(initiatives[0].id).buttons.len == RecordingSlotsCompact
 
   test "a list in attention order puts the most urgent initiative first":
     let (snapshot, initiatives) = syntheticWorkingSet(20, 3, Now)

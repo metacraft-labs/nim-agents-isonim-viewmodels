@@ -76,6 +76,8 @@ type
     tabMinWidth*: int
       ## A tab's narrowest in that unit (`TabMinWidthPx` on the web; a
       ## terminal front-end sets cells).
+    tabGap*: int
+      ## The space between two tabs, in that unit (`TabGapPx` on the web).
     tabControlsWidth*: int
       ## The overflow and "+" controls together, in that unit.
     activeTabExtra*: int
@@ -100,7 +102,8 @@ proc newSessionTabStripVM*(source: AgentHarborDataSource;
       grouped: createSignal(mode in {tsmSidebar, tsmDocked}),
       collapsed: createSignal(false), overflowOpen: createSignal(false),
       stripWidthPx: createSignal(0), tabMinWidth: TabMinWidthPx,
-      tabControlsWidth: TabStripButtonsPx, activeTabExtra: ActiveTabExtraPx)
+      tabGap: TabGapPx, tabControlsWidth: TabStripButtonsPx,
+      activeTabExtra: ActiveTabExtraPx)
 
 proc sourceLabel*(vm: SessionTabStripVM): string =
   if vm.source.isNil: "" else: vm.source.label
@@ -229,7 +232,7 @@ proc singleLine*(vm: SessionTabStripVM): SingleLineLayout =
   ## Tracked: which tabs the single-line strip draws and which overflow.
   singleLineLayout(vm.tabs.len, vm.activeIndex,
                    singleLineCapacity(vm.stripWidthPx.val, vm.tabMinWidth,
-                                      TabGapPx, vm.tabControlsWidth + vm.activeTabExtra))
+                                      vm.tabGap, vm.tabControlsWidth + vm.activeTabExtra))
 
 proc counts*(vm: SessionTabStripVM): array[SessionAttention, int] =
   for tab in vm.tabs: inc result[tab.attention]
