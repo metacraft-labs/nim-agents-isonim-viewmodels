@@ -463,6 +463,49 @@ suite "initiatives and their progress":
       check not vm.applyProgress("nope", current, "planned")
       check runs == afterLoad + 1
 
+  test "an invented plan made ready for a completion reads done after the event":
+    # The progress-event story: the milestone that completes has all its
+    # deliverables and passing tests, and the executive summary names the
+    # next milestone, as the plan reads after the event (the event itself
+    # still moves the status and the current milestone).
+    var (_, initiatives) = syntheticWorkingSet(14, 4, Now)
+    let current = initiatives[0].progress.currentMilestone
+    check current.len > 0
+    let before = initiatives[0].executiveSummary
+    check initiatives[0].readyForCompletion(current)
+    check not initiatives[0].readyForCompletion("no-such-milestone")
+    check initiatives[0].executiveSummary != before
+    withVM(proc(): InitiativeProgressVM =
+        newInitiativeProgressVM(newSnapshotDataSource(FleetSnapshot(), "x", initiatives),
+                                initiatives[0].id)) do (vm: InitiativeProgressVM):
+      vm.load()
+      check vm.applyProgress(initiatives[0].id, current, "completed")
+      var done: MilestoneLine
+      var nowCurrent = ""
+      for g in vm.groups:
+        for m in g.milestones:
+          if m.id == current: done = m
+          if m.current: nowCurrent = m.id
+      check done.id == current
+      check done.statusClass == mscCompleted
+      check not done.current
+      var plan: MilestoneDetail
+      for m in vm.current.progress.milestones:
+        if m.id == current: plan = m
+      check plan.deliverables.done == plan.deliverables.total
+      check plan.verifications.pending == 0 and plan.verifications.failing == 0
+      check plan.verifications.passing > 0
+      check done.deliverablesText == $plan.deliverables.total & "/" &
+        $plan.deliverables.total & " deliverables"
+      check "pending" notin done.testsText and "passing" in done.testsText
+      check nowCurrent.len > 0 and nowCurrent != current
+      var nowTitle = ""
+      for m in vm.current.progress.milestones:
+        if m.id == nowCurrent: nowTitle = m.title
+      check vm.current.executiveSummary.endsWith("the current one is " & nowTitle & ".")
+      check vm.current.executiveSummary.contains(
+        $vm.current.progress.summary.completedMilestones & " of ")
+
   test "an unknown initiative, a failing source, a pending one":
     withVM(proc(): InitiativeProgressVM =
         newInitiativeProgressVM(newSnapshotDataSource(FleetSnapshot()), "missing")) do (vm: InitiativeProgressVM):

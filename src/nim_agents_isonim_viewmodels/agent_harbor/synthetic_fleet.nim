@@ -172,6 +172,13 @@ proc syntheticSession(i, initiativeCount, titleIndex: int; nowMs: int64;
     FleetActivity(kind: fakLog, level: "info", text: said,
                   timestampMs: result.updatedAtMs)]
 
+proc syntheticSummary(title: string; progress: MilestoneFileProgress): string =
+  ## An invented plan's executive summary: how many milestones are done and
+  ## which one is current.
+  title & ": " & $progress.summary.completedMilestones & " of " &
+    $progress.milestones.len & " milestones done; the current one is " &
+    progress.summary.currentMilestoneTitle & "."
+
 proc syntheticPlan(index: int; longNames: bool): Initiative =
   let (id, title, prefix) = SyntheticPlans[index]
   var progress = MilestoneFileProgress(
@@ -203,10 +210,33 @@ proc syntheticPlan(index: int; longNames: bool): Initiative =
   Initiative(id: id, title: title & (if longNames: LongSuffix else: ""),
              repository: "orbit-labs/" & id, planPath: progress.path,
              manager: (if index mod 2 == 0: prefix.toLowerAscii & "-manager" else: ""),
-             executiveSummary: title & ": " & $progress.summary.completedMilestones &
-               " of " & $count & " milestones done; the current one is " &
-               progress.summary.currentMilestoneTitle & ".",
+             executiveSummary: syntheticSummary(title, progress),
              progress: progress)
+
+proc readyForCompletion*(initiative: var Initiative; milestoneId: string): bool =
+  ## The invented plan made coherent with a progress event that is about to
+  ## complete `milestoneId`, as a plan's author leaves it before the event:
+  ## the milestone's deliverables all done and its tests all passing, and the
+  ## executive summary already stating the plan as it reads once the
+  ## milestone is completed (the next milestone current). The status itself
+  ## is left to the event (`applyMilestoneStatus`), so the event still
+  ## changes the plan. False, and nothing changed, for a milestone the plan
+  ## does not hold.
+  var found = false
+  for m in initiative.progress.milestones.mitems:
+    if m.id == milestoneId:
+      found = true
+      m.deliverables.done = m.deliverables.total
+      m.verifications.passing += m.verifications.pending + m.verifications.failing
+      m.verifications.pending = 0
+      m.verifications.failing = 0
+  if not found: return false
+  var after = initiative.progress
+  discard after.applyMilestoneStatus(milestoneId, "completed")
+  initiative.progress.summarize()
+  let title = initiative.title.replace(LongSuffix, "")
+  initiative.executiveSummary = syntheticSummary(title, after)
+  true
 
 proc syntheticWorkingSet*(sessions, initiativeCount: int; nowMs: int64;
                           longNames = false): tuple[snapshot: FleetSnapshot,
