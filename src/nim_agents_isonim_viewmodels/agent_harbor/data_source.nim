@@ -35,11 +35,33 @@
 ## so a source that delivers through the handle (`deliver`, `broadcast`)
 ## cannot reach the subscriber any more, and the attempt is counted on the
 ## handle and answered `pdRefused`.
+##
+## The same subscription pattern carries everything else a source delivers
+## as it happens (`Subscription[T]`, `Subscribers[T]`, one `subscribe…`
+## method per kind, each base method answering once that the source does not
+## provide it):
+##
+## - `subscribeFleetFrames`: the fleet's frames (`FleetFrame`, nim-agents'
+##   fleet-fold input) -- lifecycle frames, a new or changed session's
+##   listing entry, and the events of each session's event stream;
+## - `subscribeResumes`: the operator's input reached a waiting session
+##   (`ResumeEvent`), what auto-switch moves on from;
+## - `subscribeRecordings`: a recording of an initiative appeared or changed
+##   state (`RecordingEvent`: loading, then ready or failed);
+## - `subscribeResets`: the source started over (`StreamReset`): everything a
+##   subscriber folded is void, and it reloads. A playback source sends one
+##   when it seeks backwards; a live source may send one after it lost its
+##   place in a feed.
+##
+## A viewmodel subscribes to the kinds it follows before it loads (so nothing
+## falls between its load's answer and its subscription) and cancels when it
+## is disposed.
 
-import nim_agents/agent_harbor/initiatives
+import nim_agents/agent_harbor/[initiatives, fleet_fold]
 import ./records
+import ./recording_switcher
 
-export records, initiatives
+export records, initiatives, fleet_fold, recording_switcher
 
 type
   DataResult*[T] = object
@@ -101,8 +123,28 @@ type
     milestoneId*: string
     status*: string
 
+  ResumeEvent* = object
+    ## The operator's input reached a waiting session (the session's events
+    ## say so: `session_resumed`, `user_input`): it no longer waits.
+    sessionId*: string
+    atMs*: int64
+
+  RecordingEvent* = object
+    ## A recording of an initiative appeared, or its state changed (a
+    ## recording loading turns ready, or fails). `entry.id` names it; an
+    ## unknown id is a new recording, a known one is replaced.
+    initiativeId*: string
+    entry*: RecordingEntry
+
+  StreamReset* = object
+    ## The source started over: every frame and event delivered so far is
+    ## void. A subscriber drops what it folded and loads again.
+    atMs*: int64           ## the source's moment after the reset
+    reason*: string
+
   ProgressDelivery* = enum
-    ## What one delivered event did to its subscriber.
+    ## What one delivered event did to its subscriber (for every kind of
+    ## subscription, not only progress events).
     pdApplied = "applied"
       ## It changed the subscriber's state.
     pdUnchanged = "unchanged"
@@ -114,22 +156,27 @@ type
       ## (the subscriber disposed) before the event was delivered. Nothing
       ## moved.
 
-  ProgressCallback* = proc(event: DataResult[ProgressEvent]): ProgressDelivery {.closure.}
+  FeedCallback*[T] = proc(event: DataResult[T]): ProgressDelivery {.closure.}
     ## Called once per event. An error answer (`ok == false`) ends the
     ## stream: the source delivers nothing more on that subscription.
 
-  ProgressSubscription* = ref object
-    ## A subscriber's handle on a source's progress events. `cancel` ends it;
-    ## a source delivers through `deliver` (or `broadcast`), which reaches the
-    ## subscriber only while the handle is active.
-    callback: ProgressCallback
+  Subscription*[T] = ref object
+    ## A subscriber's handle on one kind of a source's events. `cancel` ends
+    ## it; a source delivers through `deliver` (or `broadcast`), which
+    ## reaches the subscriber only while the handle is active.
+    callback: FeedCallback[T]
     cancelled: bool
     refused: int
 
-  ProgressSubscribers* = object
-    ## The subscriptions a source holds, in the order they were made; the
-    ## bookkeeping a source needs to implement `subscribeProgress`.
-    subscriptions: seq[ProgressSubscription]
+  Subscribers*[T] = object
+    ## The subscriptions a source holds for one kind, in the order they were
+    ## made; the bookkeeping a source needs to implement a `subscribe…`
+    ## method.
+    subscriptions: seq[Subscription[T]]
+
+  ProgressCallback* = FeedCallback[ProgressEvent]
+  ProgressSubscription* = Subscription[ProgressEvent]
+  ProgressSubscribers* = Subscribers[ProgressEvent]
 
   AgentHarborDataSource* = ref object of RootObj
     ## The interface. `label` names the source in a panel's chrome ("fleet
@@ -183,20 +230,24 @@ method loadInitiatives*(source: AgentHarborDataSource;
 # Progress events
 # ---------------------------------------------------------------------------
 
-proc newProgressSubscription*(callback: ProgressCallback): ProgressSubscription =
+proc newSubscription*[T](callback: FeedCallback[T]): Subscription[T] =
   ## An active subscription that delivers to `callback`.
-  ProgressSubscription(callback: callback)
+  Subscription[T](callback: callback)
 
-proc active*(subscription: ProgressSubscription): bool =
+proc newProgressSubscription*(callback: ProgressCallback): ProgressSubscription =
+  ## An active progress subscription that delivers to `callback`.
+  newSubscription[ProgressEvent](callback)
+
+proc active*[T](subscription: Subscription[T]): bool =
   ## True until the subscription is cancelled or its stream ended.
   not subscription.isNil and not subscription.cancelled
 
-proc refused*(subscription: ProgressSubscription): int =
+proc refused*[T](subscription: Subscription[T]): int =
   ## How many deliveries were attempted after the subscription ended; none of
   ## them reached the subscriber.
   if subscription.isNil: 0 else: subscription.refused
 
-proc cancel*(subscription: ProgressSubscription) =
+proc cancel*[T](subscription: Subscription[T]) =
   ## Ends the subscription; idempotent. The callback is dropped, so nothing
   ## delivered through the handle afterwards can reach the subscriber, and
   ## the source no longer keeps the subscriber alive.
@@ -204,8 +255,8 @@ proc cancel*(subscription: ProgressSubscription) =
   subscription.cancelled = true
   subscription.callback = nil
 
-proc deliver*(subscription: ProgressSubscription;
-              event: DataResult[ProgressEvent]): ProgressDelivery =
+proc deliver*[T](subscription: Subscription[T];
+                 event: DataResult[T]): ProgressDelivery =
   ## Delivers one answer. On an ended subscription it calls nothing, counts
   ## the attempt (`refused`) and answers `pdRefused`. An error answer is
   ## delivered and then ends the subscription.
@@ -216,40 +267,45 @@ proc deliver*(subscription: ProgressSubscription;
   if not event.ok: subscription.cancel()
   callback(event)
 
+proc endedSubscription*[T](callback: FeedCallback[T];
+                           error: string): Subscription[T] =
+  ## Answers `callback` once with `error` and returns the ended subscription:
+  ## what a source that cannot deliver this kind of event returns.
+  result = newSubscription[T](callback)
+  discard result.deliver(failure[T](error))
+
 proc endedProgressSubscription*(callback: ProgressCallback;
                                 error: string): ProgressSubscription =
-  ## Answers `callback` once with `error` and returns the ended subscription:
-  ## what a source that cannot deliver progress events returns.
-  result = newProgressSubscription(callback)
-  discard result.deliver(failure[ProgressEvent](error))
+  ## `endedSubscription` for progress events.
+  endedSubscription[ProgressEvent](callback, error)
 
-proc prune(subscribers: var ProgressSubscribers) =
-  var kept: seq[ProgressSubscription]
+proc prune[T](subscribers: var Subscribers[T]) =
+  var kept: seq[Subscription[T]]
   for subscription in subscribers.subscriptions:
     if subscription.active: kept.add subscription
   subscribers.subscriptions = kept
 
-proc subscribe*(subscribers: var ProgressSubscribers;
-                callback: ProgressCallback): ProgressSubscription =
+proc subscribe*[T](subscribers: var Subscribers[T];
+                   callback: FeedCallback[T]): Subscription[T] =
   ## A new active subscription, held until it ends. Ended subscriptions are
   ## dropped first, so a source that never sends does not accumulate the
   ## handles of subscribers that came and went.
   subscribers.prune()
-  result = newProgressSubscription(callback)
+  result = newSubscription[T](callback)
   subscribers.subscriptions.add result
 
-proc activeCount*(subscribers: ProgressSubscribers): int =
+proc activeCount*[T](subscribers: Subscribers[T]): int =
   ## The subscriptions still active.
   for subscription in subscribers.subscriptions:
     if subscription.active: inc result
 
-proc broadcast*(subscribers: var ProgressSubscribers;
-                event: DataResult[ProgressEvent]): seq[ProgressDelivery] =
+proc broadcast*[T](subscribers: var Subscribers[T];
+                   event: DataResult[T]): seq[ProgressDelivery] =
   ## Delivers one answer to every active subscription, in subscription order,
   ## and returns what it did to each. Ended subscriptions are dropped first,
   ## so a cancelled subscriber is never called. A subscriber that cancels
   ## another during the delivery is honoured: the other is refused, not
-  ## called.
+  ## called. A subscription made during the delivery does not receive it.
   subscribers.prune()
   let current = subscribers.subscriptions
   for subscription in current:
@@ -276,6 +332,37 @@ method subscribeProgress*(source: AgentHarborDataSource;
   ## events. The base answers `callback` once with an error naming the
   ## missing capability and returns an ended subscription.
   endedProgressSubscription(callback, source.unsupported("progress events"))
+
+method subscribeFleetFrames*(source: AgentHarborDataSource;
+                             callback: FeedCallback[FleetFrame]): Subscription[FleetFrame] {.base.} =
+  ## The fleet's frames as they happen: lifecycle frames
+  ## (`GET /api/v1/session-lifecycle/events`), a new or changed session's
+  ## listing entry, and each session's events (its event stream), in the
+  ## order they happened. The base answers once that the source does not
+  ## provide them.
+  endedSubscription[FleetFrame](callback, source.unsupported("fleet frames"))
+
+method subscribeResumes*(source: AgentHarborDataSource;
+                         callback: FeedCallback[ResumeEvent]): Subscription[ResumeEvent] {.base.} =
+  ## Waiting sessions resumed by the operator's input, as it reaches them.
+  ## The base answers once that the source does not provide them.
+  endedSubscription[ResumeEvent](callback, source.unsupported("session resumes"))
+
+method subscribeRecordings*(source: AgentHarborDataSource;
+                            callback: FeedCallback[RecordingEvent]): Subscription[RecordingEvent] {.base.} =
+  ## The recordings of each initiative as they appear and change state. A
+  ## source that holds recordings delivers the state of each one it holds at
+  ## once, on subscribing, then every change. The base answers once that the
+  ## source does not provide them.
+  endedSubscription[RecordingEvent](callback, source.unsupported("recording states"))
+
+method subscribeResets*(source: AgentHarborDataSource;
+                        callback: FeedCallback[StreamReset]): Subscription[StreamReset] {.base.} =
+  ## Told when the source starts over (a playback source seeking backwards):
+  ## everything delivered so far is void and the subscriber loads again. The
+  ## base answers once that the source does not provide resets: it never
+  ## starts over.
+  endedSubscription[StreamReset](callback, source.unsupported("stream resets"))
 
 # ---------------------------------------------------------------------------
 # State sources: the states no capture shows
@@ -346,6 +433,22 @@ method subscribeProgress*(source: FailingDataSource;
                           callback: ProgressCallback): ProgressSubscription =
   ## Answers once with the source's error; the subscription is ended.
   endedProgressSubscription(callback, source.error)
+
+method subscribeFleetFrames*(source: FailingDataSource;
+                             callback: FeedCallback[FleetFrame]): Subscription[FleetFrame] =
+  endedSubscription[FleetFrame](callback, source.error)
+
+method subscribeResumes*(source: FailingDataSource;
+                         callback: FeedCallback[ResumeEvent]): Subscription[ResumeEvent] =
+  endedSubscription[ResumeEvent](callback, source.error)
+
+method subscribeRecordings*(source: FailingDataSource;
+                            callback: FeedCallback[RecordingEvent]): Subscription[RecordingEvent] =
+  endedSubscription[RecordingEvent](callback, source.error)
+
+method subscribeResets*(source: FailingDataSource;
+                        callback: FeedCallback[StreamReset]): Subscription[StreamReset] =
+  endedSubscription[StreamReset](callback, source.error)
 
 proc newSnapshotDataSource*(snapshot: FleetSnapshot;
                             label = "synthetic fleet";

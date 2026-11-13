@@ -12,9 +12,11 @@
 ## `OutOfOrderSource` below is the one test double: it holds answers back so
 ## the test can deliver them in an order a live server may produce, which no
 ## real source does on demand. The frames a list follows after its first
-## snapshot (the last suite) are an invented run's, built in this file; the
-## list under test folds them through its production reducer, and the oracle
-## it is compared with is a second list loaded through `SnapshotDataSource`.
+## snapshot (the last suite) are an invented run's, built in this file, and
+## the two synthetic playback scenarios' (`playback_scenarios.nim`); the list
+## under test folds them through its production reducer, and the oracle it is
+## compared with is a second list loaded through `SnapshotDataSource` from a
+## listing rebuilt from scratch in this file.
 ##
 ## Assertions about the fixture's contents are made against the fixture's own
 ## JSON, decoded independently with std/json, so a refreshed capture does not
@@ -692,37 +694,75 @@ proc loadedAt(run: FleetRun; t: int64): FleetSnapshotVM =
                                                     run.initiatives))
   result.load()
 
+proc runOf(scenario: PlaybackScenario): FleetRun =
+  ## A playback scenario's sessions as a run the oracle rebuilds listings
+  ## from: each session's identity, start, removal and whole history.
+  result = FleetRun(firstMs: scenario.firstMs, initiatives: scenario.initiatives)
+  for s in scenario.sessions:
+    result.sessions.add RunSession(entry: s.entry, startMs: s.startMs,
+                                   removedAtMs: s.removedAtMs, history: s.history)
+
+proc fleetFramesOf(scenario: PlaybackScenario): seq[FleetFrame] =
+  ## The fleet frames a playback of the scenario delivers, in its order.
+  for entry in scenario.entries:
+    if entry.isFleetEntry: result.add entry.frameOf
+
+proc foldDifferences(run: FleetRun; first: FleetSnapshot; frames: seq[FleetFrame];
+                     label: string): tuple[failures: seq[string], moments: int] =
+  ## Loads `first`, folds `frames` one at a time, and compares the list after
+  ## each moment's last frame with a list loaded from the listing rebuilt
+  ## from scratch at that moment (and the first listing with the one rebuilt
+  ## at the first moment).
+  let followed = newFleetSnapshotVM(newSnapshotDataSource(first, label, run.initiatives))
+  followed.load()
+  let start = run.loadedAt(run.firstMs)
+  for d in listDifferences(followed, start):
+    result.failures.add label & ": the first snapshot: " & d
+  start.dispose()
+  for i, frame in frames:
+    let outcome = followed.apply(frame)
+    if outcome notin {foApplied, foUnchanged}:
+      result.failures.add label & ": frame " & $i & " (" & $frame & ") was " & $outcome
+    if i < frames.high and frames[i + 1].atMs == frame.atMs: continue
+    inc result.moments
+    let loaded = run.loadedAt(frame.atMs)
+    for d in listDifferences(followed, loaded):
+      result.failures.add label & ": after frame " & $i & " (" & $frame & "): " & d
+    loaded.dispose()
+  followed.dispose()
+
 suite "FleetSnapshotVM follows frames":
   test "test_ctf_p1c_fleet_folds_lifecycle_frames":
-    # Folding the run's frames from its first snapshot gives, at every
-    # moment, the rows, groups, counts and activity digests of a list loaded
-    # from the snapshot taken at that moment. Frames sharing a moment (a
-    # status event and its lifecycle frame, a new session's frame and its
-    # listing entry) are compared after the moment's last one.
+    # Folding a run's frames from its first snapshot gives, at every moment,
+    # the rows, groups, counts and activity digests of a list loaded from the
+    # snapshot taken at that moment. Frames sharing a moment (a status event
+    # and its lifecycle frame, a new session's frame and its listing entry)
+    # are compared after the moment's last one. Three runs: the invented run
+    # above, and the fleet frames of both synthetic playback scenarios, from
+    # each scenario's own first listing.
     createRoot proc(disposeRoot: proc()) =
-      let run = inventedFleetRun()
-      let followed = run.loadedAt(run.firstMs)
       var failures: seq[string]
-      let first = run.loadedAt(run.firstMs)
-      for d in listDifferences(followed, first): failures.add "the first snapshot: " & d
-      first.dispose()
+      let run = inventedFleetRun()
       let frames = run.framesOf
-      var moments = 0
-      for i, frame in frames:
-        let outcome = followed.apply(frame)
-        if outcome notin {foApplied, foUnchanged}:
-          failures.add "frame " & $i & " (" & $frame & ") was " & $outcome
-        if i < frames.high and frames[i + 1].atMs == frame.atMs: continue
-        inc moments
-        let loaded = run.loadedAt(frame.atMs)
-        for d in listDifferences(followed, loaded):
-          failures.add "after frame " & $i & " (" & $frame & "): " & d
-        loaded.dispose()
+      let invented = foldDifferences(run, run.listedAt(run.firstMs), frames, "invented run")
+      failures.add invented.failures
+      check frames.len == 85
+      check invented.moments == 61
+      for name in PlaybackScenarioNames:
+        let scenario = playbackScenario(name)
+        let scenarioFrames = scenario.fleetFramesOf
+        let played = foldDifferences(scenario.runOf, scenario.first, scenarioFrames,
+                                     "scenario " & name)
+        failures.add played.failures
+        # Every scenario has frames to fold, at moments of their own.
+        check scenarioFrames.len > 0
+        check played.moments > 0
+        checkpoint name & ": " & $scenarioFrames.len & " frames over " &
+          $played.moments & " moments"
+      check playbackScenario("front-ends").fleetFramesOf.len == 25
+      check playbackScenario("initiative-run").fleetFramesOf.len == 4
       for f in failures: checkpoint f
       check failures.len == 0
-      check frames.len == 85
-      check moments == 61
-      followed.dispose()
       disposeRoot()
 
   test "the run moves every count and group the list shows":

@@ -74,3 +74,18 @@ proc recordingButtons*(entries: openArray[RecordingEntry]; activeId: string;
                                        state: entries[i].state,
                                        active: i == activeAt)
   result.hidden = entries.len - shown.len
+
+proc applyRecording*(entries: var seq[RecordingEntry]; entry: RecordingEntry): bool =
+  ## One recording appeared or changed (a recording loading turned ready or
+  ## failed): an entry whose id the group holds replaces it in place, any
+  ## other is added at the end, so the buttons keep their numbers. True when
+  ## the group changed; an entry without an id, or one equal to the held
+  ## one, changes nothing.
+  if entry.id.len == 0: return false
+  for e in entries.mitems:
+    if e.id == entry.id:
+      if e == entry: return false
+      e = entry
+      return true
+  entries.add entry
+  true

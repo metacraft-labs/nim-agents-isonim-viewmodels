@@ -11,13 +11,16 @@
 ## source that sends one moves the panel with no host call; a host may still
 ## apply one itself (`applyProgress`). Disposing the viewmodel unsubscribes
 ## it; `progressState` / `progressError` report the feed (an error when the
-## source does not provide the events).
+## source does not provide the events). It also subscribes to the source's
+## resets (`subscribeResets`): when the source starts over, so does the
+## panel (`restart`).
 
 import std/strutils
 import isonim/core/[signals, computation, owner]
 import isonim/viewmodel
 import ./data_source
 import ./progress_feed
+import ./source_feed
 
 export data_source, progress_feed, viewmodel, signals, computation
 
@@ -47,7 +50,7 @@ type
     error*: Signal[string]
     initiativeId*: Signal[string]
     loadToken: int
-    feed: ProgressFeed
+    feeds: SourceFeeds
     progressState*: Signal[AsyncState]
       ## The progress feed: `asIdle` before `load`, `asReady` while subscribed,
       ## `asError` when the source does not provide progress events.
@@ -56,14 +59,14 @@ type
 proc newInitiativeProgressVM*(source: AgentHarborDataSource;
                               initiativeId = ""): InitiativeProgressVM =
   withViewModel proc(dispose: proc()): InitiativeProgressVM =
-    let feed = newProgressFeed()
+    let feeds = newSourceFeeds()
     # Disposing the viewmodel's root unsubscribes it from its source.
-    onCleanup proc() = feed.close()
+    onCleanup proc() = feeds.close()
     InitiativeProgressVM(source: source, revision: createSignal(0),
                          state: createSignal(asIdle), error: createSignal(""),
                          initiativeId: createSignal(initiativeId),
-                         feed: feed, progressState: feed.state,
-                         progressError: feed.error)
+                         feeds: feeds, progressState: feeds.progress.state,
+                         progressError: feeds.progress.error)
 
 proc sourceLabel*(vm: InitiativeProgressVM): string =
   if vm.source.isNil: "" else: vm.source.label
@@ -87,7 +90,13 @@ proc applyProgress*(vm: InitiativeProgressVM; initiativeId, milestoneId,
 proc lateProgressEvents*(vm: InitiativeProgressVM): int =
   ## Progress events a source delivered after the viewmodel unsubscribed
   ## (disposed or reloaded); none of them moved it.
-  vm.feed.lateEvents
+  vm.feeds.progress.lateEvents
+
+proc feeds*(vm: InitiativeProgressVM): SourceFeeds =
+  ## The panel's subscriptions to its source (`progress`, `resets`).
+  vm.feeds
+
+proc restart*(vm: InitiativeProgressVM)
 
 proc load*(vm: InitiativeProgressVM) =
   ## Ready once the initiatives answer. Subscribes to the source's progress
@@ -98,8 +107,11 @@ proc load*(vm: InitiativeProgressVM) =
   vm.state.val = asLoading
   vm.error.val = ""
   let target = vm
-  vm.feed.open(vm.source, proc(event: ProgressEvent): bool =
+  vm.feeds.progress.openProgress(vm.source, proc(event: ProgressEvent): bool =
     target.applyProgress(event))
+  vm.feeds.resets.openResets(vm.source, proc(reset: StreamReset): bool =
+    target.restart()
+    true)
   vm.source.loadInitiatives proc(answer: DataResult[seq[Initiative]]) =
     if token != target.loadToken: return
     if answer.ok:
@@ -175,3 +187,11 @@ proc headline*(vm: InitiativeProgressVM): string =
 
 proc statusCounts*(vm: InitiativeProgressVM): array[MilestoneStatusClass, int] =
   statusCounts(vm.current.progress)
+
+proc restart*(vm: InitiativeProgressVM) =
+  ## Starts over, as after a source's reset: the initiatives are dropped
+  ## with the data they came from and load again; the initiative shown is
+  ## the host's choice and stays.
+  vm.initiatives = @[]
+  vm.revision.val = vm.revision.val + 1
+  vm.load()

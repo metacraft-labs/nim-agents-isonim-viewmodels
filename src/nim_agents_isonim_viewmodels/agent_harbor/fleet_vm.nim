@@ -31,14 +31,24 @@
 ## listing entry, its events), so the list follows a live feed or a played-back
 ## run after its first snapshot. A list that is only ever loaded shows exactly
 ## the snapshot, as before.
+##
+## Those frames reach it through the seam: `load` subscribes to the source's
+## fleet frames (`subscribeFleetFrames`) and resets (`subscribeResets`)
+## before it asks for the listing, so a live or playback source moves the
+## list with no host call; a reset (a playback source seeking backwards)
+## restarts it (`restart`). Disposing the viewmodel unsubscribes it. `feeds`
+## reports each subscription (an error when the source does not provide the
+## kind; a source that only answers loads leaves the list as loaded).
 
 import std/[algorithm, strutils]
-import isonim/core/[signals, computation]
+import isonim/core/[signals, computation, owner]
 import isonim/viewmodel
 import nim_agents/agent_harbor/[session_directory, activity_digest, fleet_fold]
 import ./data_source
+import ./source_feed
 
-export data_source, viewmodel, signals, computation, activity_digest, fleet_fold
+export data_source, source_feed, viewmodel, signals, computation,
+  activity_digest, fleet_fold
 
 const
   FleetActivityLineLimit* = 3
@@ -114,13 +124,17 @@ type
     loadToken: int
       ## Guards against an answer to a superseded load (a live source may
       ## answer a reload's first request after its second).
+    feeds: SourceFeeds
 
 proc newFleetSnapshotVM*(source: AgentHarborDataSource): FleetSnapshotVM =
   ## A viewmodel over `source`. Nothing is loaded until `load` is called, so
   ## a story or a test can observe the idle state too.
   withViewModel proc(dispose: proc()): FleetSnapshotVM =
+    let feeds = newSourceFeeds()
+    # Disposing the viewmodel's root unsubscribes it from its source.
+    onCleanup proc() = feeds.close()
     FleetSnapshotVM(
-      source: source,
+      source: source, feeds: feeds,
       fold: initFleetFold(),
       revision: createSignal(0),
       state: createSignal(asIdle),
@@ -141,14 +155,29 @@ proc snapshot*(vm: FleetSnapshotVM): FleetSnapshot =
   discard vm.revision.val
   vm.fold.snapshot
 
+proc feeds*(vm: FleetSnapshotVM): SourceFeeds =
+  ## The list's subscriptions to its source (`frames`, `resets`).
+  vm.feeds
+
+proc apply*(vm: FleetSnapshotVM; frame: FleetFrame): FoldOutcome
+proc restart*(vm: FleetSnapshotVM)
+
 proc load*(vm: FleetSnapshotVM) =
   ## Asks the source for the session list. The state is `asLoading` until it
-  ## answers; an answer to an older `load` is ignored.
+  ## answers; an answer to an older `load` is ignored. Subscribes to the
+  ## source's fleet frames and resets first, replacing earlier
+  ## subscriptions, so no frame falls between the answer and the
+  ## subscription.
   inc vm.loadToken
   let token = vm.loadToken
   vm.state.val = asLoading
   vm.error.val = ""
   let target = vm
+  vm.feeds.frames.openFleetFrames(vm.source, proc(frame: FleetFrame): bool =
+    target.apply(frame) == foApplied)
+  vm.feeds.resets.openResets(vm.source, proc(reset: StreamReset): bool =
+    target.restart()
+    true)
   vm.source.loadFleet proc(answer: DataResult[FleetSnapshot]) =
     if token != target.loadToken: return
     if answer.ok:
@@ -328,6 +357,18 @@ proc apply*(vm: FleetSnapshotVM; frame: FleetFrame): FoldOutcome =
 proc applyFrame*(vm: FleetSnapshotVM; frame: LifecycleFrame): FoldOutcome =
   ## A lifecycle frame from the feed, as the tab strip takes it.
   vm.apply(lifecycleFrame(frame))
+
+proc restart*(vm: FleetSnapshotVM) =
+  ## Starts over, as after a source's reset: the selection, its events and
+  ## the expanded row are dropped (they named sessions of a fleet that is
+  ## void), the filter is kept (the reader's choice, not the data's), and
+  ## the list loads again.
+  vm.selectedId.val = ""
+  vm.expandedId.val = ""
+  vm.selectedEvents.val = SessionEventHistory()
+  vm.eventsState.val = asIdle
+  vm.eventsError.val = ""
+  vm.load()
 
 proc setFilter*(vm: FleetSnapshotVM; filter: FleetFilter) =
   vm.filter.val = filter

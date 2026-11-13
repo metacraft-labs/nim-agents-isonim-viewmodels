@@ -24,22 +24,29 @@
 ##   because its instruction arrived, Next is taken on its own.
 ##
 ## Like the session tab strip (`session_tabs_vm.nim`), it reads through the
-## data-source seam (`loadFleet`, `loadInitiatives`) and folds lifecycle
-## frames (`applyFrame`), so a live or playback source drives it event by
-## event. Front-end neutral: every width it counts is a field in the
+## data-source seam (`loadFleet`, `loadInitiatives`) and follows the source
+## after the load through the seam's subscriptions, which `load` opens first
+## and disposing the viewmodel cancels: fleet frames (`applyFleetFrame`),
+## resumes (`markResumed`, so auto-switch moves on), recording states
+## (`applyRecording`: a recording appears loading, then turns ready or
+## fails), initiative progress events (`applyProgress`) and resets
+## (`restart`). So a live or playback source drives it event by event; a
+## source that only answers loads leaves it as loaded, and `feeds` reports
+## each subscription. Front-end neutral: every width it counts is a field in the
 ## renderer's unit, set to the web's pixels by default; a terminal front-end
 ## sets cells.
 
 import std/[strutils, tables]
-import isonim/core/[signals, computation]
+import isonim/core/[signals, computation, owner]
 import isonim/viewmodel
 import ./data_source
 import ./session_items
 import ./recording_switcher
+import ./source_feed
 import ./tab_layout
 
-export data_source, session_items, recording_switcher, tab_layout, viewmodel,
-  signals, computation
+export data_source, session_items, recording_switcher, source_feed, tab_layout,
+  viewmodel, signals, computation
 
 type
   StripTabKind* = enum
@@ -80,6 +87,10 @@ type
     selectedSession: Table[string, string]   ## initiative -> session
     recordings: Table[string, seq[RecordingEntry]]
     activeRecording: Table[string, string]
+    sourceRecordings: seq[string]
+      ## Initiatives whose recordings came from the source (dropped when it
+      ## starts over); the host's own (`setRecordings`) are kept.
+    feeds: SourceFeeds
     policy*: SessionPolicy
     revision*: Signal[int]
     state*: Signal[AsyncState]
@@ -158,8 +169,12 @@ proc sessionKey*(id: string): string = "session:" & id
 proc newInitiativeTabStripVM*(source: AgentHarborDataSource;
                               policy = tabStripSessionPolicy()): InitiativeTabStripVM =
   withViewModel proc(dispose: proc()): InitiativeTabStripVM =
+    let feeds = newSourceFeeds()
+    # Disposing the viewmodel's root unsubscribes it from its source.
+    onCleanup proc() = feeds.close()
     InitiativeTabStripVM(
       source: source, directory: initSessionDirectory(), policy: policy,
+      feeds: feeds,
       selectedSession: initTable[string, string](),
       recordings: initTable[string, seq[RecordingEntry]](),
       activeRecording: initTable[string, string](),
@@ -197,14 +212,46 @@ proc firstTabKey(vm: InitiativeTabStripVM): string =
     if not vm.inInitiativeTab(s) and s.id in vm.openIds: return sessionKey(s.id)
   ""
 
+proc feeds*(vm: InitiativeTabStripVM): SourceFeeds =
+  ## The bar's subscriptions to its source (`frames`, `resumes`,
+  ## `recordings`, `progress`, `resets`).
+  vm.feeds
+
+proc openOwn(vm: InitiativeTabStripVM) =
+  ## The sessions this front-end started are open as tabs on their own.
+  for s in vm.directory.sessions:
+    if s.originFrontEnd == OwnFrontEnd and s.id notin vm.openIds:
+      vm.openIds.add s.id
+
+proc applyFleetFrame*(vm: InitiativeTabStripVM; frame: FleetFrame): bool
+proc markResumed*(vm: InitiativeTabStripVM; sessionId: string; atMs = 0'i64)
+proc applyRecording*(vm: InitiativeTabStripVM; event: RecordingEvent): bool
+proc applyProgress*(vm: InitiativeTabStripVM; event: ProgressEvent): bool
+proc restart*(vm: InitiativeTabStripVM)
+
 proc load*(vm: InitiativeTabStripVM) =
   ## Reads the sessions and the initiatives; the sessions this front-end
-  ## started are open, and the first tab is active when none is.
+  ## started are open, and the first tab is active when none is. Subscribes
+  ## to the source's frames, resumes, recordings, progress events and resets
+  ## first, replacing earlier subscriptions.
   inc vm.loadToken
   let token = vm.loadToken
   vm.state.val = asLoading
   vm.error.val = ""
   let target = vm
+  vm.feeds.frames.openFleetFrames(vm.source, proc(frame: FleetFrame): bool =
+    target.applyFleetFrame(frame))
+  vm.feeds.resumes.openResumes(vm.source, proc(event: ResumeEvent): bool =
+    let before = target.revision.val
+    target.markResumed(event.sessionId, event.atMs)
+    target.revision.val != before)
+  vm.feeds.recordings.openRecordings(vm.source, proc(event: RecordingEvent): bool =
+    target.applyRecording(event))
+  vm.feeds.progress.openProgress(vm.source, proc(event: ProgressEvent): bool =
+    target.applyProgress(event))
+  vm.feeds.resets.openResets(vm.source, proc(reset: StreamReset): bool =
+    target.restart()
+    true)
   var pending = 2
   var failed = ""
   proc settle() =
@@ -227,9 +274,7 @@ proc load*(vm: InitiativeTabStripVM) =
     if answer.ok:
       target.nowMs = answer.value.capturedAtMs
       target.directory.replaceAll(answer.value.sessions)
-      for s in target.directory.sessions:
-        if s.originFrontEnd == OwnFrontEnd and s.id notin target.openIds:
-          target.openIds.add s.id
+      target.openOwn()
     else:
       failed = answer.error
     settle()
@@ -417,25 +462,88 @@ proc afterChange(vm: InitiativeTabStripVM; wasWaiting: bool) =
   if vm.autoSwitch.val and wasWaiting and not vm.waitingInView:
     discard vm.stepInbox(1)
 
+proc applyFleetFrame*(vm: InitiativeTabStripVM; frame: FleetFrame): bool =
+  ## A fleet frame from the source: a lifecycle frame, a session's listing
+  ## entry (a session this front-end started opens as a tab), or one of a
+  ## session's events (it starts or stops waiting on a question). With
+  ## auto-switch on, the session in view that stopped waiting hands the view
+  ## on. True when the bar changed.
+  let wasWaiting = vm.waitingInView
+  if not vm.directory.followFrame(vm.nowMs, frame): return false
+  vm.openOwn()
+  vm.afterChange(wasWaiting)
+  true
+
 proc applyFrame*(vm: InitiativeTabStripVM; frame: LifecycleFrame) =
   ## A lifecycle frame from the live feed.
-  let wasWaiting = vm.waitingInView
-  if vm.directory.applyFrame(frame): vm.afterChange(wasWaiting)
+  discard vm.applyFleetFrame(lifecycleFrame(frame))
 
-proc markResumed*(vm: InitiativeTabStripVM; sessionId: string) =
+proc markResumed*(vm: InitiativeTabStripVM; sessionId: string; atMs = 0'i64) =
   ## The operator's instruction reached a waiting session (a live source
-  ## learns this from the session's events): it no longer waits.
+  ## learns this from the session's events; a source delivers it as a
+  ## `ResumeEvent`): it no longer waits. `atMs`, when given, is when.
   let wasWaiting = vm.waitingInView
-  if vm.directory.resumeSession(sessionId): vm.afterChange(wasWaiting)
+  if vm.directory.resumeSession(sessionId, atMs):
+    vm.nowMs = max(vm.nowMs, atMs)
+    vm.afterChange(wasWaiting)
 
 proc setRecordings*(vm: InitiativeTabStripVM; initiativeId: string;
                     entries: seq[RecordingEntry]; activeId = "") =
   ## The recordings the host has loaded for an initiative (CodeTracer's own
   ## state: its replays, not Agent Harbor's).
   vm.recordings[initiativeId] = entries
+  let fromSource = vm.sourceRecordings.find(initiativeId)
+  if fromSource >= 0: vm.sourceRecordings.delete(fromSource)
   vm.activeRecording[initiativeId] =
     if activeId.len > 0: activeId elif entries.len > 0: entries[0].id else: ""
   vm.bump()
+
+proc applyRecording*(vm: InitiativeTabStripVM; event: RecordingEvent): bool =
+  ## A recording of an initiative appeared or changed state, as the source
+  ## delivers it (`recording_switcher.applyRecording`: a known id is
+  ## replaced in place, a new one follows). The first recording an
+  ## initiative gets is its active one; an appearing recording does not take
+  ## the active place from another. True when the recordings changed.
+  var entries = vm.recordings.getOrDefault(event.initiativeId, @[])
+  if not entries.applyRecording(event.entry): return false
+  vm.recordings[event.initiativeId] = entries
+  if vm.activeRecording.getOrDefault(event.initiativeId, "").len == 0:
+    vm.activeRecording[event.initiativeId] = entries[0].id
+  if event.initiativeId notin vm.sourceRecordings:
+    vm.sourceRecordings.add event.initiativeId
+  vm.bump()
+  true
+
+proc applyProgress*(vm: InitiativeTabStripVM; event: ProgressEvent): bool =
+  ## A progress event of an initiative the bar has a tab for (its `n/m`, its
+  ## state, its popup), through nim-agents' `applyMilestoneStatus`. True when
+  ## it changed the initiative.
+  if not vm.initiatives.applyProgressEvent(event): return false
+  vm.bump()
+  true
+
+proc restart*(vm: InitiativeTabStripVM) =
+  ## Starts over, as after a source's reset: the sessions, the open tabs,
+  ## the active tab, the sessions selected inside initiative tabs and the
+  ## recordings the source delivered are dropped with the data they came
+  ## from, as are an open popup, menu or overflow; the reader's settings
+  ## (auto-switch, widths) and the host's own recordings stay. Then the bar
+  ## loads again.
+  vm.directory = initSessionDirectory()
+  vm.initiatives = @[]
+  vm.nowMs = 0
+  vm.openIds = @[]
+  vm.selectedSession.clear()
+  for id in vm.sourceRecordings:
+    vm.recordings.del id
+    vm.activeRecording.del id
+  vm.sourceRecordings = @[]
+  vm.activeTab.val = ""
+  vm.popupId.val = ""
+  vm.elsewhereOpen.val = false
+  vm.overflowOpen.val = false
+  vm.bump()
+  vm.load()
 
 proc selectRecording*(vm: InitiativeTabStripVM; initiativeId, recordingId: string): bool =
   for e in vm.recordings.getOrDefault(initiativeId, @[]):

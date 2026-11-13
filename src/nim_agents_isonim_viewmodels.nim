@@ -8,11 +8,15 @@
 ##
 ## The Agent Harbor viewmodels (`agent_harbor/`) read through a data-source
 ## seam (`agent_harbor/data_source`), with a fixture implementation over
-## captured data (`agent_harbor/fixture_source`).
+## captured data (`agent_harbor/fixture_source`) and a playback source that
+## replays a synthetic scenario on a clock (`agent_harbor/playback_source`,
+## over `agent_harbor/playback_scenarios`).
 import nim_agents_isonim_viewmodels/activity_vm
 import nim_agents_isonim_viewmodels/agent_harbor/[data_source, fixture_source,
   synthetic_fleet, session_items, fleet_vm, session_tabs_vm, initiatives_vm,
-  initiative_progress_vm, progress_feed, recording_switcher, initiative_tabs_vm]
+  initiative_progress_vm, progress_feed, source_feed, recording_switcher,
+  initiative_tabs_vm, playback_scenario, playback_scenarios, playback_source]
 export activity_vm, data_source, fixture_source, synthetic_fleet, session_items,
   fleet_vm, session_tabs_vm, initiatives_vm, initiative_progress_vm, progress_feed,
-  recording_switcher, initiative_tabs_vm
+  source_feed, recording_switcher, initiative_tabs_vm, playback_scenario,
+  playback_scenarios, playback_source
