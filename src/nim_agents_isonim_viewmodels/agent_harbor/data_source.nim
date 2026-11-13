@@ -25,6 +25,16 @@
 ## Base methods answer with an error naming the missing capability, so a
 ## source that serves only part of the surface fails loudly and visibly
 ## rather than rendering an empty panel that looks like an empty fleet.
+##
+## Besides the loads, a source may deliver initiative progress events as they
+## happen (`subscribeProgress`): a milestone's status changed in a plan. A
+## subscriber is called once per event, for as long as its subscription is
+## active, and answers what the event did to it (`ProgressDelivery`). The
+## subscription is a handle the subscriber cancels (a viewmodel does so when
+## it is disposed); once cancelled, the handle drops the subscriber's callback,
+## so a source that delivers through the handle (`deliver`, `broadcast`)
+## cannot reach the subscriber any more, and the attempt is counted on the
+## handle and answered `pdRefused`.
 
 import nim_agents/agent_harbor/initiatives
 import ./records
@@ -83,6 +93,44 @@ type
   ScenarioRunsCallback* = proc(answer: DataResult[seq[ScenarioRunCapture]]) {.closure.}
   InitiativesCallback* = proc(answer: DataResult[seq[Initiative]]) {.closure.}
 
+  ProgressEvent* = object
+    ## One initiative progress event: the milestone `milestoneId` of the
+    ## initiative `initiativeId` now has the status `status`, as the plan
+    ## writes it (`planned`, `in_progress`, `completed`, ...).
+    initiativeId*: string
+    milestoneId*: string
+    status*: string
+
+  ProgressDelivery* = enum
+    ## What one delivered event did to its subscriber.
+    pdApplied = "applied"
+      ## It changed the subscriber's state.
+    pdUnchanged = "unchanged"
+      ## It reached the subscriber and changed nothing (an initiative or
+      ## milestone the subscriber does not hold, a status it already has, or
+      ## an error answer).
+    pdRefused = "refused"
+      ## It did not reach a live subscriber: the subscription was cancelled
+      ## (the subscriber disposed) before the event was delivered. Nothing
+      ## moved.
+
+  ProgressCallback* = proc(event: DataResult[ProgressEvent]): ProgressDelivery {.closure.}
+    ## Called once per event. An error answer (`ok == false`) ends the
+    ## stream: the source delivers nothing more on that subscription.
+
+  ProgressSubscription* = ref object
+    ## A subscriber's handle on a source's progress events. `cancel` ends it;
+    ## a source delivers through `deliver` (or `broadcast`), which reaches the
+    ## subscriber only while the handle is active.
+    callback: ProgressCallback
+    cancelled: bool
+    refused: int
+
+  ProgressSubscribers* = object
+    ## The subscriptions a source holds, in the order they were made; the
+    ## bookkeeping a source needs to implement `subscribeProgress`.
+    subscriptions: seq[ProgressSubscription]
+
   AgentHarborDataSource* = ref object of RootObj
     ## The interface. `label` names the source in a panel's chrome ("fleet
     ## snapshot, 2026-11-03 18:40 UTC", "live: <server>").
@@ -132,6 +180,104 @@ method loadInitiatives*(source: AgentHarborDataSource;
   done(failure[seq[Initiative]](source.unsupported("initiatives")))
 
 # ---------------------------------------------------------------------------
+# Progress events
+# ---------------------------------------------------------------------------
+
+proc newProgressSubscription*(callback: ProgressCallback): ProgressSubscription =
+  ## An active subscription that delivers to `callback`.
+  ProgressSubscription(callback: callback)
+
+proc active*(subscription: ProgressSubscription): bool =
+  ## True until the subscription is cancelled or its stream ended.
+  not subscription.isNil and not subscription.cancelled
+
+proc refused*(subscription: ProgressSubscription): int =
+  ## How many deliveries were attempted after the subscription ended; none of
+  ## them reached the subscriber.
+  if subscription.isNil: 0 else: subscription.refused
+
+proc cancel*(subscription: ProgressSubscription) =
+  ## Ends the subscription; idempotent. The callback is dropped, so nothing
+  ## delivered through the handle afterwards can reach the subscriber, and
+  ## the source no longer keeps the subscriber alive.
+  if subscription.isNil: return
+  subscription.cancelled = true
+  subscription.callback = nil
+
+proc deliver*(subscription: ProgressSubscription;
+              event: DataResult[ProgressEvent]): ProgressDelivery =
+  ## Delivers one answer. On an ended subscription it calls nothing, counts
+  ## the attempt (`refused`) and answers `pdRefused`. An error answer is
+  ## delivered and then ends the subscription.
+  if not subscription.active:
+    if not subscription.isNil: inc subscription.refused
+    return pdRefused
+  let callback = subscription.callback
+  if not event.ok: subscription.cancel()
+  callback(event)
+
+proc endedProgressSubscription*(callback: ProgressCallback;
+                                error: string): ProgressSubscription =
+  ## Answers `callback` once with `error` and returns the ended subscription:
+  ## what a source that cannot deliver progress events returns.
+  result = newProgressSubscription(callback)
+  discard result.deliver(failure[ProgressEvent](error))
+
+proc prune(subscribers: var ProgressSubscribers) =
+  var kept: seq[ProgressSubscription]
+  for subscription in subscribers.subscriptions:
+    if subscription.active: kept.add subscription
+  subscribers.subscriptions = kept
+
+proc subscribe*(subscribers: var ProgressSubscribers;
+                callback: ProgressCallback): ProgressSubscription =
+  ## A new active subscription, held until it ends. Ended subscriptions are
+  ## dropped first, so a source that never sends does not accumulate the
+  ## handles of subscribers that came and went.
+  subscribers.prune()
+  result = newProgressSubscription(callback)
+  subscribers.subscriptions.add result
+
+proc activeCount*(subscribers: ProgressSubscribers): int =
+  ## The subscriptions still active.
+  for subscription in subscribers.subscriptions:
+    if subscription.active: inc result
+
+proc broadcast*(subscribers: var ProgressSubscribers;
+                event: DataResult[ProgressEvent]): seq[ProgressDelivery] =
+  ## Delivers one answer to every active subscription, in subscription order,
+  ## and returns what it did to each. Ended subscriptions are dropped first,
+  ## so a cancelled subscriber is never called. A subscriber that cancels
+  ## another during the delivery is honoured: the other is refused, not
+  ## called.
+  subscribers.prune()
+  let current = subscribers.subscriptions
+  for subscription in current:
+    result.add subscription.deliver(event)
+  subscribers.prune()
+
+proc applyProgressEvent*(initiatives: var seq[Initiative];
+                         event: ProgressEvent): bool =
+  ## Applies one progress event to the initiative it names, through
+  ## nim-agents' `applyMilestoneStatus` (the reducer every count derives
+  ## from). True when it changed something; an unknown initiative or
+  ## milestone, or a repeated status, changes nothing.
+  for initiative in initiatives.mitems:
+    if initiative.id == event.initiativeId:
+      return initiative.progress.applyMilestoneStatus(event.milestoneId,
+                                                      event.status)
+  false
+
+method subscribeProgress*(source: AgentHarborDataSource;
+                          callback: ProgressCallback): ProgressSubscription {.base.} =
+  ## Initiative progress events as they happen (a milestone's status changed
+  ## in a plan; the proposed initiative event stream). Returns the
+  ## subscription, which the subscriber cancels when it no longer wants the
+  ## events. The base answers `callback` once with an error naming the
+  ## missing capability and returns an ended subscription.
+  endedProgressSubscription(callback, source.unsupported("progress events"))
+
+# ---------------------------------------------------------------------------
 # State sources: the states no capture shows
 # ---------------------------------------------------------------------------
 
@@ -141,6 +287,9 @@ type
     ## Holds the callbacks so a test can prove none was called.
     pendingFleet*: seq[FleetCallback]
     pendingInitiatives*: seq[InitiativesCallback]
+    progressSubscribers*: ProgressSubscribers
+      ## Accepted and never sent to: a server whose event stream is open and
+      ## silent.
 
   FailingDataSource* = ref object of AgentHarborDataSource
     ## Answers every load with the same error.
@@ -149,9 +298,11 @@ type
   SnapshotDataSource* = ref object of AgentHarborDataSource
     ## Answers the session list with a given snapshot (an empty fleet, or a
     ## synthetic one larger than any capture), and the initiatives with given
-    ## ones.
+    ## ones. Its progress stream sends only what the host sends through it
+    ## (`sendProgress`); left alone, it never sends.
     snapshot*: FleetSnapshot
     initiatives*: seq[Initiative]
+    progressSubscribers*: ProgressSubscribers
 
 proc newPendingDataSource*(label = "waiting for the server"): PendingDataSource =
   PendingDataSource(label: label)
@@ -168,6 +319,11 @@ method loadSessionEvents*(source: PendingDataSource; sessionId: string;
 
 method loadInitiatives*(source: PendingDataSource; done: InitiativesCallback) =
   source.pendingInitiatives.add(done)
+
+method subscribeProgress*(source: PendingDataSource;
+                          callback: ProgressCallback): ProgressSubscription =
+  ## Accepted; never sends.
+  source.progressSubscribers.subscribe(callback)
 
 proc newFailingDataSource*(error: string;
                            label = "unreachable server"): FailingDataSource =
@@ -186,6 +342,11 @@ method loadSessionEvents*(source: FailingDataSource; sessionId: string;
 method loadInitiatives*(source: FailingDataSource; done: InitiativesCallback) =
   done(failure[seq[Initiative]](source.error))
 
+method subscribeProgress*(source: FailingDataSource;
+                          callback: ProgressCallback): ProgressSubscription =
+  ## Answers once with the source's error; the subscription is ended.
+  endedProgressSubscription(callback, source.error)
+
 proc newSnapshotDataSource*(snapshot: FleetSnapshot;
                             label = "synthetic fleet";
                             initiatives: seq[Initiative] = @[]): SnapshotDataSource =
@@ -196,3 +357,18 @@ method loadFleet*(source: SnapshotDataSource; done: FleetCallback) =
 
 method loadInitiatives*(source: SnapshotDataSource; done: InitiativesCallback) =
   done(success(source.initiatives))
+
+method subscribeProgress*(source: SnapshotDataSource;
+                          callback: ProgressCallback): ProgressSubscription =
+  ## Accepted; sends what the host sends through `sendProgress`, nothing
+  ## otherwise.
+  source.progressSubscribers.subscribe(callback)
+
+proc sendProgress*(source: SnapshotDataSource;
+                   event: ProgressEvent): seq[ProgressDelivery] =
+  ## Applies one progress event to the source's own `initiatives` (so a
+  ## later `loadInitiatives` answers the state after it, as a server's list
+  ## would), then delivers it to every active subscriber, in subscription
+  ## order, and returns what it did to each.
+  discard source.initiatives.applyProgressEvent(event)
+  source.progressSubscribers.broadcast(success(event))

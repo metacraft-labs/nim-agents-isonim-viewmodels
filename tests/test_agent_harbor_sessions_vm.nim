@@ -9,6 +9,24 @@
 ## and failing sources are the seam's production implementations for the
 ## states no capture shows. Assertions about fixture contents are made
 ## against the manifest's own JSON, decoded independently here.
+##
+## The progress-event suite (last) adds two test doubles, both in-repo
+## sources over invented plans built in this file. `InitiativesOnlySource`
+## serves initiatives and leaves `subscribeProgress` to the base method: a
+## server that lists plans without an event stream, which is the case the
+## base method's "does not provide" answer exists for and which no
+## production source in this repo is. `LeakySource` is a `SnapshotDataSource`
+## that also keeps each subscriber's raw callback, so the test can deliver an
+## event after the subscriber cancelled, as a source that ignores the
+## cancellation would; no production source does that on demand.
+## `AnswerThenSendSource` is a `SnapshotDataSource` that sends an event at
+## once after answering the plans, as a server whose plan moves right after
+## it answered would; it pins that a viewmodel subscribes before it loads, a
+## race no production source in this repo can stage on demand. The
+## sending source is the production `SnapshotDataSource` (`sendProgress`).
+## The expected progress after each event is written out by hand in the
+## test (counts, percentages, groups, current milestone), not computed
+## through `applyMilestoneStatus` or `applyProgress`.
 
 import std/[algorithm, json, sets, strutils, tables, unittest]
 import isonim/core/[computation, owner, signals]
@@ -845,3 +863,360 @@ suite "the initiatives tree":
       check vm.rows[0].expanded
       vm.toggleExpanded(id)
       check not vm.rows[0].expanded
+
+# ---------------------------------------------------------------------------
+# Progress events through the seam
+# ---------------------------------------------------------------------------
+
+type
+  InitiativesOnlySource = ref object of AgentHarborDataSource
+    ## Lists plans; has no progress event stream (the base method answers).
+    initiatives: seq[Initiative]
+
+  LeakySource = ref object of SnapshotDataSource
+    ## A snapshot source that also keeps every raw callback it was given.
+    rawCallbacks: seq[ProgressCallback]
+
+  AnswerThenSendSource = ref object of SnapshotDataSource
+    ## A snapshot source that, once it has answered the plans, at once sends
+    ## the events queued in `afterAnswer` (each once).
+    afterAnswer: seq[ProgressEvent]
+
+method loadFleet(source: InitiativesOnlySource; done: FleetCallback) =
+  done(success(FleetSnapshot(capturedAtMs: Now)))
+
+method loadInitiatives(source: InitiativesOnlySource; done: InitiativesCallback) =
+  done(success(source.initiatives))
+
+method subscribeProgress(source: LeakySource;
+                         callback: ProgressCallback): ProgressSubscription =
+  source.rawCallbacks.add callback
+  procCall subscribeProgress(SnapshotDataSource(source), callback)
+
+method loadInitiatives(source: AnswerThenSendSource; done: InitiativesCallback) =
+  done(success(source.initiatives))
+  let queued = source.afterAnswer
+  source.afterAnswer = @[]
+  for queuedEvent in queued:
+    discard source.sendProgress(queuedEvent)
+
+const Dot = " \xC2\xB7 "
+
+proc milestone(id, title, status: string): MilestoneDetail =
+  MilestoneDetail(id: id, title: title, status: status)
+
+proc handPlans(): seq[Initiative] =
+  ## Two invented plans with their summaries written out by hand.
+  @[Initiative(id: "plan-a", title: "Plan A", repository: "example/a",
+               progress: MilestoneFileProgress(
+                 path: "a.milestones.org", title: "Plan A", currentMilestone: "A2",
+                 milestones: @[milestone("A1", "First", "completed"),
+                               milestone("A2", "Second", "in_progress"),
+                               milestone("A3", "Third", "planned"),
+                               milestone("A4", "Fourth", "planned")],
+                 summary: MilestoneSummary(totalMilestones: 4, completedMilestones: 1,
+                                           progressPercent: 25,
+                                           currentMilestoneTitle: "Second"))),
+    Initiative(id: "plan-b", title: "Plan B", repository: "example/b",
+               progress: MilestoneFileProgress(
+                 path: "b.milestones.org", title: "Plan B", currentMilestone: "B1",
+                 milestones: @[milestone("B1", "Bee one", "in_progress"),
+                               milestone("B2", "Bee two", "planned")],
+                 summary: MilestoneSummary(totalMilestones: 2, completedMilestones: 0,
+                                           progressPercent: 0,
+                                           currentMilestoneTitle: "Bee one")))]
+
+type
+  Moment = object
+    ## What both viewmodels show at one moment, written out by hand.
+    aHeadline: string          ## the Progress panel on plan-a
+    aGroups: seq[string]
+    aCurrent: string
+    aRow, bRow: string         ## the Initiatives rows' n/m · %
+    aRowCurrent, bRowCurrent: string
+    bBlocked: int
+
+const
+  # Before any event: plan-a 1 of 4 done (25 %), A2 current; plan-b 0 of 2.
+  AtLoad = Moment(aHeadline: "1 of 4 milestones" & Dot & "25%",
+                  aGroups: @["In progress (1)", "Planned (2)", "Completed (1)"],
+                  aCurrent: "A2", aRow: "1/4" & Dot & "25%", bRow: "0/2" & Dot & "0%",
+                  aRowCurrent: "A2: Second", bRowCurrent: "B1: Bee one", bBlocked: 0)
+  # A2 completed: 2 of 4 (50 %), "current" passes to A3, nothing in progress.
+  AfterA2 = Moment(aHeadline: "2 of 4 milestones" & Dot & "50%",
+                   aGroups: @["Planned (2)", "Completed (2)"],
+                   aCurrent: "A3", aRow: "2/4" & Dot & "50%", bRow: "0/2" & Dot & "0%",
+                   aRowCurrent: "A3: Third", bRowCurrent: "B1: Bee one", bBlocked: 0)
+  # A3 started: still 2 of 4.
+  AfterA3 = Moment(aHeadline: "2 of 4 milestones" & Dot & "50%",
+                   aGroups: @["In progress (1)", "Planned (1)", "Completed (2)"],
+                   aCurrent: "A3", aRow: "2/4" & Dot & "50%", bRow: "0/2" & Dot & "0%",
+                   aRowCurrent: "A3: Third", bRowCurrent: "B1: Bee one", bBlocked: 0)
+  # B1 blocked: plan-b still 0 of 2, B1 stays current, one blocked.
+  AfterB1 = Moment(aHeadline: "2 of 4 milestones" & Dot & "50%",
+                   aGroups: @["In progress (1)", "Planned (1)", "Completed (2)"],
+                   aCurrent: "A3", aRow: "2/4" & Dot & "50%", bRow: "0/2" & Dot & "0%",
+                   aRowCurrent: "A3: Third", bRowCurrent: "B1: Bee one", bBlocked: 1)
+
+proc rowOf(vm: InitiativesVM; id: string): InitiativeRow =
+  for row in vm.rows:
+    if row.id == id: return row
+
+proc currentLine(vm: InitiativeProgressVM): string =
+  for g in vm.groups:
+    for m in g.milestones:
+      if m.current: return m.id
+
+proc groupTitles(vm: InitiativeProgressVM): seq[string] =
+  for g in vm.groups: result.add g.title
+
+proc checkMoment(list: InitiativesVM; panel: InitiativeProgressVM;
+                 expected: Moment; label: string) =
+  checkpoint label
+  check panel.headline == expected.aHeadline
+  check panel.groupTitles == expected.aGroups
+  check panel.currentLine == expected.aCurrent
+  let a = list.rowOf("plan-a")
+  let b = list.rowOf("plan-b")
+  check a.progressText == expected.aRow
+  check b.progressText == expected.bRow
+  check a.currentMilestone == expected.aRowCurrent
+  check b.currentMilestone == expected.bRowCurrent
+  check b.statusCounts[mscBlocked] == expected.bBlocked
+
+proc event(initiative, milestone, status: string): ProgressEvent =
+  ProgressEvent(initiativeId: initiative, milestoneId: milestone, status: status)
+
+suite "progress events through the data-source seam":
+  test "test_ctf_p1c_progress_subscription_moves_the_viewmodels":
+    createRoot proc(disposeRoot: proc()) =
+      # -- A sending source moves both viewmodels, with no host call. -------
+      let source = newSnapshotDataSource(FleetSnapshot(capturedAtMs: Now),
+                                         "hand plans", handPlans())
+      let list = newInitiativesVM(source)
+      let panel = newInitiativeProgressVM(source, "plan-a")
+      check list.progressState.val == asIdle
+      list.load()
+      panel.load()
+      check list.state.val == asReady and panel.state.val == asReady
+      check list.progressState.val == asReady and panel.progressState.val == asReady
+      check source.progressSubscribers.activeCount == 2
+      var listRuns, panelRuns = 0
+      createEffect proc() =
+        discard list.rows
+        inc listRuns
+      createEffect proc() =
+        discard panel.groups
+        inc panelRuns
+      checkMoment(list, panel, AtLoad, "at load")
+      check source.sendProgress(event("plan-a", "A2", "completed")) ==
+        @[pdApplied, pdApplied]
+      checkMoment(list, panel, AfterA2, "after A2 completed")
+      check source.sendProgress(event("plan-a", "A3", "in_progress")) ==
+        @[pdApplied, pdApplied]
+      checkMoment(list, panel, AfterA3, "after A3 started")
+      check source.sendProgress(event("plan-b", "B1", "blocked")) ==
+        @[pdApplied, pdApplied]
+      checkMoment(list, panel, AfterB1, "after B1 blocked")
+      # Each event moved each viewmodel once; ones that change nothing (a
+      # repeated status, an unknown initiative or milestone) move nothing.
+      check listRuns == 1 + 3 and panelRuns == 1 + 3
+      check source.sendProgress(event("plan-b", "B1", "blocked")) ==
+        @[pdUnchanged, pdUnchanged]
+      check source.sendProgress(event("plan-z", "Z1", "completed")) ==
+        @[pdUnchanged, pdUnchanged]
+      check source.sendProgress(event("plan-a", "A9", "completed")) ==
+        @[pdUnchanged, pdUnchanged]
+      check listRuns == 4 and panelRuns == 4
+      checkMoment(list, panel, AfterB1, "after events that change nothing")
+      check list.lateProgressEvents == 0 and panel.lateProgressEvents == 0
+
+      # -- Several subscribers: a second panel, and reloads, which replace
+      #    their own subscription rather than add one. ---------------------
+      let panel2 = newInitiativeProgressVM(source, "plan-b")
+      panel2.load()
+      list.load()
+      panel.load()
+      check source.progressSubscribers.activeCount == 3
+      # The source's own list followed the events, so the reloads read
+      # the state after them.
+      checkMoment(list, panel, AfterB1, "after the reloads")
+      check panel2.headline == "0 of 2 milestones" & Dot & "0%"
+      check source.sendProgress(event("plan-b", "B2", "completed")) ==
+        @[pdApplied, pdApplied, pdApplied]
+      # plan-b: B2 done, 1 of 2 (50 %); B1 (blocked) stays current.
+      check panel2.headline == "1 of 2 milestones" & Dot & "50%"
+      check panel2.groupTitles == @["Blocked (1)", "Completed (1)"]
+      check panel2.currentLine == "B1"
+      check list.rowOf("plan-b").progressText == "1/2" & Dot & "50%"
+      check panel.headline == AfterB1.aHeadline   # plan-a is untouched
+
+      # -- Disposal unsubscribes; a late event moves nothing. ---------------
+      panel.dispose()
+      check source.progressSubscribers.activeCount == 2
+      check source.sendProgress(event("plan-a", "A3", "completed")) ==
+        @[pdApplied, pdApplied]                  # list and panel2 only
+      check panel.headline == AfterB1.aHeadline   # the disposed one did not move
+      check panel.currentLine == "A3"
+      # plan-a in the list: A3 done, 3 of 4 (75 %), A4 current.
+      check list.rowOf("plan-a").progressText == "3/4" & Dot & "75%"
+      check list.rowOf("plan-a").currentMilestone == "A4: Fourth"
+      check panel.lateProgressEvents == 0
+      list.dispose()
+      panel2.dispose()
+      check source.progressSubscribers.activeCount == 0
+      check source.sendProgress(event("plan-a", "A4", "completed")).len == 0
+      check list.rowOf("plan-a").progressText == "3/4" & Dot & "75%"
+      disposeRoot()
+
+    # -- A source that does not provide progress events says so. -----------
+    createRoot proc(disposeRoot: proc()) =
+      let bare = InitiativesOnlySource(label: "plans only", initiatives: handPlans())
+      let list = newInitiativesVM(bare)
+      let panel = newInitiativeProgressVM(bare, "plan-a")
+      list.load()
+      panel.load()
+      # The panels still show their plans; the feed reports the gap.
+      check list.state.val == asReady and panel.state.val == asReady
+      for vm in [list.progressState, panel.progressState]:
+        check vm.val == asError
+      check list.progressError.val ==
+        "the data source 'plans only' does not provide progress events"
+      check panel.progressError.val == list.progressError.val
+      checkMoment(list, panel, AtLoad, "over a source without progress events")
+      # A failing source reports its own error on the feed as well.
+      let failing = newFailingDataSource("connection refused")
+      let failed = newInitiativeProgressVM(failing)
+      failed.load()
+      check failed.state.val == asError
+      check failed.progressState.val == asError
+      check failed.progressError.val == "connection refused"
+      list.dispose()
+      panel.dispose()
+      failed.dispose()
+      disposeRoot()
+
+    # -- A source that never sends leaves the viewmodels as loaded. --------
+    createRoot proc(disposeRoot: proc()) =
+      let quiet = newSnapshotDataSource(FleetSnapshot(capturedAtMs: Now),
+                                        "quiet", handPlans())
+      let list = newInitiativesVM(quiet)
+      let panel = newInitiativeProgressVM(quiet, "plan-a")
+      list.load()
+      panel.load()
+      let listRevision = list.revision.val
+      let panelRevision = panel.revision.val
+      check list.progressState.val == asReady and panel.progressState.val == asReady
+      check quiet.progressSubscribers.activeCount == 2
+      checkMoment(list, panel, AtLoad, "over a source that never sends")
+      check list.revision.val == listRevision and panel.revision.val == panelRevision
+      # A pending source (the server never answers) holds the subscription
+      # open and sends nothing; nothing loads, nothing moves.
+      let pending = newPendingDataSource()
+      let waiting = newInitiativeProgressVM(pending, "plan-a")
+      waiting.load()
+      check waiting.state.val == asLoading
+      check waiting.progressState.val == asReady
+      check pending.progressSubscribers.activeCount == 1
+      check waiting.revision.val == 0
+      check waiting.groups.len == 0
+      # The fixture source's stream is open and quiet too.
+      let fixturePanel = newInitiativeProgressVM(newFixtureDataSource())
+      fixturePanel.load()
+      let fixtureRevision = fixturePanel.revision.val
+      check fixturePanel.progressState.val == asReady
+      check fixturePanel.revision.val == fixtureRevision
+      list.dispose()
+      panel.dispose()
+      waiting.dispose()
+      fixturePanel.dispose()
+      check quiet.progressSubscribers.activeCount == 0
+      check pending.progressSubscribers.activeCount == 0
+      disposeRoot()
+
+    # -- The viewmodels subscribe before they load: an event sent right
+    #    after the plans' answer is not lost between the two. -------------
+    createRoot proc(disposeRoot: proc()) =
+      let racing = AnswerThenSendSource(label: "answers, then sends",
+                                        initiatives: handPlans(),
+                                        snapshot: FleetSnapshot(capturedAtMs: Now),
+                                        afterAnswer: @[event("plan-a", "A2", "completed")])
+      let list = newInitiativesVM(racing)
+      list.load()
+      check racing.afterAnswer.len == 0
+      check list.rowOf("plan-a").progressText == AfterA2.aRow
+      check list.rowOf("plan-a").currentMilestone == AfterA2.aRowCurrent
+      racing.afterAnswer = @[event("plan-a", "A3", "in_progress")]
+      let panel = newInitiativeProgressVM(racing, "plan-a")
+      panel.load()
+      check panel.headline == AfterA3.aHeadline
+      check panel.groupTitles == AfterA3.aGroups
+      check panel.currentLine == AfterA3.aCurrent
+      check list.rowOf("plan-a").currentMilestone == AfterA3.aRowCurrent
+      list.dispose()
+      panel.dispose()
+      check racing.progressSubscribers.activeCount == 0
+      disposeRoot()
+
+    # -- A source that ignores the cancellation cannot move a disposed one.
+    createRoot proc(disposeRoot: proc()) =
+      let leaky = LeakySource(label: "leaky", initiatives: handPlans(),
+                              snapshot: FleetSnapshot(capturedAtMs: Now))
+      let list = newInitiativesVM(leaky)
+      let panel = newInitiativeProgressVM(leaky, "plan-a")
+      list.load()
+      panel.load()
+      check leaky.rawCallbacks.len == 2
+      list.dispose()
+      panel.dispose()
+      let late = success(event("plan-a", "A2", "completed"))
+      check leaky.rawCallbacks[0](late) == pdRefused
+      check leaky.rawCallbacks[1](late) == pdRefused
+      check list.lateProgressEvents == 1 and panel.lateProgressEvents == 1
+      checkMoment(list, panel, AtLoad, "after events delivered past disposal")
+      # A reload replaces the subscription: the old callback is refused too.
+      let live = newInitiativeProgressVM(leaky, "plan-a")
+      live.load()
+      live.load()
+      check leaky.rawCallbacks.len == 4
+      check leaky.rawCallbacks[2](late) == pdRefused
+      check live.lateProgressEvents == 1
+      check live.headline == AtLoad.aHeadline
+      check leaky.rawCallbacks[3](late) == pdApplied
+      check live.headline == AfterA2.aHeadline
+      live.dispose()
+      disposeRoot()
+
+  test "a subscription handle delivers until it is cancelled or its stream fails":
+    var calls: seq[DataResult[ProgressEvent]]
+    let callback = proc(answer: DataResult[ProgressEvent]): ProgressDelivery =
+      calls.add answer
+      pdUnchanged
+    var subscribers: ProgressSubscribers
+    let first = subscribers.subscribe(callback)
+    let second = subscribers.subscribe(callback)
+    check first.active and second.active
+    check subscribers.broadcast(success(event("p", "m", "done"))) ==
+      @[pdUnchanged, pdUnchanged]
+    check calls.len == 2
+    first.cancel()
+    first.cancel()                                  # idempotent
+    check not first.active
+    check subscribers.activeCount == 1
+    check subscribers.broadcast(success(event("p", "m", "done"))) == @[pdUnchanged]
+    check calls.len == 3
+    # Delivering through a cancelled handle calls nothing and is counted.
+    check first.deliver(success(event("p", "m", "done"))) == pdRefused
+    check first.refused == 1
+    check calls.len == 3
+    # An error answer is delivered once and ends the stream.
+    check subscribers.broadcast(failure[ProgressEvent]("stream closed")) == @[pdUnchanged]
+    check calls.len == 4 and not calls[3].ok and calls[3].error == "stream closed"
+    check not second.active
+    check subscribers.activeCount == 0
+    check subscribers.broadcast(success(event("p", "m", "done"))).len == 0
+    # The base method answers "does not provide" once, with an ended handle.
+    let ended = AgentHarborDataSource(label: "bare").subscribeProgress(callback)
+    check not ended.active
+    check calls.len == 5
+    check calls[4].error == "the data source 'bare' does not provide progress events"

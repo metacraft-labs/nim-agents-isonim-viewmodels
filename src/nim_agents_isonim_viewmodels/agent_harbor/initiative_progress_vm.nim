@@ -6,14 +6,20 @@
 ##
 ## Reads through the data-source seam (`loadInitiatives`) and shows the
 ## initiative named by `initiativeId`; a host follows the Initiatives
-## panel's selection with `show`.
+## panel's selection with `show`. `load` also subscribes to the source's
+## progress events (`subscribeProgress`, through a `ProgressFeed`), so a
+## source that sends one moves the panel with no host call; a host may still
+## apply one itself (`applyProgress`). Disposing the viewmodel unsubscribes
+## it; `progressState` / `progressError` report the feed (an error when the
+## source does not provide the events).
 
 import std/strutils
-import isonim/core/[signals, computation]
+import isonim/core/[signals, computation, owner]
 import isonim/viewmodel
 import ./data_source
+import ./progress_feed
 
-export data_source, viewmodel, signals, computation
+export data_source, progress_feed, viewmodel, signals, computation
 
 type
   MilestoneLine* = object
@@ -41,23 +47,59 @@ type
     error*: Signal[string]
     initiativeId*: Signal[string]
     loadToken: int
+    feed: ProgressFeed
+    progressState*: Signal[AsyncState]
+      ## The progress feed: `asIdle` before `load`, `asReady` while subscribed,
+      ## `asError` when the source does not provide progress events.
+    progressError*: Signal[string]
 
 proc newInitiativeProgressVM*(source: AgentHarborDataSource;
                               initiativeId = ""): InitiativeProgressVM =
   withViewModel proc(dispose: proc()): InitiativeProgressVM =
+    let feed = newProgressFeed()
+    # Disposing the viewmodel's root unsubscribes it from its source.
+    onCleanup proc() = feed.close()
     InitiativeProgressVM(source: source, revision: createSignal(0),
                          state: createSignal(asIdle), error: createSignal(""),
-                         initiativeId: createSignal(initiativeId))
+                         initiativeId: createSignal(initiativeId),
+                         feed: feed, progressState: feed.state,
+                         progressError: feed.error)
 
 proc sourceLabel*(vm: InitiativeProgressVM): string =
   if vm.source.isNil: "" else: vm.source.label
 
+proc applyProgress*(vm: InitiativeProgressVM; event: ProgressEvent): bool =
+  ## A progress event, as the source's subscription delivers it. True when it
+  ## changed the initiative; an event for an unknown initiative or milestone,
+  ## or one that repeats the status, changes nothing and moves no signal.
+  if vm.initiatives.applyProgressEvent(event):
+    vm.revision.val = vm.revision.val + 1
+    return true
+  false
+
+proc applyProgress*(vm: InitiativeProgressVM; initiativeId, milestoneId,
+                    status: string): bool =
+  ## A progress event the host applies itself (the form from before sources
+  ## delivered them); the same as the source's delivery.
+  vm.applyProgress(ProgressEvent(initiativeId: initiativeId,
+                                 milestoneId: milestoneId, status: status))
+
+proc lateProgressEvents*(vm: InitiativeProgressVM): int =
+  ## Progress events a source delivered after the viewmodel unsubscribed
+  ## (disposed or reloaded); none of them moved it.
+  vm.feed.lateEvents
+
 proc load*(vm: InitiativeProgressVM) =
+  ## Ready once the initiatives answer. Subscribes to the source's progress
+  ## events first, replacing an earlier subscription, so no event falls
+  ## between the answer and the subscription.
   inc vm.loadToken
   let token = vm.loadToken
   vm.state.val = asLoading
   vm.error.val = ""
   let target = vm
+  vm.feed.open(vm.source, proc(event: ProgressEvent): bool =
+    target.applyProgress(event))
   vm.source.loadInitiatives proc(answer: DataResult[seq[Initiative]]) =
     if token != target.loadToken: return
     if answer.ok:
@@ -133,16 +175,3 @@ proc headline*(vm: InitiativeProgressVM): string =
 
 proc statusCounts*(vm: InitiativeProgressVM): array[MilestoneStatusClass, int] =
   statusCounts(vm.current.progress)
-
-proc applyProgress*(vm: InitiativeProgressVM; initiativeId, milestoneId,
-                    status: string): bool =
-  ## A progress event. True when it changed the initiative; an event for an
-  ## unknown initiative or milestone, or one that repeats the status, changes
-  ## nothing and moves no signal.
-  for initiative in vm.initiatives.mitems:
-    if initiative.id == initiativeId:
-      if initiative.progress.applyMilestoneStatus(milestoneId, status):
-        vm.revision.val = vm.revision.val + 1
-        return true
-      return false
-  false

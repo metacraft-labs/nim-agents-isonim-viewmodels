@@ -95,6 +95,8 @@ type
     files: Table[string, string]
     capturedAtMs*: int64
     failSessions*: seq[string]
+    progressSubscribers: ProgressSubscribers
+      ## The captures hold no progress event, so these are never sent to.
 
 proc newFixtureDataSource*(): FixtureDataSource =
   result = FixtureDataSource(manifest: parseJson(manifestText))
@@ -376,6 +378,12 @@ method loadInitiatives*(source: FixtureDataSource; done: InitiativesCallback) =
   ## The real plans (the fixture source stands for a real server).
   answer[seq[Initiative]](done):
     source.initiativesOf(wsReal)
+
+method subscribeProgress*(source: FixtureDataSource;
+                          callback: ProgressCallback): ProgressSubscription =
+  ## Accepted, as a real server's event stream is; never sends, because the
+  ## captures hold no progress event (the plans are as they were captured).
+  source.progressSubscribers.subscribe(callback)
 
 proc newWorkingSetDataSource*(kind = wsScenario;
                               fixtures = newFixtureDataSource()): SnapshotDataSource =

@@ -12,7 +12,7 @@
 import nim_agents_isonim_viewmodels/activity_vm
 import nim_agents_isonim_viewmodels/agent_harbor/[data_source, fixture_source,
   synthetic_fleet, session_items, fleet_vm, session_tabs_vm, initiatives_vm,
-  initiative_progress_vm, recording_switcher, initiative_tabs_vm]
+  initiative_progress_vm, progress_feed, recording_switcher, initiative_tabs_vm]
 export activity_vm, data_source, fixture_source, synthetic_fleet, session_items,
-  fleet_vm, session_tabs_vm, initiatives_vm, initiative_progress_vm,
+  fleet_vm, session_tabs_vm, initiatives_vm, initiative_progress_vm, progress_feed,
   recording_switcher, initiative_tabs_vm

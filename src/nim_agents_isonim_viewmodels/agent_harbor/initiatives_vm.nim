@@ -10,14 +10,21 @@
 ## `GET /api/v1/initiatives`) and `loadFleet`, whose sessions give each
 ## initiative's sessions their states. An initiative whose sessions the
 ## listing does not hold still shows, with the count it names.
+##
+## Progress events reach it through the seam too: `load` subscribes to the
+## source's progress events (`subscribeProgress`, through a `ProgressFeed`),
+## so a source that sends one moves the rows with no host call; disposing the
+## viewmodel unsubscribes it. `progressState` / `progressError` report the
+## feed (an error when the source does not provide the events).
 
 import std/[strutils, tables]
-import isonim/core/[signals, computation]
+import isonim/core/[signals, computation, owner]
 import isonim/viewmodel
 import ./data_source
+import ./progress_feed
 import ./session_items
 
-export data_source, session_items, viewmodel, signals, computation
+export data_source, progress_feed, session_items, viewmodel, signals, computation
 
 type
   InitiativeRow* = object
@@ -53,26 +60,54 @@ type
     folded: seq[string]
     expanded: seq[string]
     loadToken: int
+    feed: ProgressFeed
+    progressState*: Signal[AsyncState]
+      ## The progress feed: `asIdle` before `load`, `asReady` while subscribed,
+      ## `asError` when the source does not provide progress events.
+    progressError*: Signal[string]
 
 proc newInitiativesVM*(source: AgentHarborDataSource;
                        policy = tabStripSessionPolicy()): InitiativesVM =
   withViewModel proc(dispose: proc()): InitiativesVM =
+    let feed = newProgressFeed()
+    # Disposing the viewmodel's root unsubscribes it from its source.
+    onCleanup proc() = feed.close()
     InitiativesVM(source: source, policy: policy,
                   sessions: initTable[string, FleetSession](),
                   revision: createSignal(0), state: createSignal(asIdle),
-                  error: createSignal(""), selectedId: createSignal(""))
+                  error: createSignal(""), selectedId: createSignal(""),
+                  feed: feed, progressState: feed.state,
+                  progressError: feed.error)
 
 proc sourceLabel*(vm: InitiativesVM): string =
   if vm.source.isNil: "" else: vm.source.label
 
+proc applyProgress*(vm: InitiativesVM; event: ProgressEvent): bool =
+  ## A progress event, as the source's subscription delivers it. True when
+  ## it changed an initiative; one for an unknown initiative or milestone, or
+  ## one that repeats a status, changes nothing and moves no signal.
+  if vm.initiatives.applyProgressEvent(event):
+    vm.revision.val = vm.revision.val + 1
+    return true
+  false
+
+proc lateProgressEvents*(vm: InitiativesVM): int =
+  ## Progress events a source delivered after the viewmodel unsubscribed
+  ## (disposed or reloaded); none of them moved it.
+  vm.feed.lateEvents
+
 proc load*(vm: InitiativesVM) =
   ## Ready once the initiatives answer; the sessions fill in when the listing
-  ## answers (a listing failure leaves the sessions as counts only).
+  ## answers (a listing failure leaves the sessions as counts only). Subscribes
+  ## to the source's progress events first, replacing an earlier subscription,
+  ## so no event falls between the answer and the subscription.
   inc vm.loadToken
   let token = vm.loadToken
   vm.state.val = asLoading
   vm.error.val = ""
   let target = vm
+  vm.feed.open(vm.source, proc(event: ProgressEvent): bool =
+    target.applyProgress(event))
   vm.source.loadFleet proc(answer: DataResult[FleetSnapshot]) =
     if token != target.loadToken or not answer.ok: return
     target.sessions.clear()
