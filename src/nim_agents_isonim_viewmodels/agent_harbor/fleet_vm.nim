@@ -24,14 +24,21 @@
 ## A row's activity is a digest (`digestActivity`): every distinct recent
 ## line once, counted, the most informative first. A row shows the first line;
 ## `expandedId` names the one row that shows them all.
+##
+## The fleet is held as nim-agents' fleet fold (`fleet_fold.FleetFold`): a
+## loaded snapshot is a fold of one listing, and `apply` folds the frames that
+## follow it (a session starting, changing state, ending or being removed, its
+## listing entry, its events), so the list follows a live feed or a played-back
+## run after its first snapshot. A list that is only ever loaded shows exactly
+## the snapshot, as before.
 
 import std/[algorithm, strutils]
 import isonim/core/[signals, computation]
 import isonim/viewmodel
-import nim_agents/agent_harbor/[session_directory, activity_digest]
+import nim_agents/agent_harbor/[session_directory, activity_digest, fleet_fold]
 import ./data_source
 
-export data_source, viewmodel, signals, computation, activity_digest
+export data_source, viewmodel, signals, computation, activity_digest, fleet_fold
 
 const
   FleetActivityLineLimit* = 3
@@ -91,9 +98,10 @@ type
 
   FleetSnapshotVM* = ref object of ViewModel
     source: AgentHarborDataSource
-    snapshot: FleetSnapshot
+    fold: FleetFold
     revision*: Signal[int]
-      ## Moves whenever `snapshot` is replaced; tracked reads depend on it.
+      ## Moves whenever the fleet changes (a load answers, or a folded frame
+      ## changes it); tracked reads depend on it.
     state*: Signal[AsyncState]
     error*: Signal[string]
     filter*: Signal[FleetFilter]
@@ -113,6 +121,7 @@ proc newFleetSnapshotVM*(source: AgentHarborDataSource): FleetSnapshotVM =
   withViewModel proc(dispose: proc()): FleetSnapshotVM =
     FleetSnapshotVM(
       source: source,
+      fold: initFleetFold(),
       revision: createSignal(0),
       state: createSignal(asIdle),
       error: createSignal(""),
@@ -127,9 +136,10 @@ proc sourceLabel*(vm: FleetSnapshotVM): string =
   if vm.source.isNil: "" else: vm.source.label
 
 proc snapshot*(vm: FleetSnapshotVM): FleetSnapshot =
-  ## Tracked read of the whole snapshot.
+  ## Tracked read of the whole fleet, as a listing taken at the moment of the
+  ## last frame folded (the loaded snapshot itself until a frame arrives).
   discard vm.revision.val
-  vm.snapshot
+  vm.fold.snapshot
 
 proc load*(vm: FleetSnapshotVM) =
   ## Asks the source for the session list. The state is `asLoading` until it
@@ -142,7 +152,7 @@ proc load*(vm: FleetSnapshotVM) =
   vm.source.loadFleet proc(answer: DataResult[FleetSnapshot]) =
     if token != target.loadToken: return
     if answer.ok:
-      target.snapshot = answer.value
+      target.fold = initFleetFold(answer.value)
       target.revision.val = target.revision.val + 1
       target.state.val = asReady
     else:
@@ -181,8 +191,8 @@ proc failureOf*(session: FleetSession): string =
   result = failureReasonOf(session.recent.reversed)
   if result.len == 0: result = session.failureReason
 
-proc toRow(session: FleetSession; nowMs: int64; selected: string;
-           expanded = ""): FleetRow =
+proc toRow(session: FleetSession; digest: openArray[DigestLine]; nowMs: int64;
+           selected: string; expanded = ""): FleetRow =
   # nim-agents' rule (`session_directory.titleOf`): the prompt, else the
   # session's name, branch or workspace, else its short id.
   let (title, labelSource) = session_directory.titleOf(session)
@@ -220,21 +230,21 @@ proc toRow(session: FleetSession; nowMs: int64; selected: string;
     failureText: session.failureOf,
     selected: session.id == selected,
     expanded: session.id == expanded)
-  let digest = digestActivity(session.recent, currentStatus = session.rawStatus)
   let shown = min(digest.len, FleetActivityLineLimit)
   for i in 0 ..< shown:
     result.activity.add digest[i].lineText
     result.activityLevels.add digest[i].level
   result.activityMore = digest.len - shown
 
-proc rowsOf*(snapshot: FleetSnapshot; filter: FleetFilter;
+proc rowsOf*(fold: FleetFold; filter: FleetFilter;
              selected = ""; expanded = ""): seq[FleetRow] =
   ## The ordering every front-end shows, untracked: sessions waiting for a
   ## person first, then running, queued, failed and ended; within a category
   ## the most recently active first, the session id breaking ties so the
-  ## order is total.
+  ## order is total. Each row's activity is the digest the fold last
+  ## recomputed for its session; ages are measured from the fold's clock.
   var sessions: seq[FleetSession]
-  for session in snapshot.sessions:
+  for session in fold.sessions:
     if filter.matches(session.category):
       sessions.add(session)
   sessions.sort proc(a, b: FleetSession): int =
@@ -242,35 +252,46 @@ proc rowsOf*(snapshot: FleetSnapshot; filter: FleetFilter;
     if result == 0: result = cmp(b.lastActivityMs, a.lastActivityMs)
     if result == 0: result = cmp(a.id, b.id)
   for session in sessions:
-    result.add(session.toRow(snapshot.capturedAtMs, selected, expanded))
+    result.add(session.toRow(fold.digestOf(session.id), fold.capturedAtMs,
+                             selected, expanded))
+
+proc rowsOf*(snapshot: FleetSnapshot; filter: FleetFilter;
+             selected = ""; expanded = ""): seq[FleetRow] =
+  ## The rows of one listing (`rowsOf` over a fold of it).
+  rowsOf(initFleetFold(snapshot), filter, selected, expanded)
 
 proc rows*(vm: FleetSnapshotVM): seq[FleetRow] =
-  ## Tracked: depends on the snapshot, the filter and the selection.
+  ## Tracked: depends on the fleet, the filter and the selection.
   discard vm.revision.val
-  rowsOf(vm.snapshot, vm.filter.val, vm.selectedId.val, vm.expandedId.val)
+  rowsOf(vm.fold, vm.filter.val, vm.selectedId.val, vm.expandedId.val)
 
-proc counts*(vm: FleetSnapshotVM): FleetCounts =
-  ## Tracked: depends on the snapshot only, so a filter change does not move
-  ## the counts.
-  discard vm.revision.val
-  result = FleetCounts(total: vm.snapshot.total, listed: vm.snapshot.sessions.len,
-                       byCategory: categoryCounts(vm.snapshot.sessions))
-  for session in vm.snapshot.sessions:
+proc countsOf*(fold: FleetFold): FleetCounts =
+  ## What the filter strip counts, untracked.
+  result = FleetCounts(total: fold.total, listed: fold.len,
+                       byCategory: fold.counts)
+  for session in fold.sessions:
     if session.promptWithheld: inc result.withheldPrompts
 
+proc counts*(vm: FleetSnapshotVM): FleetCounts =
+  ## Tracked: depends on the fleet only, so a filter change does not move
+  ## the counts.
+  discard vm.revision.val
+  vm.fold.countsOf
+
 proc anyInitiative*(vm: FleetSnapshotVM): bool =
-  ## Tracked: whether any session of the snapshot names an initiative -- over
-  ## the whole snapshot, not the filtered rows, so a filter that leaves few
+  ## Tracked: whether any session of the fleet names an initiative -- over
+  ## the whole fleet, not the filtered rows, so a filter that leaves few
   ## rows (or none) does not change which columns a wide list draws.
   discard vm.revision.val
-  for session in vm.snapshot.sessions:
+  for session in vm.fold.sessions:
     if session.initiative.len > 0: return true
   false
 
 proc capturedAgeLabel*(vm: FleetSnapshotVM): string =
-  ## When the snapshot was taken, as `YYYY-MM-DD HH:MM UTC`; empty if unknown.
+  ## When the snapshot was taken (for a fleet that follows frames, the
+  ## moment of the last one), as `YYYY-MM-DD HH:MM UTC`; empty if unknown.
   discard vm.revision.val
-  let ms = vm.snapshot.capturedAtMs
+  let ms = vm.fold.capturedAtMs
   if ms <= 0: return ""
   # Civil date from days since the epoch (Hinnant's civil_from_days).
   let z = ms div 86_400_000 + 719468
@@ -286,6 +307,27 @@ proc capturedAgeLabel*(vm: FleetSnapshotVM): string =
   proc two(v: int64): string = (if v < 10: "0" else: "") & $v
   $year & "-" & two(month) & "-" & two(day) & " " & two(secs div 3600) & ":" &
     two((secs mod 3600) div 60) & " UTC"
+
+proc apply*(vm: FleetSnapshotVM; frame: FleetFrame): FoldOutcome =
+  ## Folds one frame that follows the loaded snapshot (`fleet_fold.apply`)
+  ## and tells what it did; the list moves only when the fleet changed. A
+  ## frame that arrives before the first load answers is folded into an
+  ## empty fleet, which that answer then replaces. A selected or expanded
+  ## session the frame removed is no longer selected or expanded.
+  result = vm.fold.apply(frame)
+  if result != foApplied: return
+  if vm.selectedId.val.len > 0 and vm.fold.find(vm.selectedId.val) < 0:
+    vm.selectedId.val = ""
+    vm.selectedEvents.val = SessionEventHistory()
+    vm.eventsState.val = asIdle
+    vm.eventsError.val = ""
+  if vm.expandedId.val.len > 0 and vm.fold.find(vm.expandedId.val) < 0:
+    vm.expandedId.val = ""
+  vm.revision.val = vm.revision.val + 1
+
+proc applyFrame*(vm: FleetSnapshotVM; frame: LifecycleFrame): FoldOutcome =
+  ## A lifecycle frame from the feed, as the tab strip takes it.
+  vm.apply(lifecycleFrame(frame))
 
 proc setFilter*(vm: FleetSnapshotVM; filter: FleetFilter) =
   vm.filter.val = filter

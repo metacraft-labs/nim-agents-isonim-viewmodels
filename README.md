@@ -40,7 +40,7 @@ The Agent Harbor sessions are the first family:
 | --- | --- |
 | `agent_harbor/session_items.nim` | The contract: `SessionItem`, what one session says in any sessions view. |
 | `agent_harbor/session_tabs_vm.nim` | `SessionTabStripVM`: session tabs -- one line, several lines, a sidebar list, docked as a panel. |
-| `agent_harbor/fleet_vm.nim` | `FleetSnapshotVM`: a fleet list, every session of a server, waiting-for-a-person first, filtered by category. |
+| `agent_harbor/fleet_vm.nim` | `FleetSnapshotVM`: a fleet list, every session of a server, waiting-for-a-person first, filtered by category; loaded from a snapshot, it then follows lifecycle frames, listing entries and session events (`apply`, over nim-agents' `fleet_fold`). |
 | `agent_harbor/initiatives_vm.nim` | `InitiativesVM`: running initiatives as a list, each with its sessions. |
 | `agent_harbor/initiative_progress_vm.nim` | `InitiativeProgressVM`: one initiative's milestones grouped by status. |
 

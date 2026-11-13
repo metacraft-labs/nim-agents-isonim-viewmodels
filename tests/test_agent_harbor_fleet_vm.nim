@@ -11,14 +11,18 @@
 ## production implementations of the seam for the states no capture shows.
 ## `OutOfOrderSource` below is the one test double: it holds answers back so
 ## the test can deliver them in an order a live server may produce, which no
-## real source does on demand.
+## real source does on demand. The frames a list follows after its first
+## snapshot (the last suite) are an invented run's, built in this file; the
+## list under test folds them through its production reducer, and the oracle
+## it is compared with is a second list loaded through `SnapshotDataSource`.
 ##
 ## Assertions about the fixture's contents are made against the fixture's own
 ## JSON, decoded independently with std/json, so a refreshed capture does not
 ## break them and an emptied one does.
 
-import std/[json, os, sets, strutils, unittest]
+import std/[algorithm, json, os, sets, strutils, tables, unittest]
 import isonim/core/[computation, owner, signals]
+import nim_agents/agent_harbor/session_replay
 import nim_agents_isonim_viewmodels
 
 type
@@ -492,5 +496,368 @@ suite "FleetSnapshotVM":
       source.held[0](failure[FleetSnapshot]("stale answer"))
       check vm.state.val == asReady
       check vm.error.val == ""
+      vm.dispose()
+      disposeRoot()
+
+# ---------------------------------------------------------------------------
+# A fleet list that follows frames after its first snapshot
+# ---------------------------------------------------------------------------
+#
+# An invented run over the synthetic working set (`synthetic_fleet`): its
+# sessions' titles, plans, origins and agents, each given an invented event
+# history. The oracle is independent of the fold: the listing at a moment is
+# rebuilt from scratch, every session replayed from its start to that moment
+# by `replayedFromScratch` (written out below; `sessionAt` would share the
+# fold's own per-event step), and loaded into a viewmodel of its own; the
+# viewmodel under test only loads the first listing and then folds the frames
+# one at a time.
+
+type
+  RunSession = object
+    entry: FleetSession      ## what the listing says besides its state
+    startMs: int64
+    removedAtMs: int64       ## 0: never removed
+    history: seq[JsonNode]   ## oldest first; timestamps in µs since start
+
+  FleetRun = object
+    firstMs: int64
+    sessions: seq[RunSession]
+    initiatives: seq[Initiative]
+
+const
+  RunT0 = 1_800_000_000_000'i64
+  RunSessions = 18
+  RunFirstListed = 14        ## sessions already started at the first listing
+  RunRemoved = 2             ## the session removed during the run
+
+proc runEvent(s: RunSession; atMs: int64; body: JsonNode): JsonNode =
+  result = body
+  result["timestamp"] = %((atMs - s.startMs) * 1000)
+
+proc inventedFleetRun(): FleetRun =
+  ## Sessions that start, ask, are answered, run, fail, end and are removed,
+  ## in five patterns over the working set's sessions. Every moment after the
+  ## first listing belongs to one phase of one session (`phaseMs`), and
+  ## sessions started during the run start before any phase.
+  let (snapshot, initiatives) = syntheticWorkingSet(RunSessions, 4, RunT0)
+  result = FleetRun(firstMs: RunT0, initiatives: initiatives)
+  proc phaseMs(phase, i: int): int64 =
+    RunT0 + 150_000 + int64(phase) * 30_000 + int64(i) * 1_000
+  for i, listed in snapshot.sessions:
+    var s = RunSession(entry: listed)
+    s.entry.failureReason = ""
+    s.startMs =
+      if i < RunFirstListed: listed.startedAtMs
+      else: RunT0 + 10_000 + int64(i - RunFirstListed) * 20_000
+    if i == RunRemoved: s.removedAtMs = RunT0 + 300_000
+    let pattern = i mod 5
+    s.history.add s.runEvent(s.startMs + 1_000, %*{"type": "status", "status": "queued"})
+    let runningAt = if pattern == 3: phaseMs(0, i) else: s.startMs + 3_000
+    if pattern != 3:
+      s.history.add s.runEvent(runningAt, %*{"type": "status", "status": "running"})
+    s.history.add s.runEvent(s.startMs + 60_000, %*{"type": "tool_use",
+      "status": "started", "tool_name": "runCmd", "tool_args": {"command": "just test"}})
+    case pattern
+    of 0:
+      s.history.add s.runEvent(phaseMs(0, i), %*{"type": "agent_question",
+        "kind": "single_choice", "prompt": "invented"})
+      s.history.add s.runEvent(phaseMs(1, i), %*{"type": "user_input", "content": "invented"})
+      s.history.add s.runEvent(phaseMs(2, i), %*{"type": "tool_use",
+        "status": "started", "tool_name": "runCmd", "tool_args": {"command": "just lint"}})
+      s.history.add s.runEvent(phaseMs(3, i), %*{"type": "status", "status": "completed"})
+    of 1:
+      s.history.add s.runEvent(phaseMs(1, i), %*{"type": "log", "level": "error",
+        "message": "error: the build failed"})
+      s.history.add s.runEvent(phaseMs(2, i), %*{"type": "status", "status": "failed"})
+    of 2:
+      for phase in 0 .. 2:
+        s.history.add s.runEvent(phaseMs(phase, i), %*{"type": "log",
+          "level": "info", "message": "assistant: Running the tests again."})
+    of 3:
+      s.history.add s.runEvent(phaseMs(0, i), %*{"type": "status", "status": "running"})
+      s.history.add s.runEvent(phaseMs(1, i), %*{"type": "tool_use",
+        "status": "started", "tool_name": "runCmd", "tool_args": {"command": "just build"}})
+    else:
+      s.history.add s.runEvent(phaseMs(2, i), %*{"type": "agent_question",
+        "kind": "single_choice", "prompt": "invented"})
+    result.sessions.add s
+
+proc timeOf(s: RunSession; event: JsonNode): int64 =
+  s.startMs + event["timestamp"].getBiggestInt div 1000
+
+proc replayedFromScratch(session: FleetSession; events: openArray[JsonNode];
+                         count: int; startMs: int64): FleetSession =
+  ## The session after its first `count` events, derived from the whole
+  ## prefix at once: the last `status` event's status, a question wait when
+  ## it is live and its last event is the agent asking, its end at its last
+  ## update when it is no longer live, and its last three events.
+  result = session
+  let n = max(0, min(count, events.len))
+  result.rawStatus = "queued"
+  result.awaitingInput = false
+  result.awaitingInputSource = ""
+  result.endedAtMs = 0
+  result.recent = @[]
+  result.startedAtMs = startMs
+  result.createdAtMs = startMs
+  result.updatedAtMs = startMs
+  for i in 0 ..< n:
+    let at = startMs + events[i]{"timestamp"}.getBiggestInt div 1000
+    result.updatedAtMs = max(result.updatedAtMs, at)
+    if events[i]{"type"}.getStr == "status":
+      result.rawStatus = events[i]{"status"}.getStr
+  result.status = parseFleetStatus(result.rawStatus)
+  if not result.status.isActive:
+    result.endedAtMs = result.updatedAtMs
+  elif n > 0 and events[n - 1]{"type"}.getStr in ["agent_question", "session_awaiting_input"]:
+    result.awaitingInput = true
+    result.awaitingInputSource = result.id & ":native-question:" & $n
+  for i in max(0, n - 3) ..< n:
+    var line = activityFromJson(events[i])
+    line.timestampMs = startMs + events[i]{"timestamp"}.getBiggestInt div 1000
+    result.recent.add line
+
+proc listedAt(run: FleetRun; t: int64): FleetSnapshot =
+  ## The oracle: the listing a server would give at `t`.
+  result = FleetSnapshot(capturedAtMs: t, sourceLabel: "invented run")
+  for s in run.sessions:
+    if s.startMs > t or (s.removedAtMs > 0 and s.removedAtMs <= t): continue
+    var count = 0
+    for event in s.history:
+      if s.timeOf(event) <= t: inc count
+    result.sessions.add s.entry.replayedFromScratch(s.history, count, s.startMs)
+  result.total = result.sessions.len
+
+proc framesOf(run: FleetRun): seq[FleetFrame] =
+  ## What a live feed delivers after the first listing, in time order: a new
+  ## session's `session_created` and its listing entry, every event, a
+  ## lifecycle frame beside every status event, and removals.
+  var timed: seq[(int64, int, FleetFrame)]
+  proc add(t: int64; frame: FleetFrame) =
+    var stamped = frame
+    stamped.atMs = t
+    timed.add (t, timed.len, stamped)
+  for s in run.sessions:
+    let id = s.entry.id
+    if s.startMs > run.firstMs:
+      add(s.startMs, lifecycleFrame(LifecycleFrame(event: "lifecycle",
+        kind: "session_created", sessionId: id, status: "queued",
+        agent: s.entry.agentSoftware, atMs: s.startMs)))
+      add(s.startMs, sessionFrame(s.entry.sessionAt(s.history, 0, s.startMs)))
+    for i, event in s.history:
+      let t = s.timeOf(event)
+      if t <= run.firstMs: continue
+      add(t, eventFrame(id, event, i + 1))
+      if event["type"].getStr == "status":
+        let st = event["status"].getStr
+        add(t, lifecycleFrame(LifecycleFrame(event: "lifecycle",
+          kind: (if parseFleetStatus(st).isActive: "session_status_changed"
+                 else: "session_completed"),
+          sessionId: id, status: st, atMs: t)))
+    if s.removedAtMs > run.firstMs:
+      add(s.removedAtMs, lifecycleFrame(LifecycleFrame(event: "lifecycle",
+        kind: "session_removed", sessionId: id, atMs: s.removedAtMs)))
+  timed.sort proc(a, b: (int64, int, FleetFrame)): int =
+    cmp((a[0], a[1]), (b[0], b[1]))
+  for entry in timed: result.add entry[2]
+
+proc groupsOf(rows: openArray[FleetRow]): seq[(FleetCategory, seq[string])] =
+  ## The rows as the list groups them: by what each session needs from the
+  ## reader, in the list's order.
+  for row in rows:
+    if result.len == 0 or result[^1][0] != row.category:
+      result.add (row.category, newSeq[string]())
+    result[^1][1].add row.id
+
+proc listDifferences(followed, loaded: FleetSnapshotVM): seq[string] =
+  ## What the two lists show differently: rows (with their activity digests),
+  ## groups, counts and the clock.
+  let a = followed.rows
+  let b = loaded.rows
+  if a.len != b.len:
+    result.add "rows " & $a.len & " != " & $b.len
+  for i in 0 ..< min(a.len, b.len):
+    if a[i] != b[i]:
+      result.add "row " & $i & ": " & $a[i] & " != " & $b[i]
+      break
+  if a.groupsOf != b.groupsOf:
+    result.add "groups " & $a.groupsOf & " != " & $b.groupsOf
+  if followed.counts != loaded.counts:
+    result.add "counts " & $followed.counts & " != " & $loaded.counts
+  if followed.capturedAgeLabel != loaded.capturedAgeLabel:
+    result.add "clock " & followed.capturedAgeLabel & " != " & loaded.capturedAgeLabel
+
+proc loadedAt(run: FleetRun; t: int64): FleetSnapshotVM =
+  result = newFleetSnapshotVM(newSnapshotDataSource(run.listedAt(t), "invented run",
+                                                    run.initiatives))
+  result.load()
+
+suite "FleetSnapshotVM follows frames":
+  test "test_ctf_p1c_fleet_folds_lifecycle_frames":
+    # Folding the run's frames from its first snapshot gives, at every
+    # moment, the rows, groups, counts and activity digests of a list loaded
+    # from the snapshot taken at that moment. Frames sharing a moment (a
+    # status event and its lifecycle frame, a new session's frame and its
+    # listing entry) are compared after the moment's last one.
+    createRoot proc(disposeRoot: proc()) =
+      let run = inventedFleetRun()
+      let followed = run.loadedAt(run.firstMs)
+      var failures: seq[string]
+      let first = run.loadedAt(run.firstMs)
+      for d in listDifferences(followed, first): failures.add "the first snapshot: " & d
+      first.dispose()
+      let frames = run.framesOf
+      var moments = 0
+      for i, frame in frames:
+        let outcome = followed.apply(frame)
+        if outcome notin {foApplied, foUnchanged}:
+          failures.add "frame " & $i & " (" & $frame & ") was " & $outcome
+        if i < frames.high and frames[i + 1].atMs == frame.atMs: continue
+        inc moments
+        let loaded = run.loadedAt(frame.atMs)
+        for d in listDifferences(followed, loaded):
+          failures.add "after frame " & $i & " (" & $frame & "): " & d
+        loaded.dispose()
+      for f in failures: checkpoint f
+      check failures.len == 0
+      check frames.len == 85
+      check moments == 61
+      followed.dispose()
+      disposeRoot()
+
+  test "the run moves every count and group the list shows":
+    # The positive control for the test above: the run starts, asks,
+    # answers, fails, ends and removes sessions, so a list that missed any
+    # of these would be compared against one that shows it.
+    createRoot proc(disposeRoot: proc()) =
+      let run = inventedFleetRun()
+      let vm = run.loadedAt(run.firstMs)
+      let first = vm.counts
+      var seen: set[FleetCategory]
+      var changed: set[FleetCategory]
+      var created, removed = false
+      for frame in run.framesOf:
+        discard vm.apply(frame)
+        for row in vm.rows: seen.incl row.category
+        for c in FleetCategory:
+          if vm.counts.byCategory[c] != first.byCategory[c]: changed.incl c
+        if frame.kind == ffLifecycle:
+          created = created or frame.lifecycle.kind == "session_created"
+          removed = removed or frame.lifecycle.kind == "session_removed"
+      check seen == {fcNeedsInput, fcRunning, fcQueued, fcFailed, fcEnded}
+      check changed == {fcNeedsInput, fcRunning, fcQueued, fcFailed, fcEnded}
+      check created and removed
+      check vm.counts.listed == RunSessions - 1
+      check vm.counts.total == RunSessions - 1
+      vm.dispose()
+      disposeRoot()
+
+  test "a list only ever loaded shows its snapshot exactly":
+    createRoot proc(disposeRoot: proc()) =
+      let source = newFixtureDataSource()
+      let fleet = source.snapshotOf
+      let vm = newFleetSnapshotVM(source)
+      vm.load()
+      check vm.snapshot == fleet
+      var byId: Table[string, FleetSession]
+      for s in fleet.sessions: byId[s.id] = s
+      for row in vm.rows:
+        # The digest is the one a row always showed.
+        let digest = digestActivity(byId[row.id].recent,
+                                    currentStatus = byId[row.id].rawStatus)
+        check row.activity.len == min(digest.len, FleetActivityLineLimit)
+        for i, line in row.activity: check line == digest[i].lineText
+        check row.activityMore == digest.len - row.activity.len
+      check vm.rows == rowsOf(fleet, ffAll)
+      vm.dispose()
+      disposeRoot()
+
+  test "only a frame that changes the fleet moves the list":
+    createRoot proc(disposeRoot: proc()) =
+      let run = inventedFleetRun()
+      let vm = run.loadedAt(run.firstMs)
+      var rowRuns = 0
+      createEffect proc() =
+        discard vm.rows
+        inc rowRuns
+      let id = run.sessions[0].entry.id
+      check vm.applyFrame(LifecycleFrame(event: "lifecycle",
+        kind: "session_status_changed", sessionId: id, status: "running",
+        atMs: RunT0 + 1)) == foUnchanged
+      check vm.apply(eventFrame("no-such-session", %*{"type": "log"}, 1)) == foUnknownSession
+      check vm.apply(eventFrame(id, nil, 9)) == foMalformed
+      check rowRuns == 1
+      check vm.applyFrame(LifecycleFrame(event: "lifecycle",
+        kind: "session_completed", sessionId: id, status: "completed",
+        atMs: RunT0 + 1)) == foApplied
+      check rowRuns == 2
+      for row in vm.rows:
+        if row.id == id: check row.category == fcEnded
+      vm.dispose()
+      disposeRoot()
+
+  test "a listed stop-hook wait still needs input after the session's events":
+    # The listing says the agent's turn ended (a stop-hook wait); the row
+    # reads "needs input" until the operator's input reaches the session.
+    createRoot proc(disposeRoot: proc()) =
+      let run = inventedFleetRun()
+      var listed = run.listedAt(run.firstMs)
+      let id = listed.sessions[1].id
+      listed.sessions[1].awaitingInput = true
+      listed.sessions[1].awaitingInputSource = "claude-stop-hook"
+      let vm = newFleetSnapshotVM(newSnapshotDataSource(listed, "invented run",
+                                                        run.initiatives))
+      vm.load()
+      proc rowOf(): FleetRow =
+        for row in vm.rows:
+          if row.id == id: return row
+      check rowOf().statusLabel == "needs input"
+      let needing = vm.counts.byCategory[fcNeedsInput]
+      check vm.apply(eventFrame(id, %*{"type": "log", "level": "info",
+        "message": "assistant: still here", "timestamp": 1}, 50)) == foApplied
+      check vm.apply(eventFrame(id, %*{"type": "tool_use", "status": "started",
+        "tool_name": "runCmd", "tool_args": {"command": "just test"},
+        "timestamp": 2}, 51)) == foApplied
+      check rowOf().statusLabel == "needs input"
+      check rowOf().category == fcNeedsInput
+      check vm.counts.byCategory[fcNeedsInput] == needing
+      check vm.apply(eventFrame(id, %*{"type": "user_input", "content": "invented",
+        "timestamp": 3}, 52)) == foApplied
+      check rowOf().statusLabel != "needs input"
+      check vm.counts.byCategory[fcNeedsInput] == needing - 1
+      vm.dispose()
+      disposeRoot()
+
+  test "a removed session is no longer selected or expanded":
+    createRoot proc(disposeRoot: proc()) =
+      let run = inventedFleetRun()
+      let vm = run.loadedAt(run.firstMs)
+      let id = run.sessions[RunRemoved].entry.id
+      vm.select(id)
+      vm.toggleExpanded(id)
+      check vm.selectedId.val == id
+      check vm.apply(lifecycleFrame(LifecycleFrame(event: "lifecycle",
+        kind: "session_removed", sessionId: id, atMs: RunT0 + 1))) == foApplied
+      check vm.selectedId.val == ""
+      check vm.expandedId.val == ""
+      check vm.eventsState.val == asIdle
+      for row in vm.rows: check row.id != id
+      vm.dispose()
+      disposeRoot()
+
+  test "a frame before the first answer is replaced by that answer":
+    createRoot proc(disposeRoot: proc()) =
+      let pending = newPendingDataSource()
+      let vm = newFleetSnapshotVM(pending)
+      vm.load()
+      check vm.applyFrame(LifecycleFrame(event: "lifecycle",
+        kind: "session_created", sessionId: "early", status: "queued",
+        atMs: RunT0)) == foApplied
+      check vm.counts.listed == 1
+      let run = inventedFleetRun()
+      pending.pendingFleet[0](success(run.listedAt(run.firstMs)))
+      check vm.state.val == asReady
+      check vm.counts.listed == RunFirstListed
+      for row in vm.rows: check row.id != "early"
       vm.dispose()
       disposeRoot()
