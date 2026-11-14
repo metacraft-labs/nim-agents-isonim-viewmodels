@@ -369,6 +369,39 @@ suite "FixtureDataSource":
     for run in scenarios.value:
       check parseJson(run.eventsJson)["events"].len > 0
 
+  test "a failed row shows its reason once, as the failure, not again as activity":
+    # The reason a failed row shows (`failureText`) is read from its newest
+    # error-level log line; the same line in the activity digest would say it
+    # twice, one line under the other (the playback fleet at
+    # `migration-fails`). The activity keeps every other line, and the count
+    # of lines beyond the limit leaves the repeated one out too.
+    let err = FleetActivity(kind: fakLog, level: "error",
+                            text: "error: the migration test failed")
+    let tool = FleetActivity(kind: fakToolUse, level: "", text: "just test")
+    let failed = FleetSnapshot(sessions: @[FleetSession(id: "f1", status: fsFailed, rawStatus: "failed",
+      recent: @[tool, err, FleetActivity(kind: fakStatus, text: "Status: failed")])])
+    var row = rowsOf(failed, ffAll)[0]
+    check row.failureText == "error: the migration test failed"
+    check row.activity == @["just test"]
+    check row.activityLevels == @[""]
+    check row.activityMore == 0
+    # Repeated, it is still the failure alone (its count is not shown either).
+    row = rowsOf(FleetSnapshot(sessions: @[FleetSession(id: "f1", status: fsFailed,
+      recent: @[err, tool, err])]), ffAll)[0]
+    check row.failureText == err.text
+    check row.activity == @["just test"]
+    # A live session's error is not a failure: it stays an activity line.
+    row = rowsOf(FleetSnapshot(sessions: @[FleetSession(id: "r1", status: fsRunning,
+      recent: @[tool, err])]), ffAll)[0]
+    check row.failureText == ""
+    check row.activity == @["error: the migration test failed", "just test"]
+    # A failure whose reason is not among the activity lines (the listing's
+    # own `failureReason`) removes nothing.
+    row = rowsOf(FleetSnapshot(sessions: @[FleetSession(id: "f2", status: fsFailed,
+      failureReason: "[exit] status=1", recent: @[tool])]), ffAll)[0]
+    check row.failureText == "[exit] status=1"
+    check row.activity == @["just test"]
+
 suite "FleetSnapshotVM":
   test "idle until loaded, loading until answered":
     createRoot proc(disposeRoot: proc()) =
@@ -802,9 +835,13 @@ suite "FleetSnapshotVM follows frames":
       var byId: Table[string, FleetSession]
       for s in fleet.sessions: byId[s.id] = s
       for row in vm.rows:
-        # The digest is the one a row always showed.
-        let digest = digestActivity(byId[row.id].recent,
-                                    currentStatus = byId[row.id].rawStatus)
+        # The digest is the one a row always showed, less the line a failed
+        # row's reason already shows (it is shown once, as the failure).
+        let failure = byId[row.id].failureOf
+        var digest: seq[DigestLine]
+        for line in digestActivity(byId[row.id].recent,
+                                   currentStatus = byId[row.id].rawStatus):
+          if failure.len == 0 or line.text != failure: digest.add line
         check row.activity.len == min(digest.len, FleetActivityLineLimit)
         for i, line in row.activity: check line == digest[i].lineText
         check row.activityMore == digest.len - row.activity.len

@@ -22,7 +22,8 @@
 ## activity digest -- are nim-agents' (`nim_agents/agent_harbor/*`).
 ##
 ## A row's activity is a digest (`digestActivity`): every distinct recent
-## line once, counted, the most informative first. A row shows the first line;
+## line once, counted, the most informative first, less the line a failed
+## row's failure text already shows. A row shows the first line;
 ## `expandedId` names the one row that shows them all.
 ##
 ## The fleet is held as nim-agents' fleet fold (`fleet_fold.FleetFold`): a
@@ -259,11 +260,19 @@ proc toRow(session: FleetSession; digest: openArray[DigestLine]; nowMs: int64;
     failureText: session.failureOf,
     selected: session.id == selected,
     expanded: session.id == expanded)
-  let shown = min(digest.len, FleetActivityLineLimit)
+  # A failed row already shows why it failed (`failureText`, in red); the
+  # digest line that reason was read from (`failureReasonOf`: the newest
+  # error-level log line) would say it a second time, right under it. The
+  # row shows it once, as the failure; the activity lines hold the rest.
+  var lines: seq[DigestLine]
+  for line in digest:
+    if result.failureText.len > 0 and line.text == result.failureText: continue
+    lines.add line
+  let shown = min(lines.len, FleetActivityLineLimit)
   for i in 0 ..< shown:
-    result.activity.add digest[i].lineText
-    result.activityLevels.add digest[i].level
-  result.activityMore = digest.len - shown
+    result.activity.add lines[i].lineText
+    result.activityLevels.add lines[i].level
+  result.activityMore = lines.len - shown
 
 proc rowsOf*(fold: FleetFold; filter: FleetFilter;
              selected = ""; expanded = ""): seq[FleetRow] =

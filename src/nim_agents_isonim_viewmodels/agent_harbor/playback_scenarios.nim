@@ -34,19 +34,40 @@ proc invented(id, prompt, origin, planId, initiative, software, version,
                originFrontEnd: origin, planId: planId, initiative: initiative,
                labelSource: "invented")
 
+proc counted(status: string): (DeliverableCounts, VerificationCounts) =
+  ## A milestone's two deliverables and one test as a plan reads them in each
+  ## status: all done and passing once completed; one deliverable done and
+  ## the test pending while in progress; one done and the test failing while
+  ## blocked; none done before it starts. A progress event carries the counts
+  ## of its new status (`progressEntry`), so a milestone never reads
+  ## "completed" beside "0/2 deliverables".
+  case status
+  of "completed": (DeliverableCounts(done: 2, total: 2), VerificationCounts(passing: 1))
+  of "in_progress": (DeliverableCounts(done: 1, total: 2), VerificationCounts(pending: 1))
+  of "blocked": (DeliverableCounts(done: 1, total: 2), VerificationCounts(failing: 1))
+  else: (DeliverableCounts(done: 0, total: 2), VerificationCounts(pending: 1))
+
+proc moved(atMs: int64; initiativeId, milestoneId, status: string): ScenarioEntry =
+  ## A progress event moving a milestone to `status`, with that status's
+  ## counts (`counted`).
+  let (deliverables, verifications) = counted(status)
+  progressEntry(atMs, initiativeId, milestoneId, status, deliverables, verifications)
+
 proc plan(id, title, prefix: string; milestones: openArray[(string, string)];
           current: int; summary: string): Initiative =
   ## An invented initiative whose milestones are `prefix-M<i>`, titled and
-  ## with the statuses given, the `current`th current.
+  ## with the statuses given (and their counts, `counted`), the `current`th
+  ## current. The executive summary says what the initiative is for, not
+  ## where its run is: a run moves the plan under it, and a summary naming a
+  ## milestone's state would be stale at the next moment.
   var progress = MilestoneFileProgress(
     path: "milestones/" & id & ".milestones.org", title: title & " Milestones",
     status: "in_progress", lastUpdated: "2027-01-14")
   for i, (title, status) in milestones:
+    let (deliverables, verifications) = counted(status)
     progress.milestones.add MilestoneDetail(
       id: prefix & "-M" & $i, title: title, status: status,
-      deliverables: DeliverableCounts(done: (if status == "completed": 2 else: 0), total: 2),
-      verifications: VerificationCounts(passing: (if status == "completed": 1 else: 0),
-                                        pending: (if status == "completed": 0 else: 1)))
+      deliverables: deliverables, verifications: verifications)
   progress.currentMilestone = prefix & "-M" & $current
   progress.summarize()
   Initiative(id: id, title: title, repository: "orbit-labs/" & id,
@@ -159,7 +180,7 @@ proc frontEndsScenario*(): PlaybackScenario =
   var routeCache = plan(RouteCache, RouteCacheTitle, "RC",
     [("Specification", "completed"), ("Data model", "in_progress"),
      ("Core change", "planned"), ("Front-end", "planned")], 1,
-    RouteCacheTitle & ": the data model is under way.")
+    RouteCacheTitle & ": cached routes move to the new storage layer without a cold start.")
   routeCache.sessionIds = @[MigrationSessionId, PortSessionId]
   buildScenario("front-ends",
     "sessions from several front-ends, and their initiative's milestones",
@@ -169,8 +190,8 @@ proc frontEndsScenario*(): PlaybackScenario =
       resumeEntry(sec(120), PortSessionId),
       resumeEntry(sec(150), BenchSessionId),
       resumeEntry(sec(200), ConfigSessionId),
-      progressEntry(sec(210), RouteCache, "RC-M1", "completed"),
-      progressEntry(sec(215), RouteCache, "RC-M2", "in_progress")],
+      moved(sec(210), RouteCache, "RC-M1", "completed"),
+      moved(sec(215), RouteCache, "RC-M2", "in_progress")],
     moments = [(sec(30), "new-session"), (sec(60), "port-asks"),
                (sec(90), "bench-asks"), (sec(120), "port-answered"),
                (sec(180), "migration-fails"), (sec(200), "config-answered"),
@@ -213,7 +234,7 @@ proc initiativeRunScenario*(): PlaybackScenario =
   var telemetry = plan(TelemetryRetry, TelemetryRetryTitle, "TR",
     [("Specification", "in_progress"), ("Retry queue", "planned"),
      ("Backoff", "planned")], 0,
-    TelemetryRetryTitle & ": the specification is under review.")
+    TelemetryRetryTitle & ": failed uploads are retried with exponential backoff.")
   telemetry.sessionIds = @[RetrySessionId]
   let testTrace = "invented-recording-retry-test"
   let sessionRecording = "invented-recording-agent-session"
@@ -224,25 +245,25 @@ proc initiativeRunScenario*(): PlaybackScenario =
     "an initiative's progress and its recordings over its run",
     PlaybackT0, @[retry.s], @[telemetry],
     extras = @[
-      progressEntry(sec(20), TelemetryRetry, "TR-M0", "completed"),
-      progressEntry(sec(25), TelemetryRetry, "TR-M1", "in_progress"),
+      moved(sec(20), TelemetryRetry, "TR-M0", "completed"),
+      moved(sec(25), TelemetryRetry, "TR-M1", "in_progress"),
       rec(sec(30), trace(testTrace, "retry test trace", "4f2a9c1", "ct test run", rsLoading)),
       rec(sec(45), trace(testTrace, "retry test trace", "4f2a9c1", "ct test run", rsReady)),
       rec(sec(60), trace(sessionRecording, "agent session recording", "4f2a9c1",
                          "agent session", rsLoading)),
       rec(sec(75), trace(sessionRecording, "agent session recording", "4f2a9c1",
                          "agent session", rsFailed, "the recording file is truncated")),
-      progressEntry(sec(80), TelemetryRetry, "TR-M1", "blocked"),
-      progressEntry(sec(110), TelemetryRetry, "TR-M1", "in_progress"),
+      moved(sec(80), TelemetryRetry, "TR-M1", "blocked"),
+      moved(sec(110), TelemetryRetry, "TR-M1", "in_progress"),
       rec(sec(120), trace(backoffTrace, "backoff test trace", "7d03e5b", "ct test run", rsLoading)),
       rec(sec(135), trace(backoffTrace, "backoff test trace", "7d03e5b", "ct test run", rsReady)),
-      progressEntry(sec(150), TelemetryRetry, "TR-M1", "completed"),
-      progressEntry(sec(155), TelemetryRetry, "TR-M2", "in_progress"),
+      moved(sec(150), TelemetryRetry, "TR-M1", "completed"),
+      moved(sec(155), TelemetryRetry, "TR-M2", "in_progress"),
       rec(sec(160), trace(sessionRecording, "agent session recording", "4f2a9c1",
                           "agent session", rsLoading)),
       rec(sec(170), trace(sessionRecording, "agent session recording", "4f2a9c1",
                           "agent session", rsReady)),
-      progressEntry(sec(200), TelemetryRetry, "TR-M2", "completed")],
+      moved(sec(200), TelemetryRetry, "TR-M2", "completed")],
     moments = [(sec(20), "specification-done"), (sec(30), "trace-loading"),
                (sec(45), "trace-ready"), (sec(75), "recording-fails"),
                (sec(80), "milestone-blocked"), (sec(135), "second-trace-ready"),

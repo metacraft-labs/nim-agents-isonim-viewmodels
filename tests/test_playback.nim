@@ -290,9 +290,107 @@ suite "the synthetic playback scenarios":
     unknown.entries.add progressEntry(unknown.lastMs + 1, TelemetryRetry, "TR-M9", "completed")
     check unknown.problemsOf.len == 1
 
+  test "a milestone completed with work outstanding is reported":
+    # The plans stay coherent (`problemsOf`): completing a milestone by its
+    # status alone leaves "completed" beside "0/2 deliverables", and so does
+    # a first listing that marks one completed with a test pending.
+    var bare = initiativeRunScenario()
+    for entry in bare.entries.mitems:
+      if entry.kind == sekProgress and entry.progress.status == "completed":
+        entry.progress.hasCounts = false
+        break
+    check bare.problemsOf.len == 1
+    for p in bare.problemsOf: checkpoint p
+    check "TR-M0 is completed with work outstanding" in bare.problemsOf.join("\n")
+    var listed = frontEndsScenario()
+    listed.initiatives[0].progress.milestones[0].verifications.pending = 1
+    check listed.problemsOf.len == 1
+    check "in the first listing" in listed.problemsOf.join("\n")
+
   test "an unknown scenario name is refused":
     expect ValueError: discard playbackScenario("no-such-scenario")
     for name in PlaybackScenarioNames: check playbackScenario(name).name == name
+
+# ---------------------------------------------------------------------------
+# Every named moment changes what it names
+# ---------------------------------------------------------------------------
+
+const
+  SessionKinds = {sekLifecycle, sekListing, sekEvent, sekResume}
+  FedBy: array[6, set[ScenarioEntryKind]] = [
+    SessionKinds,              # 0 the fleet list
+    SessionKinds,              # 1 the tab strip
+    SessionKinds,              # 2 the sidebar list
+    {sekProgress, sekRecording}, # 3 the initiative bar (n/m, recordings)
+    {sekProgress},             # 4 the Initiatives panel
+    {sekProgress}]             # 5 the Initiative Progress panel
+    ## Which entries each surface of `shown` shows: a moment whose entries
+    ## include one of these kinds must change that surface.
+
+proc heldStill(views: Views): seq[string] =
+  ## `shown`, less what moves with the clock alone (the fleet's ages and
+  ## durations): what an entry changes, and nothing else.
+  result = views.shown
+  var rows = views.fleet.rows
+  for row in rows.mitems:
+    row.ageLabel = ""
+    row.durationLabel = ""
+  result[0] = "fleet " & $rows & " " & $views.fleet.counts
+
+proc unchangedAtMoments(scenario: PlaybackScenario): seq[string] =
+  ## Every (moment, surface) where the moment's entries -- those after the
+  ## moment before it, up to and including its own -- feed the surface and
+  ## the surface shows the same as at the moment before (the first frame
+  ## before the first moment), and every moment with no entry since the one
+  ## before it. Empty when every moment changes what it names.
+  var found: seq[string]
+  createRoot proc(disposeRoot: proc()) =
+    let source = newPlaybackDataSource(scenario, newTestClock(0))
+    let v = viewsOver(source, scenario.initiatives[0].id)
+    var before = v.heldStill
+    var previousMs = scenario.firstMs
+    for name in scenario.momentNames:
+      let at = scenario.momentMs(name)
+      var kinds: set[ScenarioEntryKind]
+      for entry in scenario.entries:
+        if entry.atMs > previousMs and entry.atMs <= at: kinds.incl entry.kind
+      source.stepTo(at)
+      let now = v.heldStill
+      if kinds.card == 0:
+        found.add scenario.name & " at " & name & ": no entry since the moment before"
+      for i, fed in FedBy:
+        if (fed * kinds).card > 0 and now[i] == before[i]:
+          found.add scenario.name & " at " & name & ": " & now[i].split(' ')[0] &
+            " shows the same as at the moment before (" & $(fed * kinds) & ")"
+      before = now
+      previousMs = at
+    v.dispose()
+    disposeRoot()
+  found
+
+suite "every named moment changes what it names":
+  test "each moment changes every surface its entries feed, in both scenarios":
+    for name in PlaybackScenarioNames:
+      let unchanged = playbackScenario(name).unchangedAtMoments
+      for u in unchanged: checkpoint u
+      check unchanged.len == 0
+
+  test "a moment whose entry changes nothing is reported":
+    # A named moment on a progress event that repeats a milestone's status
+    # and counts: the bar and both panels are fed by it and show the same.
+    var still = initiativeRunScenario()
+    var repeat: ScenarioEntry
+    for entry in still.entries:
+      if entry.kind == sekProgress: repeat = entry
+    doAssert repeat.kind == sekProgress
+    repeat.atMs = still.lastMs + 1_000
+    repeat.moment = "nothing-moves"
+    still.entries.add repeat
+    check still.problemsOf.len == 0
+    let unchanged = still.unchangedAtMoments
+    for u in unchanged: checkpoint u
+    check unchanged.len == 3
+    check unchanged.join("\n").contains("at nothing-moves: progress")
 
 # ---------------------------------------------------------------------------
 # The source on its clock

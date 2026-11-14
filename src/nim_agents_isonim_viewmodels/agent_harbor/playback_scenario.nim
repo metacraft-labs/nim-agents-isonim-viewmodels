@@ -130,6 +130,12 @@ proc `$`*(entry: ScenarioEntry): string =
   of sekProgress:
     result.add entry.progress.initiativeId & "/" & entry.progress.milestoneId &
       " -> " & entry.progress.status
+    if entry.progress.hasCounts:
+      result.add " (" & $entry.progress.deliverables.done & "/" &
+        $entry.progress.deliverables.total & " deliverables, " &
+        $entry.progress.verifications.passing & " passing, " &
+        $entry.progress.verifications.failing & " failing, " &
+        $entry.progress.verifications.pending & " pending)"
   of sekRecording:
     result.add entry.recording.initiativeId & "/" & entry.recording.entry.id &
       " -> " & $entry.recording.entry.state
@@ -179,6 +185,16 @@ proc progressEntry*(atMs: int64; initiativeId, milestoneId, status: string;
   ScenarioEntry(kind: sekProgress, atMs: atMs, moment: moment,
                 progress: ProgressEvent(initiativeId: initiativeId,
                                         milestoneId: milestoneId, status: status))
+
+proc progressEntry*(atMs: int64; initiativeId, milestoneId, status: string;
+                    deliverables: DeliverableCounts;
+                    verifications: VerificationCounts; moment = ""): ScenarioEntry =
+  ## A progress event that also carries the milestone's counts as the plan
+  ## now reads them (`ProgressEvent.hasCounts`).
+  result = progressEntry(atMs, initiativeId, milestoneId, status, moment)
+  result.progress.hasCounts = true
+  result.progress.deliverables = deliverables
+  result.progress.verifications = verifications
 
 proc recordingEntry*(atMs: int64; initiativeId: string; recording: RecordingEntry;
                      moment = ""): ScenarioEntry =
@@ -266,7 +282,9 @@ proc problemsOf*(scenario: PlaybackScenario): seq[string] =
   ## milestone, recording changes a known initiative and a recording with an
   ## id; every resume is matched by the session's own input event
   ## (`user_input` or `session_resumed`) at the same moment, so a view that
-  ## follows events and one that follows resumes agree.
+  ## follows events and one that follows resumes agree; and no milestone
+  ## reads completed with a deliverable undone or a test pending or failing,
+  ## at the first moment or after any progress event.
   let label = "scenario " & scenario.name & ": "
   if scenario.first.capturedAtMs != scenario.firstMs:
     result.add label & "the first listing is taken at " &
@@ -357,6 +375,31 @@ proc problemsOf*(scenario: PlaybackScenario): seq[string] =
         result.add label & "entry " & $i & " (" & $entry & ") names an unknown initiative"
       if entry.recording.entry.id.len == 0:
         result.add label & "entry " & $i & " names a recording without an id"
+  # The plans stay coherent at every moment: a milestone the plan reads as
+  # completed has every deliverable done and no test pending or failing, in
+  # the first listing and after each progress event (a status moved without
+  # its counts, or counts that contradict it, read "completed" beside
+  # "0/2 deliverables").
+  var plans = scenario.initiatives
+  var reported = initHashSet[string]()
+    ## Each milestone is reported once, where it first goes wrong.
+  proc outstanding(at: string; plans: seq[Initiative];
+                   reported: var HashSet[string]): seq[string] =
+    for initiative in plans:
+      for m in initiative.progress.milestones:
+        if m.status == "completed" and
+            (m.deliverables.done < m.deliverables.total or
+             m.verifications.pending > 0 or m.verifications.failing > 0) and
+            not reported.containsOrIncl(initiative.id & "/" & m.id):
+          result.add label & at & ", " & initiative.id & "/" & m.id &
+            " is completed with work outstanding (" & $m.deliverables.done & "/" &
+            $m.deliverables.total & " deliverables, " & $m.verifications.pending &
+            " tests pending, " & $m.verifications.failing & " failing)"
+  result.add outstanding("in the first listing", plans, reported)
+  for i, entry in scenario.entries:
+    if entry.kind == sekProgress:
+      discard plans.applyProgressEvent(entry.progress)
+      result.add outstanding("after entry " & $i & " (" & $entry & ")", plans, reported)
   for s in scenario.sessions:
     if s.entry.id notin known and s.entry.id notin removed:
       result.add label & "the session " & s.entry.id & " is never introduced"

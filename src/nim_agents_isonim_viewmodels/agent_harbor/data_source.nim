@@ -119,9 +119,19 @@ type
     ## One initiative progress event: the milestone `milestoneId` of the
     ## initiative `initiativeId` now has the status `status`, as the plan
     ## writes it (`planned`, `in_progress`, `completed`, ...).
+    ##
+    ## With `hasCounts`, the event also carries the milestone's deliverable
+    ## and test counts as the plan now reads them. A plan's scan reads a
+    ## milestone's status and its counts together, and a status alone cannot
+    ## keep them coherent: a milestone that was planned when the initiatives
+    ## were loaded and completes later would otherwise read "completed" beside
+    ## "0/2 deliverables". Without `hasCounts` the counts are left as they are.
     initiativeId*: string
     milestoneId*: string
     status*: string
+    hasCounts*: bool
+    deliverables*: DeliverableCounts
+    verifications*: VerificationCounts
 
   ResumeEvent* = object
     ## The operator's input reached a waiting session (the session's events
@@ -318,10 +328,22 @@ proc applyProgressEvent*(initiatives: var seq[Initiative];
   ## nim-agents' `applyMilestoneStatus` (the reducer every count derives
   ## from). True when it changed something; an unknown initiative or
   ## milestone, or a repeated status, changes nothing.
+  ## An event that carries counts (`hasCounts`) also sets the milestone's
+  ## deliverable and test counts; it changed something when either its status
+  ## or its counts did.
   for initiative in initiatives.mitems:
     if initiative.id == event.initiativeId:
-      return initiative.progress.applyMilestoneStatus(event.milestoneId,
-                                                      event.status)
+      result = initiative.progress.applyMilestoneStatus(event.milestoneId,
+                                                        event.status)
+      if event.hasCounts:
+        for m in initiative.progress.milestones.mitems:
+          if m.id == event.milestoneId and
+              (m.deliverables != event.deliverables or
+               m.verifications != event.verifications):
+            m.deliverables = event.deliverables
+            m.verifications = event.verifications
+            result = true
+      return
   false
 
 method subscribeProgress*(source: AgentHarborDataSource;

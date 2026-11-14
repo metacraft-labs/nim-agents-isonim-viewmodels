@@ -61,7 +61,7 @@ not provide it:
 | `subscribeFleetFrames` | `FleetFrame`: a lifecycle frame, a session's listing entry, one event of a session's stream | the fleet list, the tab strip, the initiative tab bar, the Initiatives panel |
 | `subscribeResumes` | `ResumeEvent`: the operator's input reached a waiting session | the tab strip, the initiative tab bar (auto-switch), the Initiatives panel |
 | `subscribeRecordings` | `RecordingEvent`: a recording of an initiative appeared, or turned ready or failed | the initiative tab bar's recording switcher |
-| `subscribeProgress` | `ProgressEvent`: a milestone's status changed | the Initiatives and Initiative Progress panels, both tab bars |
+| `subscribeProgress` | `ProgressEvent`: a milestone's status changed, optionally with its deliverable and test counts as the plan now reads them (`hasCounts`) | the Initiatives and Initiative Progress panels, both tab bars |
 | `subscribeResets` | `StreamReset`: the source started over; reload | every viewmodel above |
 
 A viewmodel subscribes on `load`, before it asks for anything, and cancels
@@ -85,7 +85,8 @@ moment. Scenarios are invented data only.
   lifecycle frame (`sekLifecycle`), a session's listing entry
   (`sekListing`), one event of a session's stream (`sekEvent`, with its
   1-based place in the session's history), a resume (`sekResume`), a
-  progress event, i.e. a milestone's new status (`sekProgress`), or a
+  progress event, i.e. a milestone's new status and, when it carries them,
+  its counts (`sekProgress`), or a
   recording-state change (`sekRecording`). Entries at one moment are one
   moment: they are delivered together, in their order;
 - an entry may carry a named `moment`, unique in its scenario; stories and
@@ -103,8 +104,14 @@ every event, a lifecycle frame beside each `status` event, removals).
 `problemsOf` checks a scenario's own invariants: entries in time order and
 after the first moment, every session introduced before an entry names it,
 named moments unique, progress and recording changes naming known
-initiatives and milestones, and each resume matched by its session's own
-input event.
+initiatives and milestones, each resume matched by its session's own
+input event, and no milestone reading completed with a deliverable undone or
+a test pending or failing, in the first listing or after any progress event.
+A scenario's milestones move with their counts (a status alone would leave a
+completed milestone reading "0/2 deliverables"), and an initiative's
+executive summary says what it is for, not where its run is, so no moment
+shows a summary the run has overtaken. `tests/test_playback.nim` also holds
+every named moment to changing each viewmodel its entries feed.
 
 **The scenarios** (`agent_harbor/playback_scenarios.nim`):
 
