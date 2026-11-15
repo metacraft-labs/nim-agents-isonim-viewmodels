@@ -22,8 +22,10 @@
 ## changes state, starts or stops waiting, ends, goes away), resumes
 ## (`subscribeResumes`) and resets (`subscribeResets`: the panel starts over,
 ## `restart`). An initiative lists the sessions its entry names
-## (`Initiative.sessionIds`); a session launched for it after the load shows
-## once the initiative is loaded again. `feeds` reports every subscription.
+## (`Initiative.sessionIds`) and every session the listing holds for it
+## (`FleetSession.planId`): a session launched for it after the load joins
+## its row with the frame that introduces it, no reload. `feeds` reports
+## every subscription.
 
 import std/strutils
 import isonim/core/[signals, computation, owner]
@@ -186,15 +188,22 @@ proc rowOf(vm: InitiativesVM; initiative: Initiative; selected: string): Initiat
     selected: initiative.id == selected,
     folded: initiative.id in vm.folded,
     expanded: initiative.id in vm.expanded)
+  proc listed(row: var InitiativeRow; session: FleetSession) =
+    var item = sessionItemOf(session, vm.nowMs, vm.policy)
+    if item.initiativeTitle.len == 0: item.initiativeTitle = initiative.title
+    inc row.sessionCounts[item.attention]
+    row.sessions.add item
   for id in initiative.sessionIds:
     let at = vm.directory.find(id)
-    if at >= 0:
-      var item = sessionItemOf(vm.directory.sessions[at], vm.nowMs, vm.policy)
-      if item.initiativeTitle.len == 0: item.initiativeTitle = initiative.title
-      inc result.sessionCounts[item.attention]
-      result.sessions.add item
-    else:
-      inc result.missingSessions
+    if at >= 0: result.listed(vm.directory.sessions[at])
+    else: inc result.missingSessions
+  # A session launched for the initiative after its entry is read joins the
+  # row as soon as the listing holds it: the fleet frame that introduces it
+  # names the initiative (`planId`), as the tab strips group it, so the row,
+  # its counts and its state follow it with no reload of the initiatives.
+  for session in vm.directory.sessions:
+    if session.planId == initiative.id and session.id notin initiative.sessionIds:
+      result.listed(session)
   # The sessions that need the reader first (needs input, idle, running,
   # queued, failed, ended), launch order within each.
   var ordered: seq[SessionItem]

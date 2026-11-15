@@ -385,14 +385,18 @@ proc originsShown*(vm: SessionTabStripVM): seq[string] =
       result.add tab.originLabel
 
 proc summaryText*(vm: SessionTabStripVM): string =
-  ## `22 sessions · 3 need input · 2 idle · 6 running`.
+  ## `22 sessions · 3 need input · 2 idle · 6 running · 1 queued · 4 ended`:
+  ## the total, then each state that has sessions, in the words and order of
+  ## the fleet's filters (needs input, running, queued, failed, ended), with
+  ## `idle` after needs input where the policy keeps it apart. A state with
+  ## no session is left out, so the parts add up to the total.
   let counts = vm.counts
   var total = 0
   for c in counts: total += c
   var parts = @[$total & (if total == 1: " session" else: " sessions")]
   if counts[saNeedsInput] > 0:
     parts.add $counts[saNeedsInput] & (if counts[saNeedsInput] == 1: " needs input" else: " need input")
-  if counts[saIdle] > 0: parts.add $counts[saIdle] & " idle"
-  if counts[saRunning] > 0: parts.add $counts[saRunning] & " running"
-  if counts[saFailed] > 0: parts.add $counts[saFailed] & " failed"
+  for (state, word) in [(saIdle, " idle"), (saRunning, " running"), (saQueued, " queued"),
+                        (saFailed, " failed"), (saEnded, " ended")]:
+    if counts[state] > 0: parts.add $counts[state] & word
   parts.join(" \xC2\xB7 ")

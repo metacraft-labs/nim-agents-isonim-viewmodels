@@ -10,9 +10,9 @@
 ##   and its recordings appear loading and turn ready or fail (one fails and
 ##   is loaded again), while its one session works and ends.
 ##
-## Each scenario's named moments are the states its stories are captured at;
-## their expected viewmodel states are written out by hand in
-## `tests/test_playback.nim`.
+## Each scenario's named moments are the states its stories are captured at,
+## each view at the moments whose event it shows (`views`); their expected
+## viewmodel states are written out by hand in `tests/test_playback.nim`.
 
 import std/json
 import nim_agents/agent_harbor/initiatives
@@ -196,7 +196,27 @@ proc frontEndsScenario*(): PlaybackScenario =
                (sec(90), "bench-asks"), (sec(120), "port-answered"),
                (sec(180), "migration-fails"), (sec(200), "config-answered"),
                (sec(210), "milestone-done"), (sec(240), "importer-ends"),
-               (sec(300), "port-completes"), (sec(330), "importer-removed")])
+               (sec(300), "port-completes"), (sec(330), "importer-removed")],
+    # Each view's moments: those whose event it shows. The session views show
+    # every session's state; the session list's group headers also show the
+    # route cache's milestones (`n/m`), and the fleet's config row the line
+    # it logs at milestone-done. The Initiatives panel shows the route
+    # cache's sessions and milestones, and in its header the sessions in no
+    # initiative (the importer's removal); not the importer's or the config
+    # session's state.
+    views = [
+      ("fleet", @["new-session", "port-asks", "bench-asks", "port-answered",
+                  "migration-fails", "config-answered", "milestone-done",
+                  "importer-ends", "port-completes", "importer-removed"]),
+      ("session-tabs", @["new-session", "port-asks", "bench-asks", "port-answered",
+                         "migration-fails", "config-answered", "importer-ends",
+                         "port-completes", "importer-removed"]),
+      ("session-list", @["new-session", "port-asks", "bench-asks", "port-answered",
+                         "migration-fails", "config-answered", "milestone-done",
+                         "importer-ends", "port-completes", "importer-removed"]),
+      ("initiatives", @["new-session", "port-asks", "bench-asks", "port-answered",
+                        "migration-fails", "milestone-done", "port-completes",
+                        "importer-removed"])])
 
 # ---------------------------------------------------------------------------
 # initiative-run
@@ -268,7 +288,16 @@ proc initiativeRunScenario*(): PlaybackScenario =
                (sec(45), "trace-ready"), (sec(75), "recording-fails"),
                (sec(80), "milestone-blocked"), (sec(135), "second-trace-ready"),
                (sec(150), "queue-done"), (sec(170), "recording-reloaded"),
-               (sec(200), "plan-done"), (sec(210), "session-ends")])
+               (sec(200), "plan-done"), (sec(210), "session-ends")],
+    # The initiative tabs show the plan's `n/m`, the recordings and the
+    # session's end (the tab's mark), not a blocked milestone while the
+    # session still works; the progress panel shows the milestones only.
+    views = [
+      ("initiative-tabs", @["specification-done", "trace-loading", "trace-ready",
+                            "recording-fails", "second-trace-ready", "queue-done",
+                            "recording-reloaded", "plan-done", "session-ends"]),
+      ("initiative-progress", @["specification-done", "milestone-blocked",
+                                "queue-done", "plan-done"])])
 
 # ---------------------------------------------------------------------------
 

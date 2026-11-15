@@ -25,6 +25,14 @@
 ## Any entry may carry a **named moment** (`moment`), unique in its scenario:
 ## a story or a test seeks to it by name, and captures are taken there.
 ##
+## Each **view** a scenario feeds (`views`: the fleet list, the session tabs,
+## the session list, the Initiatives panel, the initiative tabs, the
+## Initiative Progress panel; `PlaybackViews`) has its own list of moments:
+## the named moments whose event that view shows, in time order, so every
+## moment of a view's list visibly changes that view. The timeline under them
+## is the scenario's one: a view's list only chooses among its named moments,
+## and every named moment is on at least one view's list.
+##
 ## Scenarios are Nim values, built by constructors in Nim code
 ## (`playback_scenarios.nim`), not files: the same scenario loads on the C and
 ## JS targets, with no file IO and no parser. `buildScenario` is the
@@ -93,6 +101,11 @@ type
     history*: seq[JsonNode]
       ## Every event, oldest first; `timestamp` in µs since `startMs`.
 
+  ScenarioView* = object
+    ## The named moments one view shows, in time order.
+    view*: string                ## one of `PlaybackViews`
+    moments*: seq[string]
+
   PlaybackScenario* = object
     name*: string                ## an id: `front-ends`, `initiative-run`
     title*: string               ## what a story's chrome says it shows
@@ -102,6 +115,13 @@ type
       ## The initiatives at the first moment.
     sessions*: seq[ScenarioSession]
     entries*: seq[ScenarioEntry]
+    views*: seq[ScenarioView]
+      ## Each view the scenario feeds, with the moments it shows.
+
+const PlaybackViews* = ["fleet", "session-tabs", "session-list", "initiatives",
+                        "initiative-tabs", "initiative-progress"]
+  ## The views a scenario can name: the Agent Harbor front-end's sessions and
+  ## initiatives views, each over its viewmodel.
 
 # ---------------------------------------------------------------------------
 # Reading a scenario
@@ -145,6 +165,21 @@ proc momentNames*(scenario: PlaybackScenario): seq[string] =
   ## The named moments, in time order.
   for entry in scenario.entries:
     if entry.moment.len > 0: result.add entry.moment
+
+proc feeds*(scenario: PlaybackScenario; view: string): bool =
+  ## Whether the scenario names moments for `view`.
+  for v in scenario.views:
+    if v.view == view: return true
+  false
+
+proc momentNames*(scenario: PlaybackScenario; view: string): seq[string] =
+  ## The named moments `view` shows, in time order. Raises `ValueError` for a
+  ## view the scenario does not feed, rather than answering every moment or
+  ## none.
+  for v in scenario.views:
+    if v.view == view: return v.moments
+  raise newException(ValueError, "the scenario " & scenario.name &
+                     " names no moments for the view " & view)
 
 proc momentMs*(scenario: PlaybackScenario; name: string): int64 =
   ## The time of a named moment; -1 when the scenario has none by that name.
@@ -205,7 +240,8 @@ proc recordingEntry*(atMs: int64; initiativeId: string; recording: RecordingEntr
 proc buildScenario*(name, title: string; firstMs: int64;
                     sessions: seq[ScenarioSession]; initiatives: seq[Initiative];
                     extras: seq[ScenarioEntry] = @[];
-                    moments: openArray[(int64, string)] = []): PlaybackScenario =
+                    moments: openArray[(int64, string)] = [];
+                    views: openArray[(string, seq[string])] = []): PlaybackScenario =
   ## A scenario from its sessions' histories and the entries no history
   ## implies (`extras`: resumes, progress events, recording changes; any
   ## moment they carry is kept). The first listing holds every session
@@ -215,7 +251,8 @@ proc buildScenario*(name, title: string; firstMs: int64;
   ## extras, in time order; at one moment the extras come first (a resume
   ## before the input event that carries it), and otherwise each keeps the
   ## order it was given in. `moments` names moments by time: the name goes
-  ## on the last entry at that time. Run `problemsOf` on the result.
+  ## on the last entry at that time. `views` gives each view's moments, by
+  ## name. Run `problemsOf` on the result.
   result = PlaybackScenario(name: name, title: title, firstMs: firstMs,
                             initiatives: initiatives, sessions: sessions)
   result.first = FleetSnapshot(capturedAtMs: firstMs,
@@ -266,6 +303,8 @@ proc buildScenario*(name, title: string; firstMs: int64;
       raise newException(ValueError, "scenario " & name & ": no entry at the moment " &
                          moment & " (" & $atMs & ")")
     result.entries[last].moment = moment
+  for (view, names) in views:
+    result.views.add ScenarioView(view: view, moments: names)
 
 # ---------------------------------------------------------------------------
 # A scenario's own invariants
@@ -282,7 +321,10 @@ proc problemsOf*(scenario: PlaybackScenario): seq[string] =
   ## milestone, recording changes a known initiative and a recording with an
   ## id; every resume is matched by the session's own input event
   ## (`user_input` or `session_resumed`) at the same moment, so a view that
-  ## follows events and one that follows resumes agree; and no milestone
+  ## follows events and one that follows resumes agree; each view's moments
+  ## are named moments of the scenario, in time order, each once, the view one
+  ## of `PlaybackViews` named once, and every named moment is on some view's
+  ## list; and no milestone
   ## reads completed with a deliverable undone or a test pending or failing,
   ## at the first moment or after any progress event.
   let label = "scenario " & scenario.name & ": "
@@ -400,6 +442,33 @@ proc problemsOf*(scenario: PlaybackScenario): seq[string] =
     if entry.kind == sekProgress:
       discard plans.applyProgressEvent(entry.progress)
       result.add outstanding("after entry " & $i & " (" & $entry & ")", plans, reported)
+  # Each view's moments: known names, in time order, each once; every named
+  # moment shown by some view.
+  var shown = initHashSet[string]()
+  var views = initHashSet[string]()
+  for v in scenario.views:
+    if v.view notin PlaybackViews:
+      result.add label & "the view " & v.view & " is not one of the playback views"
+    if views.containsOrIncl(v.view):
+      result.add label & "the view " & v.view & " is named twice"
+    var last = int64.low
+    var seen = initHashSet[string]()
+    for name in v.moments:
+      let at = scenario.momentMs(name)
+      if at < 0:
+        result.add label & "the view " & v.view & " names " & name &
+          ", which is not a named moment"
+        continue
+      if seen.containsOrIncl(name):
+        result.add label & "the view " & v.view & " names " & name & " twice"
+      if at < last:
+        result.add label & "the view " & v.view & " names " & name &
+          " out of time order"
+      last = max(last, at)
+      shown.incl name
+  for name in scenario.momentNames:
+    if name notin shown:
+      result.add label & "the moment " & name & " is on no view's list"
   for s in scenario.sessions:
     if s.entry.id notin known and s.entry.id notin removed:
       result.add label & "the session " & s.entry.id & " is never introduced"

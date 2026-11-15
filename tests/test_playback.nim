@@ -28,9 +28,11 @@
 ## reducers, the hand-written values are also checked after seeking back to
 ## each named moment, so a defect the two playbacks share cannot pass.
 
-import std/[json, strutils, unittest]
+import std/[json, sequtils, strutils, unittest]
 import isonim/core/[owner, signals, clock]
 import nim_agents_isonim_viewmodels
+from nim_agents/agent_harbor/session_replay import sessionAt
+from nim_agents/agent_harbor/fleet_fold import sessionFrame
 
 const Dot = " \xC2\xB7 "
 
@@ -368,7 +370,78 @@ proc unchangedAtMoments(scenario: PlaybackScenario): seq[string] =
     disposeRoot()
   found
 
+const ShownAt = [("fleet", 0), ("session-tabs", 1), ("session-list", 2),
+                 ("initiative-tabs", 3), ("initiatives", 4), ("initiative-progress", 5)]
+  ## Each view's line of `shown`.
+
+proc shownIndex(view: string): int =
+  for (v, i) in ShownAt:
+    if v == view: return i
+  doAssert false, "no line of shown for the view " & view
+
+proc viewsUnmovedAtTheirMoments(scenario: PlaybackScenario): seq[string] =
+  ## Every (view, moment) where the moment is on the view's list and the
+  ## view shows the same as at the scenario's moment before it (the first
+  ## frame before the first): a moment the view's story would show with
+  ## nothing visibly happening. Empty when every listed moment moves its view.
+  var found: seq[string]
+  createRoot proc(disposeRoot: proc()) =
+    let source = newPlaybackDataSource(scenario, newTestClock(0))
+    let v = viewsOver(source, scenario.initiatives[0].id)
+    var before = v.heldStill
+    for name in scenario.momentNames:
+      source.stepTo(scenario.momentMs(name))
+      let now = v.heldStill
+      for view in scenario.views:
+        if name notin view.moments: continue
+        let i = shownIndex(view.view)
+        if now[i] == before[i]:
+          found.add scenario.name & " at " & name & ": the view " & view.view &
+            " lists the moment and shows the same as at the moment before"
+      before = now
+    v.dispose()
+    disposeRoot()
+  found
+
 suite "every named moment changes what it names":
+  test "each view's moments move that view, in both scenarios":
+    for name in PlaybackScenarioNames:
+      let s = playbackScenario(name)
+      check s.views.len > 0
+      let unmoved = s.viewsUnmovedAtTheirMoments
+      for u in unmoved: checkpoint u
+      check unmoved.len == 0
+
+  test "a view listing a moment that does not move it is reported":
+    # The progress panel at trace-ready: a recording turns ready, which the
+    # panel does not show.
+    var listed = initiativeRunScenario()
+    for view in listed.views.mitems:
+      if view.view == "initiative-progress":
+        view.moments = @["specification-done", "trace-ready", "milestone-blocked",
+                         "queue-done", "plan-done"]
+    check listed.problemsOf.len == 0
+    let unmoved = listed.viewsUnmovedAtTheirMoments
+    check unmoved == @["initiative-run at trace-ready: the view initiative-progress " &
+                       "lists the moment and shows the same as at the moment before"]
+
+  test "a view's moments are named moments, in time order, and cover every moment":
+    var bad = frontEndsScenario()
+    bad.views[0].moments = @["port-asks", "new-session", "no-such-moment"]
+    bad.views.add ScenarioView(view: "no-such-view", moments: @["new-session"])
+    let problems = bad.problemsOf
+    for p in problems: checkpoint p
+    let text = problems.join("\n")
+    check "the view fleet names new-session out of time order" in text
+    check "the view fleet names no-such-moment, which is not a named moment" in text
+    check "the view no-such-view is not one of the playback views" in text
+    var uncovered = initiativeRunScenario()
+    for view in uncovered.views.mitems:
+      view.moments = view.moments.filterIt(it != "milestone-blocked")
+    check uncovered.problemsOf == @["scenario initiative-run: the moment milestone-blocked " &
+                                    "is on no view's list"]
+    expect ValueError: discard frontEndsScenario().momentNames("initiative-progress")
+
   test "each moment changes every surface its entries feed, in both scenarios":
     for name in PlaybackScenarioNames:
       let unchanged = playbackScenario(name).unchangedAtMoments
@@ -386,6 +459,8 @@ suite "every named moment changes what it names":
     repeat.atMs = still.lastMs + 1_000
     repeat.moment = "nothing-moves"
     still.entries.add repeat
+    for view in still.views.mitems:
+      if view.view == "initiative-progress": view.moments.add "nothing-moves"
     check still.problemsOf.len == 0
     let unchanged = still.unchangedAtMoments
     for u in unchanged: checkpoint u
@@ -635,7 +710,8 @@ suite "the viewmodels at each named moment":
     # at it (`showSession`); everything else is the playback's.
     let route = "initiative:" & RouteCache
     let config = "session:" & ConfigSessionId
-    let unattached2 = "1 initiative" & Dot & "2 sessions"
+    let two = "1 initiative" & Dot & "2 sessions"
+    let three = "1 initiative" & Dot & "3 sessions"
     let early = @["In progress (1)", "Planned (2)", "Completed (1)"]
     let afterDone = @["Planned (2)", "Completed (2)"]
     let afterStart = @["In progress (1)", "Planned (1)", "Completed (2)"]
@@ -644,45 +720,51 @@ suite "the viewmodels at each named moment":
     let expected = @[
       ("", front([1, 3, 0, 0, 0], 4, "4 sessions" & Dot & "1 needs input" & Dot & "3 running",
         isWorking, "1/4", route, "1 waiting", 3, isWorking, "1/4" & Dot & "25%",
-        "RC-M1: Data model", unattached2 & Dot & "2 in no initiative", quarter, early)),
-      ("new-session", front([1, 3, 1, 0, 0], 5, "5 sessions" & Dot & "1 needs input" & Dot & "3 running",
+        "RC-M1: Data model", two & Dot & "2 in no initiative", quarter, early)),
+      # The benchmark, launched for the route cache, joins its row at once.
+      ("new-session", front([1, 3, 1, 0, 0], 5,
+        "5 sessions" & Dot & "1 needs input" & Dot & "3 running" & Dot & "1 queued",
         isWorking, "1/4", route, "1 waiting", 4, isWorking, "1/4" & Dot & "25%",
-        "RC-M1: Data model", unattached2 & Dot & "2 in no initiative", quarter, early)),
+        "RC-M1: Data model", three & Dot & "2 in no initiative", quarter, early)),
       ("port-asks", front([2, 3, 0, 0, 0], 5, "5 sessions" & Dot & "2 need input" & Dot & "3 running",
         isNeedsInput, "1/4", route, "2 of 2", 4, isNeedsInput, "1/4" & Dot & "25%",
-        "RC-M1: Data model", unattached2 & Dot & "1 needs input" & Dot & "2 in no initiative",
+        "RC-M1: Data model", three & Dot & "1 needs input" & Dot & "2 in no initiative",
         quarter, early)),
       ("bench-asks", front([3, 2, 0, 0, 0], 5, "5 sessions" & Dot & "3 need input" & Dot & "2 running",
         isNeedsInput, "1/4", route, "2 of 3", 4, isNeedsInput, "1/4" & Dot & "25%",
-        "RC-M1: Data model", unattached2 & Dot & "1 needs input" & Dot & "2 in no initiative",
+        "RC-M1: Data model", three & Dot & "2 need input" & Dot & "2 in no initiative",
         quarter, early)),
       # Answered: auto-switch hands the view to the longest-waiting session.
+      # The benchmark still waits, so the route cache's row needs input.
       ("port-answered", front([2, 3, 0, 0, 0], 5, "5 sessions" & Dot & "2 need input" & Dot & "3 running",
-        isNeedsInput, "1/4", config, "1 of 2", 3, isWorking, "1/4" & Dot & "25%",
-        "RC-M1: Data model", unattached2 & Dot & "2 in no initiative", quarter, early)),
+        isNeedsInput, "1/4", config, "1 of 2", 3, isNeedsInput, "1/4" & Dot & "25%",
+        "RC-M1: Data model", three & Dot & "1 needs input" & Dot & "2 in no initiative",
+        quarter, early)),
       ("migration-fails", front([1, 3, 0, 1, 0], 5,
         "5 sessions" & Dot & "1 needs input" & Dot & "3 running" & Dot & "1 failed",
         isWorking, "1/4", config, "1 of 1", 3, isWorking, "1/4" & Dot & "25%",
-        "RC-M1: Data model", unattached2 & Dot & "2 in no initiative", quarter, early)),
+        "RC-M1: Data model", three & Dot & "2 in no initiative", quarter, early)),
       # The session in view stops waiting with nothing else waiting: it stays.
       ("config-answered", front([0, 4, 0, 1, 0], 5, "5 sessions" & Dot & "4 running" & Dot & "1 failed",
         isWorking, "1/4", config, "", 3, isWorking, "1/4" & Dot & "25%",
-        "RC-M1: Data model", unattached2 & Dot & "2 in no initiative", quarter, early)),
+        "RC-M1: Data model", three & Dot & "2 in no initiative", quarter, early)),
       ("milestone-done", front([0, 4, 0, 1, 0], 5, "5 sessions" & Dot & "4 running" & Dot & "1 failed",
         isWorking, "2/4", config, "", 3, isWorking, "2/4" & Dot & "50%",
-        "RC-M2: Core change", unattached2 & Dot & "2 in no initiative", half, afterDone)),
-      ("importer-ends", front([0, 3, 0, 1, 1], 5, "5 sessions" & Dot & "3 running" & Dot & "1 failed",
+        "RC-M2: Core change", three & Dot & "2 in no initiative", half, afterDone)),
+      ("importer-ends", front([0, 3, 0, 1, 1], 5,
+        "5 sessions" & Dot & "3 running" & Dot & "1 failed" & Dot & "1 ended",
         isWorking, "2/4", config, "", 3, isWorking, "2/4" & Dot & "50%",
-        "RC-M2: Core change", unattached2 & Dot & "2 in no initiative", half, afterStart)),
-      # The bench (not among the initiative's listed sessions) still runs:
-      # the bar, which groups by each session's plan, is working; the
-      # Initiatives row, which lists the plan's named sessions, is idle.
-      ("port-completes", front([0, 1, 0, 1, 3], 5, "5 sessions" & Dot & "1 running" & Dot & "1 failed",
-        isWorking, "2/4", config, "", 3, isIdle, "2/4" & Dot & "50%",
-        "RC-M2: Core change", unattached2 & Dot & "2 in no initiative", half, afterStart)),
-      ("importer-removed", front([0, 1, 0, 1, 2], 4, "4 sessions" & Dot & "1 running" & Dot & "1 failed",
-        isWorking, "2/4", config, "", 2, isIdle, "2/4" & Dot & "50%",
-        "RC-M2: Core change", unattached2 & Dot & "1 in no initiative", half, afterStart))]
+        "RC-M2: Core change", three & Dot & "2 in no initiative", half, afterStart)),
+      # The benchmark still runs: the bar and the Initiatives row, which both
+      # follow every session launched for the route cache, are working.
+      ("port-completes", front([0, 1, 0, 1, 3], 5,
+        "5 sessions" & Dot & "1 running" & Dot & "1 failed" & Dot & "3 ended",
+        isWorking, "2/4", config, "", 3, isWorking, "2/4" & Dot & "50%",
+        "RC-M2: Core change", three & Dot & "2 in no initiative", half, afterStart)),
+      ("importer-removed", front([0, 1, 0, 1, 2], 4,
+        "4 sessions" & Dot & "1 running" & Dot & "1 failed" & Dot & "2 ended",
+        isWorking, "2/4", config, "", 2, isWorking, "2/4" & Dot & "50%",
+        "RC-M2: Core change", three & Dot & "1 in no initiative", half, afterStart))]
     proc checkData(v: Views; e: FrontEndsMoment) =
       ## What the data decides at a moment, whatever the operator did: every
       ## surface but the bar's active tab and what follows from it (the
@@ -898,6 +980,50 @@ suite "the viewmodels follow a source through the seam":
       check v.progress.progressState.val == asReady
       check v.tabs.summaryText == "4 sessions" & Dot & "1 needs input" & Dot & "3 running"
       v.dispose()
+      disposeRoot()
+
+  test "a session launched for an initiative joins its row with the frame that introduces it":
+    # The Initiatives panel loads the initiatives once; a later frame that
+    # introduces a session launched for the route cache (`planId`) puts it
+    # in the route cache's row, with its counts and state, and the header
+    # counts it, with no second load of the initiatives.
+    createRoot proc(disposeRoot: proc()) =
+      let scenario = frontEndsScenario()
+      let source = LoadsOnlySource(label: "loads only", snapshot: scenario.first,
+                                   initiatives: scenario.initiatives)
+      let panel = newInitiativesVM(source)
+      panel.load()
+      proc ids(row: InitiativeRow): seq[string] =
+        for item in row.sessions: result.add item.id
+      check panel.rows[0].ids.len == 2
+      check BenchSessionId notin panel.rows[0].ids
+      check panel.summaryText == "1 initiative" & Dot & "2 sessions" & Dot & "2 in no initiative"
+      var bench: ScenarioSession
+      for s in scenario.sessions:
+        if s.entry.id == BenchSessionId: bench = s
+      # The benchmark waiting on a question, as its listing reads at +100 s.
+      var count = 0
+      for event in bench.history:
+        if bench.eventTimeOf(event) <= PlaybackT0 + 100_000: inc count
+      let listing = bench.entry.sessionAt(bench.history, count, bench.startMs)
+      check panel.applyFleetFrame(sessionFrame(listing, PlaybackT0 + 100_000))
+      let row = panel.rows[0]
+      check BenchSessionId in row.ids
+      check row.sessionCounts[saNeedsInput] == 1
+      check row.state == isNeedsInput
+      check row.missingSessions == 0
+      check panel.summaryText == "1 initiative" & Dot & "3 sessions" & Dot & "1 needs input" &
+        Dot & "2 in no initiative"
+      # A session launched for no initiative joins no row.
+      var other = listing
+      other.id = "5ca1ab1e-0a09-4a00-8000-00000000a009"
+      other.planId = ""
+      other.initiative = ""
+      check panel.applyFleetFrame(sessionFrame(other, PlaybackT0 + 101_000))
+      check panel.rows[0].ids.len == 3
+      check panel.summaryText == "1 initiative" & Dot & "3 sessions" & Dot & "1 needs input" &
+        Dot & "3 in no initiative"
+      panel.dispose()
       disposeRoot()
 
   test "a failing source answers every subscription with its error":
