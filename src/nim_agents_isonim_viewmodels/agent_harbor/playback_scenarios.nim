@@ -8,7 +8,12 @@
 ## - `initiative-run` (`initiativeRunScenario`): one initiative over its run:
 ##   its milestones move (one is blocked for a while) until its plan is done,
 ##   and its recordings appear loading and turn ready or fail (one fails and
-##   is loaded again), while its one session works and ends.
+##   is loaded again), while its one session works and ends;
+## - `session-run` (`sessionRunScenario`): one agent session's work event by
+##   event -- reads, searches, commands (one fails, with its trace), a
+##   question and its answer, edits, a plan, a hook that repeats, a reply,
+##   completion -- for the session activity timeline, while another
+##   session's events interleave.
 ##
 ## Each scenario's named moments are the states its stories are captured at,
 ## each view at the moments whose event it shows (`views`); their expected
@@ -17,12 +22,13 @@
 import std/json
 import nim_agents/agent_harbor/initiatives
 import ./playback_scenario
+import ./session_events
 
 export playback_scenario
 
 const
   PlaybackT0* = 1_800_000_000_000'i64
-    ## Both scenarios' first moment (2027-01-15 08:00 UTC).
+    ## Every scenario's first moment (2027-01-15 08:00 UTC).
 
 proc sec(s: int): int64 = PlaybackT0 + int64(s) * 1000
   ## A moment `s` seconds after the first (negative: before it).
@@ -104,6 +110,65 @@ proc started(script: var Script) =
   ## Queued a second after its start, running two seconds later.
   script.status(script.s.startMs + 1_000, "queued")
   script.status(script.s.startMs + 3_000, "running")
+
+# The helpers below write a session's work event by event, in the wire shapes
+# of `session_events.nim`. The two scenarios after them use only the helpers
+# above this line, and are unchanged by these.
+
+proc instructs(script: var Script; atMs: int64; text: string) =
+  script.at(atMs, userInput(text))
+
+proc thinks(script: var Script; atMs: int64; text: string) =
+  script.at(atMs, thoughtEvent(text))
+
+proc reads(script: var Script; atMs: int64; path: string) =
+  script.at(atMs, fileRead(path))
+
+proc searched(script: var Script; atMs: int64; id, tool, pattern, path,
+              matches: string) =
+  ## A search tool's call and its result, at one moment.
+  script.at(atMs, searchCall(id, tool, pattern, path))
+  script.at(atMs, toolResult(id, tool, 0, matches))
+
+proc requests(script: var Script; atMs: int64; model: string; messages: int) =
+  script.at(atMs, modelRequest(model, messages))
+
+proc ran(script: var Script; atMs: int64; id, command: string) =
+  ## A shell command started; its result comes with `finished`.
+  script.at(atMs, commandCall(id, command))
+
+proc finished(script: var Script; atMs: int64; id: string; exitCode: int;
+              output: string; trace: JsonNode = nil) =
+  ## A shell command's result, with its trace when given.
+  script.at(atMs, toolResult(id, "runCmd", exitCode, output, trace))
+
+proc edits(script: var Script; atMs: int64; path: string; added, removed: int;
+           description: string) =
+  script.at(atMs, fileEdit(path, added, removed, description))
+
+proc diffed(script: var Script; atMs: int64; path: string; added, removed: int;
+            patch: string) =
+  script.at(atMs, diffEvent(path, added, removed, patch))
+
+proc plans(script: var Script; atMs: int64; steps: openArray[(string, string)];
+           update: bool) =
+  script.at(atMs, planEvent(steps, update))
+
+proc question(script: var Script; atMs: int64; prompt: string;
+              options: openArray[string]) =
+  script.at(atMs, agentQuestion(prompt, options))
+
+proc resumed(script: var Script; atMs: int64) =
+  script.at(atMs, sessionResumed())
+
+proc replies(script: var Script; atMs: int64; text: string) =
+  script.at(atMs, agentReply(text))
+
+proc hook(script: var Script; atMs: int64; request: string) =
+  script.at(atMs, awaitingInput(request))
+
+proc completes(script: var Script; atMs: int64; summary: string) =
+  script.at(atMs, statusEvent("completed", summary))
 
 # ---------------------------------------------------------------------------
 # front-ends
@@ -300,8 +365,124 @@ proc initiativeRunScenario*(): PlaybackScenario =
                                 "queue-done", "plan-done"])])
 
 # ---------------------------------------------------------------------------
+# session-run
+# ---------------------------------------------------------------------------
 
-const PlaybackScenarioNames* = ["front-ends", "initiative-run"]
+const
+  JitterSessionId* = "5ca1ab1e-0c01-4c00-8000-00000000c001"
+    ## Started from CodeTracer: adds retry jitter to the upload client; the
+    ## session the `session-activity` view shows.
+  LoggingSessionId* = "5ca1ab1e-0c02-4c00-8000-00000000c002"
+    ## Started from the CLI; its events interleave with the jitter session's
+    ## and must never show in that session's timeline.
+  SessionRunMoments* = ["instruction", "reads-grouped", "searches-grouped",
+                        "command-running", "command-fails", "agent-asks",
+                        "answered", "edits-grouped", "hook-repeats",
+                        "agent-replies", "session-completes"]
+    ## The `session-activity` moments, in time order.
+
+proc pipelineTrace(): JsonNode =
+  ## The failing test run's trace: a three-stage pipeline whose first stage
+  ## fails, `tee` and `tail` succeed; the environment holds an invented token,
+  ## which the timeline redacts.
+  const output = "..F...\nFAILED tests/test_client.py::test_retry_waits_with_jitter\n" &
+    "1 failed, 17 passed in 14.1s\n"
+  commandTrace([
+    tracedProcess(5102, 5101, ["pytest", "-q"], 0, 14_200, 1, stdout = output,
+                  exe = "/usr/bin/python3"),
+    tracedProcess(5103, 5101, ["tee", "test.log"], 0, 14_210, 0),
+    tracedProcess(5104, 5101, ["tail", "-n", "5"], 2, 14_215, 0,
+                  stdout = "1 failed, 17 passed in 14.1s\n")],
+    output,
+    %*{"PATH": "/usr/bin", "UPLOAD_CLIENT_ENV": "test",
+       "UPLOAD_API_TOKEN": "invented-token-not-a-secret"})
+
+proc sessionRunScenario*(): PlaybackScenario =
+  ## One agent session's work, event by event, for the session activity
+  ## timeline (`session-activity`, over the jitter session):
+  ##
+  ## - +5 s, `instruction`: the operator asks for retry jitter;
+  ## - a thought, then four reads with a thought between them (+20 s,
+  ##   `reads-grouped`: the fourth read);
+  ## - three searches with a model request between them (+35 s,
+  ##   `searches-grouped`);
+  ## - a test command that passes, then the full test run piped through
+  ##   `tee` and `tail` (+50 s, `command-running`), which fails with exit 1
+  ##   and carries its trace (+65 s, `command-fails`);
+  ## - the agent asks which jitter to use (+80 s, `agent-asks`) and the
+  ##   operator answers (+110 s, `answered`);
+  ## - three edits, +40 −12 in all (+150 s, `edits-grouped`), and a plan
+  ##   update;
+  ## - the stop hook holds the session three times (+170 s, `hook-repeats`);
+  ## - the tests pass, and the agent replies (+200 s, `agent-replies`);
+  ## - the session completes with a summary (+230 s, `session-completes`).
+  ##
+  ## A second session (the CLI's logging tidy-up) works at the same time;
+  ## its events interleave with these and are on no view's list.
+  var jitter = script(invented(JitterSessionId, "Add retry jitter to the upload client",
+    "codetracer", "", "", "Claude", "2.1.0", "host-a"), sec(-10))
+  jitter.started()
+  jitter.instructs(sec(5), "Add jitter to the upload client's retries, so " &
+    "clients that fail together do not retry together.")
+  jitter.thinks(sec(8), "The retry loop lives in the upload client. Read it and its tests first.")
+  jitter.reads(sec(10), "src/upload/client.py")
+  jitter.reads(sec(13), "src/upload/backoff.py")
+  jitter.thinks(sec(15), "Backoff is exponential with no jitter; check how the tests pin the delays.")
+  jitter.reads(sec(17), "tests/test_client.py")
+  jitter.reads(sec(20), "tests/test_backoff.py")
+  jitter.searched(sec(25), "search-1", "grep", "retry", "src/upload", "src/upload/client.py:41: for attempt in range(retries):")
+  jitter.requests(sec(30), "invented-model-large", 14)
+  jitter.searched(sec(32), "search-2", "glob", "**/*retry*", ".", "tests/test_retry_budget.py")
+  jitter.searched(sec(35), "search-3", "rg", "time.sleep", "src", "src/upload/backoff.py:22: time.sleep(delay)")
+  jitter.ran(sec(42), "cmd-1", "pytest -q tests/test_backoff.py")
+  jitter.finished(sec(46), "cmd-1", 0, "......\n6 passed in 0.4s\n")
+  jitter.ran(sec(50), "cmd-2", "pytest -q | tee test.log | tail -n 5")
+  jitter.finished(sec(65), "cmd-2", 1,
+    "1 failed, 17 passed in 14.1s\n", pipelineTrace())
+  jitter.question(sec(80), "Use full jitter or equal jitter for the retry delay?",
+    ["Full jitter", "Equal jitter"])
+  jitter.instructs(sec(110), "Full jitter.")
+  jitter.resumed(sec(110))
+  jitter.edits(sec(120), "src/upload/backoff.py", 18, 4,
+    "Draw each delay uniformly between zero and the exponential cap.")
+  jitter.diffed(sec(130), "src/upload/client.py", 10, 6,
+    "@@ -38,6 +38,10 @@\n-        time.sleep(base * 2 ** attempt)\n+        time.sleep(backoff.full_jitter(base, attempt, cap))\n")
+  jitter.edits(sec(150), "tests/test_backoff.py", 12, 2,
+    "Seed the jitter so the delays are reproducible in tests.")
+  jitter.plans(sec(155), [("Read the retry loop", "completed"),
+                          ("Add full jitter", "completed"),
+                          ("Run the tests", "in_progress")], update = true)
+  jitter.hook(sec(160), "claude-stop-hook")
+  jitter.hook(sec(165), "claude-stop-hook")
+  jitter.hook(sec(170), "claude-stop-hook")
+  jitter.ran(sec(180), "cmd-3", "pytest -q")
+  jitter.finished(sec(194), "cmd-3", 0, "..................\n18 passed in 13.8s\n")
+  jitter.replies(sec(200), "The retry client backs off with full jitter; 18 tests pass.")
+  jitter.completes(sec(230), "Retries now wait a random time up to the exponential cap.")
+  var logging = script(invented(LoggingSessionId, "Tidy the upload client's logging",
+    "cli", "", "", "Codex", "0.9.4", "host-b"), sec(-60))
+  logging.started()
+  logging.reads(sec(12), "src/upload/log.py")
+  logging.ran(sec(47), "log-cmd-1", "ruff check src/upload")
+  logging.finished(sec(58), "log-cmd-1", 0, "All checks passed!\n")
+  logging.edits(sec(125), "src/upload/log.py", 5, 9, "Use the module logger.")
+  logging.replies(sec(190), "The upload client logs through its module logger now.")
+  logging.completes(sec(215), "Logging tidied.")
+  buildScenario("session-run",
+    "one agent session's activity, event by event",
+    PlaybackT0, @[jitter.s, logging.s], @[],
+    extras = @[resumeEntry(sec(110), JitterSessionId)],
+    moments = [(sec(5), "instruction"), (sec(20), "reads-grouped"),
+               (sec(35), "searches-grouped"), (sec(50), "command-running"),
+               (sec(65), "command-fails"), (sec(80), "agent-asks"),
+               (sec(110), "answered"), (sec(150), "edits-grouped"),
+               (sec(170), "hook-repeats"), (sec(200), "agent-replies"),
+               (sec(230), "session-completes")],
+    sessionViews = [("session-activity", JitterSessionId, @SessionRunMoments)])
+
+# ---------------------------------------------------------------------------
+
+const PlaybackScenarioNames* = ["front-ends", "initiative-run", "session-run"]
   ## Every synthetic playback scenario, by name.
 
 proc playbackScenario*(name: string): PlaybackScenario =
@@ -310,4 +491,5 @@ proc playbackScenario*(name: string): PlaybackScenario =
   case name
   of "front-ends": frontEndsScenario()
   of "initiative-run": initiativeRunScenario()
+  of "session-run": sessionRunScenario()
   else: raise newException(ValueError, "no playback scenario named " & name)

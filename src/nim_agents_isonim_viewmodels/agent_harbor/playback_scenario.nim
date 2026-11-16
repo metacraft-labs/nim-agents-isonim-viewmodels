@@ -27,9 +27,11 @@
 ##
 ## Each **view** a scenario feeds (`views`: the fleet list, the session tabs,
 ## the session list, the Initiatives panel, the initiative tabs, the
-## Initiative Progress panel; `PlaybackViews`) has its own list of moments:
-## the named moments whose event that view shows, in time order, so every
-## moment of a view's list visibly changes that view. The timeline under them
+## Initiative Progress panel, one session's activity timeline;
+## `PlaybackViews`) has its own list of moments: the named moments whose
+## event that view shows, in time order, so every moment of a view's list
+## visibly changes that view. A view of one session names that session
+## (`ScenarioView.sessionId`), and its moments are that session's. The timeline under them
 ## is the scenario's one: a view's list only chooses among its named moments,
 ## and every named moment is on at least one view's list.
 ##
@@ -51,7 +53,7 @@
 ## Everything a scenario holds is invented; this format carries no captured
 ## data.
 
-import std/[algorithm, json, sets, tables]
+import std/[algorithm, json, sets, strutils, tables]
 import nim_agents/agent_harbor/[session_replay, fleet_fold]
 import ./data_source
 
@@ -105,6 +107,10 @@ type
     ## The named moments one view shows, in time order.
     view*: string                ## one of `PlaybackViews`
     moments*: seq[string]
+    sessionId*: string
+      ## The one session the view shows, for a view of a single session (the
+      ## session activity timeline); "" for a view of the whole fleet. Its
+      ## moments are then that session's: each one has an entry about it.
 
   PlaybackScenario* = object
     name*: string                ## an id: `front-ends`, `initiative-run`
@@ -119,9 +125,15 @@ type
       ## Each view the scenario feeds, with the moments it shows.
 
 const PlaybackViews* = ["fleet", "session-tabs", "session-list", "initiatives",
-                        "initiative-tabs", "initiative-progress"]
+                        "initiative-tabs", "initiative-progress",
+                        "session-activity"]
   ## The views a scenario can name: the Agent Harbor front-end's sessions and
-  ## initiatives views, each over its viewmodel.
+  ## initiatives views, and one session's activity timeline, each over its
+  ## viewmodel.
+
+const SessionViews* = ["session-activity"]
+  ## The views of a single session: a scenario names the session each shows
+  ## (`ScenarioView.sessionId`).
 
 # ---------------------------------------------------------------------------
 # Reading a scenario
@@ -180,6 +192,23 @@ proc momentNames*(scenario: PlaybackScenario; view: string): seq[string] =
     if v.view == view: return v.moments
   raise newException(ValueError, "the scenario " & scenario.name &
                      " names no moments for the view " & view)
+
+proc sessionOf*(scenario: PlaybackScenario; view: string): string =
+  ## The session a single-session view shows ("" for a fleet view). Raises
+  ## `ValueError` for a view the scenario does not feed.
+  for v in scenario.views:
+    if v.view == view: return v.sessionId
+  raise newException(ValueError, "the scenario " & scenario.name &
+                     " names no moments for the view " & view)
+
+proc entrySession*(entry: ScenarioEntry): string =
+  ## The session an entry is about ("" for a progress or recording change).
+  case entry.kind
+  of sekLifecycle: entry.lifecycle.sessionId
+  of sekListing: entry.listing.id
+  of sekEvent: entry.sessionId
+  of sekResume: entry.resume.sessionId
+  else: ""
 
 proc momentMs*(scenario: PlaybackScenario; name: string): int64 =
   ## The time of a named moment; -1 when the scenario has none by that name.
@@ -241,7 +270,8 @@ proc buildScenario*(name, title: string; firstMs: int64;
                     sessions: seq[ScenarioSession]; initiatives: seq[Initiative];
                     extras: seq[ScenarioEntry] = @[];
                     moments: openArray[(int64, string)] = [];
-                    views: openArray[(string, seq[string])] = []): PlaybackScenario =
+                    views: openArray[(string, seq[string])] = [];
+                    sessionViews: openArray[(string, string, seq[string])] = []): PlaybackScenario =
   ## A scenario from its sessions' histories and the entries no history
   ## implies (`extras`: resumes, progress events, recording changes; any
   ## moment they carry is kept). The first listing holds every session
@@ -252,7 +282,8 @@ proc buildScenario*(name, title: string; firstMs: int64;
   ## before the input event that carries it), and otherwise each keeps the
   ## order it was given in. `moments` names moments by time: the name goes
   ## on the last entry at that time. `views` gives each view's moments, by
-  ## name. Run `problemsOf` on the result.
+  ## name; `sessionViews` each single-session view's session and moments.
+  ## Run `problemsOf` on the result.
   result = PlaybackScenario(name: name, title: title, firstMs: firstMs,
                             initiatives: initiatives, sessions: sessions)
   result.first = FleetSnapshot(capturedAtMs: firstMs,
@@ -305,6 +336,8 @@ proc buildScenario*(name, title: string; firstMs: int64;
     result.entries[last].moment = moment
   for (view, names) in views:
     result.views.add ScenarioView(view: view, moments: names)
+  for (view, sessionId, names) in sessionViews:
+    result.views.add ScenarioView(view: view, sessionId: sessionId, moments: names)
 
 # ---------------------------------------------------------------------------
 # A scenario's own invariants
@@ -324,7 +357,11 @@ proc problemsOf*(scenario: PlaybackScenario): seq[string] =
   ## follows events and one that follows resumes agree; each view's moments
   ## are named moments of the scenario, in time order, each once, the view one
   ## of `PlaybackViews` named once, and every named moment is on some view's
-  ## list; and no milestone
+  ## list; a single-session view (`SessionViews`) names a session of the
+  ## scenario, and each of its moments has an entry about that session (a
+  ## fleet view names none); every `tool_result` follows its session's
+  ## `tool_use` with the same `tool_execution_id`, and a command trace on it
+  ## names the command that call ran; and no milestone
   ## reads completed with a deliverable undone or a test pending or failing,
   ## at the first moment or after any progress event.
   let label = "scenario " & scenario.name & ": "
@@ -469,6 +506,55 @@ proc problemsOf*(scenario: PlaybackScenario): seq[string] =
   for name in scenario.momentNames:
     if name notin shown:
       result.add label & "the moment " & name & " is on no view's list"
+  # A single-session view's moments are its session's.
+  for v in scenario.views:
+    if v.view in SessionViews:
+      if v.sessionId.len == 0 or scenario.findSession(v.sessionId) < 0:
+        result.add label & "the view " & v.view & " names no session of the scenario (" &
+          v.sessionId & ")"
+        continue
+      for name in v.moments:
+        let at = scenario.momentMs(name)
+        if at < 0: continue
+        var about = false
+        for entry in scenario.entries:
+          if entry.atMs == at and entry.entrySession == v.sessionId: about = true
+        if not about:
+          result.add label & "the view " & v.view & " names " & name &
+            ", which has no entry about " & v.sessionId
+    elif v.sessionId.len > 0:
+      result.add label & "the view " & v.view & " shows the whole fleet and names the session " &
+        v.sessionId
+  # Tool calls: a result follows its call, and a trace names the command.
+  for s in scenario.sessions:
+    var commands = initTable[string, string]()
+    for event in s.history:
+      let id = event{"tool_execution_id"}.getStr
+      case event{"type"}.getStr
+      of "tool_use":
+        if id.len > 0: commands[id] = event{"tool_args"}{"command"}.getStr
+      of "tool_result":
+        if id.len == 0 or id notin commands:
+          result.add label & "a tool_result of " & s.entry.id &
+            " names no tool_use before it (" & id & ")"
+          continue
+        let trace = event{"command_trace"}
+        if not trace.isNil:
+          let command = commands[id]
+          let processes = trace{"processes"}
+          if command.len == 0 or processes.isNil or processes.kind != JArray or
+              processes.len == 0:
+            result.add label & "the command trace of " & id & " in " & s.entry.id &
+              " has no processes or traces no command"
+          else:
+            for p in processes:
+              let argv = p{"argv"}
+              let program = if argv.isNil or argv.kind != JArray or argv.len == 0: ""
+                            else: argv[0].getStr
+              if program.len == 0 or program notin command:
+                result.add label & "the command trace of " & id & " in " & s.entry.id &
+                  " names " & program & ", which the command `" & command & "` does not run"
+      else: discard
   for s in scenario.sessions:
     if s.entry.id notin known and s.entry.id notin removed:
       result.add label & "the session " & s.entry.id & " is never introduced"

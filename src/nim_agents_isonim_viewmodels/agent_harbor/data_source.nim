@@ -57,6 +57,7 @@
 ## falls between its load's answer and its subscription) and cancels when it
 ## is disposed.
 
+import std/json
 import nim_agents/agent_harbor/[initiatives, fleet_fold]
 import ./records
 import ./recording_switcher
@@ -69,6 +70,10 @@ type
     ok*: bool
     value*: T
     error*: string
+    missing*: bool
+      ## With `ok` false: what was asked for does not exist at the source
+      ## (an unknown session, a 404), rather than the read failing. A view
+      ## says the thing cannot be loaded, not that the server failed.
 
   PlanFile* = object
     ## A milestone plan of a running campaign: the file's own text, unparsed.
@@ -199,6 +204,10 @@ proc success*[T](value: T): DataResult[T] =
 proc failure*[T](error: string): DataResult[T] =
   DataResult[T](ok: false, error: error)
 
+proc missingResult*[T](reason: string): DataResult[T] =
+  ## The answer for something the source does not hold (`missing`).
+  DataResult[T](ok: false, error: reason, missing: true)
+
 proc unsupported(source: AgentHarborDataSource; what: string): string =
   "the data source '" & source.label & "' does not provide " & what
 
@@ -213,7 +222,11 @@ method loadLifecycle*(source: AgentHarborDataSource;
 
 method loadSessionEvents*(source: AgentHarborDataSource; sessionId: string;
                           done: EventsCallback) {.base.} =
-  ## One session's event history (`GET /api/v1/sessions/{id}/events/history`).
+  ## One session's event history (`GET /api/v1/sessions/{id}/events/history`):
+  ## each event's line (`events`, newest first) and, where the source has
+  ## them, the events themselves (`rawEvents`, oldest first), which a view
+  ## that shows each event's details folds. A session the source does not
+  ## hold is answered `missing`.
   done(failure[SessionEventHistory](source.unsupported("session events")))
 
 method loadPlans*(source: AgentHarborDataSource; done: PlansCallback) {.base.} =
@@ -406,12 +419,23 @@ type
 
   SnapshotDataSource* = ref object of AgentHarborDataSource
     ## Answers the session list with a given snapshot (an empty fleet, or a
-    ## synthetic one larger than any capture), and the initiatives with given
-    ## ones. Its progress stream sends only what the host sends through it
-    ## (`sendProgress`); left alone, it never sends.
+    ## synthetic one larger than any capture), the initiatives with given
+    ## ones, and a session's event history with given events
+    ## (`sessionEvents`, each session's events oldest first; a session it
+    ## does not hold is answered `missing`). Its progress stream sends only
+    ## what the host sends through it (`sendProgress`); left alone, it never
+    ## sends.
     snapshot*: FleetSnapshot
     initiatives*: seq[Initiative]
+    sessionEvents*: seq[(string, seq[JsonNode])]
     progressSubscribers*: ProgressSubscribers
+
+  TimelineDataSource* = ref object of SnapshotDataSource
+    ## A `SnapshotDataSource` that also has a fleet-frame stream, which sends
+    ## only what the host sends through it (`sendFrame`): one session's
+    ## events arriving after its history was read, for the timeline's
+    ## stories and tests.
+    frameSubscribers*: Subscribers[FleetFrame]
 
 proc newPendingDataSource*(label = "waiting for the server"): PendingDataSource =
   PendingDataSource(label: label)
@@ -482,6 +506,54 @@ method loadFleet*(source: SnapshotDataSource; done: FleetCallback) =
 
 method loadInitiatives*(source: SnapshotDataSource; done: InitiativesCallback) =
   done(success(source.initiatives))
+
+proc historyOf*(sessionId: string; eventsOldestFirst: openArray[JsonNode];
+                startMs = 0'i64): SessionEventHistory =
+  ## A session's event history as a server answers it: the events' lines
+  ## newest first (timestamps placed by `startMs`, the session's start), and
+  ## the events themselves oldest first.
+  result = SessionEventHistory(sessionId: sessionId,
+                               totalCount: eventsOldestFirst.len)
+  for i in countdown(eventsOldestFirst.high, 0):
+    var line = activityFromJson(eventsOldestFirst[i])
+    line.timestampMs = startMs + eventsOldestFirst[i]{"timestamp"}.getBiggestInt(0).int64 div 1000
+    result.events.add line
+  for event in eventsOldestFirst: result.rawEvents.add event
+
+method loadSessionEvents*(source: SnapshotDataSource; sessionId: string;
+                          done: EventsCallback) =
+  ## The session's given events; `missing` for a session it does not hold.
+  for (id, events) in source.sessionEvents:
+    if id == sessionId:
+      done(success(historyOf(sessionId, events)))
+      return
+  done(missingResult[SessionEventHistory]("no session " & sessionId &
+                                          " in " & source.label))
+
+proc newTimelineDataSource*(sessionEvents: seq[(string, seq[JsonNode])];
+                            label = "invented timeline"): TimelineDataSource =
+  ## Serves each session's given events (oldest first), and sends the frames
+  ## the host sends through `sendFrame`.
+  TimelineDataSource(label: label, sessionEvents: sessionEvents)
+
+method subscribeFleetFrames*(source: TimelineDataSource;
+                             callback: FeedCallback[FleetFrame]): Subscription[FleetFrame] =
+  ## Accepted; sends what the host sends through `sendFrame`.
+  source.frameSubscribers.subscribe(callback)
+
+proc sendFrame*(source: TimelineDataSource;
+                frame: FleetFrame): seq[ProgressDelivery] =
+  ## Delivers one fleet frame to every active subscriber. An event frame is
+  ## also added to the session's events, so a later `loadSessionEvents`
+  ## answers the history after it, as a server's would.
+  if frame.kind == ffEvent:
+    var found = false
+    for entry in source.sessionEvents.mitems:
+      if entry[0] == frame.sessionId:
+        entry[1].add frame.event
+        found = true
+    if not found: source.sessionEvents.add (frame.sessionId, @[frame.event])
+  source.frameSubscribers.broadcast(success(frame))
 
 method subscribeProgress*(source: SnapshotDataSource;
                           callback: ProgressCallback): ProgressSubscription =

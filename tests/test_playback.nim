@@ -115,15 +115,21 @@ type Views = object
   bar: InitiativeTabStripVM
   initiatives: InitiativesVM
   progress: InitiativeProgressVM
+  timeline: SessionTimelineVM
+    ## nil unless a session's timeline is shown (`timelineSession`).
   initiativeId: string
 
 proc viewsOver(source: AgentHarborDataSource; initiativeId: string;
-               autoSwitch = false): Views =
+               autoSwitch = false; timelineSession = ""): Views =
   ## The viewmodels of every playback story, loaded over `source`: the fleet
   ## list, the tab strip, the sidebar list, the initiative tab bar, the
   ## Initiatives panel and the Initiative Progress panel showing
-  ## `initiativeId`. Call inside a reactive root.
+  ## `initiativeId`, and, given `timelineSession`, that session's activity
+  ## timeline. Call inside a reactive root.
   result.initiativeId = initiativeId
+  if timelineSession.len > 0:
+    result.timeline = newSessionTimelineVM(source, timelineSession)
+    result.timeline.load()
   result.fleet = newFleetSnapshotVM(source)
   result.tabs = newSessionTabStripVM(source)
   result.list = newSessionTabStripVM(source, tsmSidebar)
@@ -145,6 +151,7 @@ proc dispose(views: Views) =
   views.bar.dispose()
   views.initiatives.dispose()
   views.progress.dispose()
+  if not views.timeline.isNil: views.timeline.dispose()
 
 proc shown(views: Views): seq[string] =
   ## Everything the viewmodels publish to a view, one line per surface: the
@@ -159,6 +166,12 @@ proc shown(views: Views): seq[string] =
     $views.bar.popupOf(views.initiativeId)
   result.add "initiatives " & $views.initiatives.rows & " " & views.initiatives.summaryText
   result.add "progress " & views.progress.headline & " " & $views.progress.groups
+  if views.timeline.isNil:
+    result.add "timeline -"
+  else:
+    var lines: seq[string]
+    for line in views.timeline.lines: lines.add line.text & " [" & line.textRole & "]"
+    result.add "timeline " & views.timeline.statusLabel & " " & $lines
 
 proc agree(a, b: Views; label: string): bool =
   ## Whether two sets of viewmodels show the same; the first difference is
@@ -179,8 +192,22 @@ proc stepTo(source: PlaybackDataSource; atMs: int64) =
 proc newPlayback(name: string): PlaybackDataSource =
   newPlaybackDataSource(playbackScenario(name), newTestClock(0))
 
+proc initiativeOf(scenario: PlaybackScenario): string =
+  ## The initiative a scenario's progress panel shows: its first ("" when it
+  ## has none).
+  if scenario.initiatives.len > 0: scenario.initiatives[0].id else: ""
+
 proc firstInitiative(name: string): string =
-  playbackScenario(name).initiatives[0].id
+  playbackScenario(name).initiativeOf
+
+proc timelineOf(scenario: PlaybackScenario): string =
+  ## The session a scenario's activity timeline shows ("" when it feeds none).
+  if scenario.feeds("session-activity"): scenario.sessionOf("session-activity") else: ""
+
+proc viewsOf(source: PlaybackDataSource): Views =
+  ## Every view of the source's scenario, loaded over it.
+  viewsOver(source, source.scenario.initiativeOf,
+            timelineSession = source.scenario.timelineOf)
 
 proc testClock(source: PlaybackDataSource): TestClock = TestClock(source.clock)
 
@@ -292,6 +319,69 @@ suite "the synthetic playback scenarios":
     unknown.entries.add progressEntry(unknown.lastMs + 1, TelemetryRetry, "TR-M9", "completed")
     check unknown.problemsOf.len == 1
 
+  test "session-run loads, and holds its invariants":
+    let s = sessionRunScenario()
+    check s.name == "session-run"
+    check s.invariantFailures.len == 0
+    check s.problemsOf.len == 0
+    for p in s.problemsOf: checkpoint p
+    # One view, the jitter session's timeline, at its own moments; the
+    # logging session's events interleave and are on no list.
+    check s.views.len == 1
+    check s.views[0].view == "session-activity"
+    check s.sessionOf("session-activity") == JitterSessionId
+    check s.momentNames == @SessionRunMoments
+    check s.momentNames("session-activity") == @SessionRunMoments
+    var types: seq[string]
+    var other = 0
+    for entry in s.entries:
+      if entry.kind != sekEvent: continue
+      if entry.sessionId == LoggingSessionId:
+        inc other
+        check entry.moment == ""
+      elif entry.event{"type"}.getStr notin types:
+        types.add entry.event{"type"}.getStr
+    check other == 6
+    check types == @["user_input", "thought", "file_read", "tool_use", "tool_result",
+                     "llm_request", "agent_question", "session_resumed", "file_edit",
+                     "diff", "plan", "session_awaiting_input", "log", "status"]
+    # The existing scenarios name no session for their views.
+    for name in ["front-ends", "initiative-run"]:
+      for view in playbackScenario(name).views: check view.sessionId == ""
+
+  test "a session view's problems are reported":
+    var foreign = sessionRunScenario()
+    # A moment of the other session only, on the jitter session's list.
+    for entry in foreign.entries.mitems:
+      if entry.kind == sekEvent and entry.sessionId == LoggingSessionId and
+          entry.event{"type"}.getStr == "log":
+        entry.moment = "logging-replies"
+    foreign.views[0].moments.insert("logging-replies", 9)
+    check foreign.problemsOf == @["scenario session-run: the view session-activity names " &
+      "logging-replies, which has no entry about " & JitterSessionId]
+    var nobody = sessionRunScenario()
+    nobody.views[0].sessionId = "5ca1ab1e-0000-4000-8000-000000000000"
+    check nobody.problemsOf.len == 1
+    check "names no session of the scenario" in nobody.problemsOf.join("\n")
+    var fleetWide = frontEndsScenario()
+    fleetWide.views[0].sessionId = PortSessionId
+    check fleetWide.problemsOf == @["scenario front-ends: the view fleet shows the whole " &
+      "fleet and names the session " & PortSessionId]
+    var orphan = sessionRunScenario()
+    let jitter = orphan.findSession(JitterSessionId)
+    for event in orphan.sessions[jitter].history.mitems:
+      if event{"type"}.getStr == "tool_result" and event{"tool_execution_id"}.getStr == "cmd-1":
+        event["tool_execution_id"] = %"cmd-0"
+    check orphan.problemsOf == @["scenario session-run: a tool_result of " & JitterSessionId &
+      " names no tool_use before it (cmd-0)"]
+    var stranger = sessionRunScenario()
+    for event in stranger.sessions[jitter].history.mitems:
+      if event{"command_trace"} != nil:
+        event["command_trace"]["processes"][1]["argv"] = %["sed", "-n", "1p"]
+    check stranger.problemsOf.len == 1
+    check "names sed, which the command `pytest -q | tee test.log | tail -n 5` does not run" in
+      stranger.problemsOf.join("\n")
+
   test "a milestone completed with work outstanding is reported":
     # The plans stay coherent (`problemsOf`): completing a milestone by its
     # status alone leaves "completed" beside "0/2 deliverables", and so does
@@ -327,7 +417,10 @@ const
     {sekProgress},             # 4 the Initiatives panel
     {sekProgress}]             # 5 the Initiative Progress panel
     ## Which entries each surface of `shown` shows: a moment whose entries
-    ## include one of these kinds must change that surface.
+    ## include one of these kinds must change that surface. The seventh, the
+    ## session activity timeline (`TimelineAt`), shows only its own
+    ## session's events.
+  TimelineAt = 6
 
 proc heldStill(views: Views): seq[string] =
   ## `shown`, less what moves with the clock alone (the fleet's ages and
@@ -338,6 +431,7 @@ proc heldStill(views: Views): seq[string] =
     row.ageLabel = ""
     row.durationLabel = ""
   result[0] = "fleet " & $rows & " " & $views.fleet.counts
+  doAssert result.len == TimelineAt + 1
 
 proc unchangedAtMoments(scenario: PlaybackScenario): seq[string] =
   ## Every (moment, surface) where the moment's entries -- those after the
@@ -348,14 +442,18 @@ proc unchangedAtMoments(scenario: PlaybackScenario): seq[string] =
   var found: seq[string]
   createRoot proc(disposeRoot: proc()) =
     let source = newPlaybackDataSource(scenario, newTestClock(0))
-    let v = viewsOver(source, scenario.initiatives[0].id)
+    let v = viewsOf(source)
     var before = v.heldStill
     var previousMs = scenario.firstMs
     for name in scenario.momentNames:
       let at = scenario.momentMs(name)
       var kinds: set[ScenarioEntryKind]
+      var timelineFed = false
       for entry in scenario.entries:
-        if entry.atMs > previousMs and entry.atMs <= at: kinds.incl entry.kind
+        if entry.atMs > previousMs and entry.atMs <= at:
+          kinds.incl entry.kind
+          if entry.kind == sekEvent and entry.sessionId == scenario.timelineOf:
+            timelineFed = true
       source.stepTo(at)
       let now = v.heldStill
       if kinds.card == 0:
@@ -364,6 +462,8 @@ proc unchangedAtMoments(scenario: PlaybackScenario): seq[string] =
         if (fed * kinds).card > 0 and now[i] == before[i]:
           found.add scenario.name & " at " & name & ": " & now[i].split(' ')[0] &
             " shows the same as at the moment before (" & $(fed * kinds) & ")"
+      if timelineFed and now[TimelineAt] == before[TimelineAt]:
+        found.add scenario.name & " at " & name & ": timeline shows the same as at the moment before"
       before = now
       previousMs = at
     v.dispose()
@@ -371,7 +471,8 @@ proc unchangedAtMoments(scenario: PlaybackScenario): seq[string] =
   found
 
 const ShownAt = [("fleet", 0), ("session-tabs", 1), ("session-list", 2),
-                 ("initiative-tabs", 3), ("initiatives", 4), ("initiative-progress", 5)]
+                 ("initiative-tabs", 3), ("initiatives", 4), ("initiative-progress", 5),
+                 ("session-activity", TimelineAt)]
   ## Each view's line of `shown`.
 
 proc shownIndex(view: string): int =
@@ -387,7 +488,7 @@ proc viewsUnmovedAtTheirMoments(scenario: PlaybackScenario): seq[string] =
   var found: seq[string]
   createRoot proc(disposeRoot: proc()) =
     let source = newPlaybackDataSource(scenario, newTestClock(0))
-    let v = viewsOver(source, scenario.initiatives[0].id)
+    let v = viewsOf(source)
     var before = v.heldStill
     for name in scenario.momentNames:
       source.stepTo(scenario.momentMs(name))
@@ -424,6 +525,19 @@ suite "every named moment changes what it names":
     let unmoved = listed.viewsUnmovedAtTheirMoments
     check unmoved == @["initiative-run at trace-ready: the view initiative-progress " &
                        "lists the moment and shows the same as at the moment before"]
+
+  test "a timeline listing another session's moment is reported":
+    # The logging session's check finishes at +58 s, and the jitter session
+    # does nothing between +50 s and then: its timeline does not move, so the
+    # moment does not belong on its list.
+    var foreign = sessionRunScenario()
+    for entry in foreign.entries.mitems:
+      if entry.kind == sekEvent and entry.sessionId == LoggingSessionId and
+          entry.event{"type"}.getStr == "tool_result":
+        entry.moment = "logging-checked"
+    foreign.views[0].moments.insert("logging-checked", 4)
+    check foreign.viewsUnmovedAtTheirMoments == @["session-run at logging-checked: the view " &
+      "session-activity lists the moment and shows the same as at the moment before"]
 
   test "a view's moments are named moments, in time order, and cover every moment":
     var bad = frontEndsScenario()
@@ -539,15 +653,14 @@ suite "the playback data source":
       # -- Seeking forward equals stepping there. -----------------------
       block seekingForward:
         createRoot proc(disposeRoot: proc()) =
-          let initiative = firstInitiative(name)
           for moment in scenario.momentNames:
             let at = scenario.momentMs(moment)
             let sought = newPlayback(name)
             let stepped = newPlayback(name)
             let rs = record(sought)
             let rt = record(stepped)
-            let a = viewsOver(sought, initiative)
-            let b = viewsOver(stepped, initiative)
+            let a = viewsOf(sought)
+            let b = viewsOf(stepped)
             check sought.seekMoment(moment)
             stepped.stepTo(at)
             check sought.currentMoment == moment
@@ -562,10 +675,9 @@ suite "the playback data source":
       #    seeking forwards again equals playing straight through. --------
       block seekingBackwards:
         createRoot proc(disposeRoot: proc()) =
-          let initiative = firstInitiative(name)
           let source = newPlayback(name)
           let r = record(source)
-          let views = viewsOver(source, initiative)
+          let views = viewsOf(source)
           source.seek(scenario.lastMs)
           var targets = scenario.momentNames
           targets.add ""            # the first moment
@@ -582,18 +694,18 @@ suite "the playback data source":
             check source.currentMs == at
             check r.log == scenario.expectedLog(at)
             let fresh = newPlayback(name)
-            let freshViews = viewsOver(fresh, initiative)
+            let freshViews = viewsOf(fresh)
             fresh.stepTo(at)
             check agree(views, freshViews, name & " sought back to " &
                         (if moment.len == 0: "the first moment" else: moment))
             # A viewmodel loaded after the seek starts where the others are.
-            let late = viewsOver(source, initiative)
+            let late = viewsOf(source)
             check agree(late, freshViews, name & " loaded late at " & moment)
             late.dispose()
             freshViews.dispose()
           # Forwards again from the first moment, playing to the end.
           let straight = newPlayback(name)
-          let straightViews = viewsOver(straight, initiative)
+          let straightViews = viewsOf(straight)
           check straight.play()
           straight.testClock.advance(float64(scenario.lastMs - scenario.firstMs + 1))
           check straight.finished
@@ -900,6 +1012,64 @@ suite "the viewmodels at each named moment":
 # ---------------------------------------------------------------------------
 
 type LoadsOnlySource = ref object of SnapshotDataSource
+
+suite "the session activity timeline at each named moment":
+  test "session-run: the jitter session's timeline, stepping forward and after seeking back":
+    # Each moment's top lines (text [role]) and the header's status, written
+    # out from `sessionRunScenario`'s documented history.
+    let instruction = "Add jitter to the upload client's retries, so clients that " &
+      "fail together do not retry together. [label]"
+    let thought = "Thinking: The retry loop lives in the upload client. Read it and its tests first. [quiet]"
+    let reads = "Read 4 files [body]"
+    let searches = "Searched 3 times [body]"
+    let running = "Ran 2 shell commands Ran pytest -q | tee test.log | tail -n 5 [body]"
+    let failed = "Ran 2 shell commands (1 failed) [body]"
+    let question = "Use full jitter or equal jitter for the retry delay?"
+    let edits = "Edited 3 files +40 \xE2\x88\x9212 [body]"
+    let plan = "Plan updated: 3 steps, 2 done, 1 in progress [body]"
+    let hooks = "Waiting for input (claude stop hook) \xC3\x973 [quiet]"
+    let tests = "Ran pytest -q [body]"
+    let reply = "The retry client backs off with full jitter; 18 tests pass. [body]"
+    let answered = @[instruction, thought, reads, searches, failed, question & " [body]",
+                     "Full jitter. [label]", "Resumed by operator [quiet]"]
+    let expected = @[
+      ("instruction", "running", @[instruction]),
+      ("reads-grouped", "running", @[instruction, thought, reads]),
+      ("searches-grouped", "running", @[instruction, thought, reads, searches]),
+      ("command-running", "running", @[instruction, thought, reads, searches, running]),
+      ("command-fails", "running", @[instruction, thought, reads, searches, failed]),
+      ("agent-asks", "needs input",
+       @[instruction, thought, reads, searches, failed, question & " [warning]"]),
+      ("answered", "running", answered),
+      ("edits-grouped", "running", answered & @[edits]),
+      ("hook-repeats", "needs input", answered & @[edits, plan, hooks]),
+      ("agent-replies", "running", answered & @[edits, plan, hooks, tests, reply]),
+      ("session-completes", "completed", answered & @[edits, plan, hooks, tests, reply,
+        "Status: completed Retries now wait a random time up to the exponential cap. [ended]"])]
+    proc topOf(vm: SessionTimelineVM): seq[string] =
+      for line in vm.lines:
+        if line.indent == 0: result.add line.text & " [" & line.textRole & "]"
+    createRoot proc(disposeRoot: proc()) =
+      let source = newPlayback("session-run")
+      let vm = newSessionTimelineVM(source, JitterSessionId)
+      vm.load()
+      check vm.isEmpty
+      check vm.notice == EmptyNotice
+      for (moment, status, lines) in expected:
+        checkpoint "stepping to " & moment
+        source.stepTo(source.scenario.momentMs(moment))
+        check source.currentMoment == moment
+        check vm.statusLabel == status
+        check vm.topOf == lines
+      for i in countdown(expected.high, 0):
+        let (moment, status, lines) = expected[i]
+        checkpoint "seeking back to " & moment
+        source.seek(source.scenario.lastMs)
+        check source.seekMoment(moment)
+        check vm.statusLabel == status
+        check vm.topOf == lines
+      vm.dispose()
+      disposeRoot()
 
 suite "the viewmodels follow a source through the seam":
   test "every viewmodel subscribes on load and unsubscribes when disposed":

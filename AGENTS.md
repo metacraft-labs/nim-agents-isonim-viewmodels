@@ -52,7 +52,12 @@ Structure:
   frames, resumes, recording states and resets (`subscribeFleetFrames`,
   `subscribeResumes`, `subscribeRecordings`, `subscribeResets`; a
   viewmodel's `SourceFeeds`, `source_feed.nim`), which every viewmodel opens
-  on `load`. `playback_source.nim` `PlaybackDataSource` replays a synthetic
+  on `load`. `session_timeline_vm.nim` `SessionTimelineVM` is one
+  session's cardless activity timeline, over nim-agents' `activity_groups`
+  fold; `synthetic_timelines.nim` holds the invented timelines of its static
+  stories, `session_events.nim` the builders of invented session events both
+  it and the scenarios use, and `data_source.nim` `TimelineDataSource` the
+  source that serves them. `playback_source.nim` `PlaybackDataSource` replays a synthetic
   scenario (`playback_scenario.nim` the format, `playback_scenarios.nim` the
   scenarios; README.md documents both) on an IsoNim clock, with play, pause,
   step and seek; `tests/test_playback.nim` tests it. A live source over

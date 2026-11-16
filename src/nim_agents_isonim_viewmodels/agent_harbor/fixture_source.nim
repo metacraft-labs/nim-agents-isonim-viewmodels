@@ -171,8 +171,8 @@ method loadSessionEvents*(source: FixtureDataSource; sessionId: string;
     return
   let path = source.manifest{"fleet", "events", sessionId}
   if path.isNil:
-    done(failure[SessionEventHistory]("no events were captured for session " &
-                                      sessionId))
+    done(missingResult[SessionEventHistory]("no events were captured for session " &
+                                            sessionId))
     return
   answer[SessionEventHistory](done):
     sessionEventHistoryFromJson(sessionId, parseJson(source.files[path.getStr]))

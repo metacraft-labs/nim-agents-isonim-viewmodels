@@ -10,6 +10,7 @@ build-native:
     nim c {{paths}} tests/test_agent_harbor_fleet_vm.nim
     nim c {{paths}} tests/test_agent_harbor_sessions_vm.nim
     nim c {{paths}} tests/test_playback.nim
+    nim c {{paths}} tests/test_session_timeline_vm.nim
     nim c {{paths}} tests/test_nimcache_is_worktree_local.nim
     nim c {{paths}} tests/test_fixture_set_rebuilds_on_switch.nim
 
@@ -18,6 +19,7 @@ build-js:
     nim js {{paths}} tests/test_agent_harbor_fleet_vm.nim
     nim js {{paths}} tests/test_agent_harbor_sessions_vm.nim
     nim js {{paths}} tests/test_playback.nim
+    nim js {{paths}} tests/test_session_timeline_vm.nim
 
 test: test-native test-js
 
@@ -26,6 +28,7 @@ test-native:
     nim c -r {{paths}} tests/test_agent_harbor_fleet_vm.nim
     nim c -r {{paths}} tests/test_agent_harbor_sessions_vm.nim
     nim c -r {{paths}} tests/test_playback.nim
+    nim c -r {{paths}} tests/test_session_timeline_vm.nim
     nim c -r {{paths}} tests/test_nimcache_is_worktree_local.nim
     nim c -r {{paths}} tests/test_fixture_set_rebuilds_on_switch.nim
 
@@ -34,6 +37,7 @@ test-js:
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_agent_harbor_fleet_vm.nim
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_agent_harbor_sessions_vm.nim
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_playback.nim
+    bash tools/nim-js-test-gate.sh {{paths}} tests/test_session_timeline_vm.nim
 
 lint: lint-nim lint-nix
 
@@ -43,6 +47,7 @@ lint-nim:
     nim check {{paths}} tests/test_agent_harbor_fleet_vm.nim
     nim check {{paths}} tests/test_agent_harbor_sessions_vm.nim
     nim check {{paths}} tests/test_playback.nim
+    nim check {{paths}} tests/test_session_timeline_vm.nim
     nim check {{paths}} tests/test_nimcache_is_worktree_local.nim
     nim check {{paths}} tests/test_fixture_set_rebuilds_on_switch.nim
 

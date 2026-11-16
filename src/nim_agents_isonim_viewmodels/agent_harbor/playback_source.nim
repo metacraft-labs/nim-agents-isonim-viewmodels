@@ -40,6 +40,7 @@
 ## timer, at the next entry's moment. Nothing reads wall time, so the same
 ## steps give the same deliveries on every run.
 
+import std/json
 import isonim/core/clock
 import nim_agents/agent_harbor/fleet_fold
 import ./data_source
@@ -289,27 +290,23 @@ method loadLifecycle*(source: PlaybackDataSource; done: LifecycleCallback) =
 
 method loadSessionEvents*(source: PlaybackDataSource; sessionId: string;
                           done: EventsCallback) =
-  ## A session's event history up to the head, newest first (as the server
-  ## lists it); an error for a session the fleet does not hold at the head.
+  ## A session's event history up to the head: each event's line newest
+  ## first (as the server lists it), and the events themselves oldest first
+  ## (`rawEvents`); `missing` for a session the fleet does not hold at the
+  ## head.
   let at = source.scenario.findSession(sessionId)
   if at < 0 or source.fold.find(sessionId) < 0:
-    done(failure[SessionEventHistory]("no session " & sessionId &
-                                      " at this moment of the playback"))
+    done(missingResult[SessionEventHistory]("no session " & sessionId &
+                                            " at this moment of the playback"))
     return
   let s = source.scenario.sessions[at]
   let upTo = if source.position == 0: source.scenario.firstMs
              else: max(source.scenario.firstMs,
                        source.scenario.entries[source.position - 1].atMs)
-  var history = SessionEventHistory(sessionId: sessionId)
-  for i in countdown(s.history.high, 0):
-    let event = s.history[i]
-    let t = s.eventTimeOf(event)
-    if t <= upTo:
-      var line = activityFromJson(event)
-      line.timestampMs = t
-      history.events.add line
-  history.totalCount = history.events.len
-  done(success(history))
+  var delivered: seq[JsonNode]
+  for event in s.history:
+    if s.eventTimeOf(event) <= upTo: delivered.add event
+  done(success(historyOf(sessionId, delivered, s.startMs)))
 
 method subscribeFleetFrames*(source: PlaybackDataSource;
                              callback: FeedCallback[FleetFrame]): Subscription[FleetFrame] =
