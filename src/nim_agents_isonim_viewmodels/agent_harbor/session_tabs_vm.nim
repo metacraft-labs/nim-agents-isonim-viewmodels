@@ -21,15 +21,27 @@
 ## Reads through the data-source seam: `loadFleet` for the sessions,
 ## `loadInitiatives` for the initiatives' titles (an initiatives failure only
 ## loses the group titles; the strip still shows every session).
+##
+## It follows the source after the load, through the seam's subscriptions,
+## which `load` opens first and disposing the viewmodel cancels: fleet frames
+## (`subscribeFleetFrames`: a tab appears, changes state, starts or stops
+## waiting on a question, goes away), resumes (`subscribeResumes`: the
+## operator's input reached a waiting session), initiative progress events
+## (`subscribeProgress`: a group's `n/m` and state) and resets
+## (`subscribeResets`: the source started over, and so does the strip,
+## `restart`). A source that only answers loads leaves the strip as loaded;
+## `feeds` reports each subscription.
 
 import std/[algorithm, strutils, tables]
-import isonim/core/[signals, computation]
+import isonim/core/[signals, computation, owner]
 import isonim/viewmodel
 import ./data_source
 import ./session_items
+import ./source_feed
 import ./tab_layout
 
-export data_source, session_items, tab_layout, viewmodel, signals, computation
+export data_source, session_items, source_feed, tab_layout, viewmodel, signals,
+  computation
 
 type
   TabStripMode* = enum
@@ -76,11 +88,14 @@ type
     tabMinWidth*: int
       ## A tab's narrowest in that unit (`TabMinWidthPx` on the web; a
       ## terminal front-end sets cells).
+    tabGap*: int
+      ## The space between two tabs, in that unit (`TabGapPx` on the web).
     tabControlsWidth*: int
       ## The overflow and "+" controls together, in that unit.
     activeTabExtra*: int
       ## How much wider than `tabMinWidth` the active tab is drawn.
     loadToken: int
+    feeds: SourceFeeds
 
 # ---------------------------------------------------------------------------
 # The viewmodel
@@ -91,8 +106,12 @@ proc newSessionTabStripVM*(source: AgentHarborDataSource;
                            policy = tabStripSessionPolicy()): SessionTabStripVM =
   ## Nothing is loaded until `load`.
   withViewModel proc(dispose: proc()): SessionTabStripVM =
+    let feeds = newSourceFeeds()
+    # Disposing the viewmodel's root unsubscribes it from its source.
+    onCleanup proc() = feeds.close()
     SessionTabStripVM(
       source: source, directory: initSessionDirectory(), policy: policy,
+      feeds: feeds,
       initiativeTitles: initTable[string, string](),
       revision: createSignal(0), state: createSignal(asIdle),
       error: createSignal(""), mode: createSignal(mode),
@@ -100,7 +119,8 @@ proc newSessionTabStripVM*(source: AgentHarborDataSource;
       grouped: createSignal(mode in {tsmSidebar, tsmDocked}),
       collapsed: createSignal(false), overflowOpen: createSignal(false),
       stripWidthPx: createSignal(0), tabMinWidth: TabMinWidthPx,
-      tabControlsWidth: TabStripButtonsPx, activeTabExtra: ActiveTabExtraPx)
+      tabGap: TabGapPx, tabControlsWidth: TabStripButtonsPx,
+      activeTabExtra: ActiveTabExtraPx)
 
 proc sourceLabel*(vm: SessionTabStripVM): string =
   if vm.source.isNil: "" else: vm.source.label
@@ -108,14 +128,34 @@ proc sourceLabel*(vm: SessionTabStripVM): string =
 proc bump(vm: SessionTabStripVM) =
   vm.revision.val = vm.revision.val + 1
 
+proc feeds*(vm: SessionTabStripVM): SourceFeeds =
+  ## The strip's subscriptions to its source (`frames`, `resumes`,
+  ## `progress`, `resets`).
+  vm.feeds
+
+proc applyFleetFrame*(vm: SessionTabStripVM; frame: FleetFrame): bool
+proc resume*(vm: SessionTabStripVM; event: ResumeEvent): bool
+proc applyProgress*(vm: SessionTabStripVM; event: ProgressEvent): bool
+proc restart*(vm: SessionTabStripVM)
+
 proc load*(vm: SessionTabStripVM) =
   ## Reads the sessions and the initiatives. The first session becomes active
-  ## when none is.
+  ## when none is. Subscribes to the source's frames, resumes, progress
+  ## events and resets first, replacing earlier subscriptions.
   inc vm.loadToken
   let token = vm.loadToken
   vm.state.val = asLoading
   vm.error.val = ""
   let target = vm
+  vm.feeds.frames.openFleetFrames(vm.source, proc(frame: FleetFrame): bool =
+    target.applyFleetFrame(frame))
+  vm.feeds.resumes.openResumes(vm.source, proc(event: ResumeEvent): bool =
+    target.resume(event))
+  vm.feeds.progress.openProgress(vm.source, proc(event: ProgressEvent): bool =
+    target.applyProgress(event))
+  vm.feeds.resets.openResets(vm.source, proc(reset: StreamReset): bool =
+    target.restart()
+    true)
   vm.source.loadInitiatives proc(answer: DataResult[seq[Initiative]]) =
     if token != target.loadToken or not answer.ok: return
     target.initiativeTitles.clear()
@@ -140,14 +180,57 @@ proc load*(vm: SessionTabStripVM) =
       target.error.val = answer.error
       target.state.val = asError
 
+proc applyFleetFrame*(vm: SessionTabStripVM; frame: FleetFrame): bool =
+  ## A fleet frame from the source: a lifecycle frame (a session appears as
+  ## a new tab at the end, changes status in place, or its tab goes away), a
+  ## session's listing entry (a new tab's title, origin and initiative), or
+  ## one of a session's events (it starts or stops waiting on a question).
+  ## True when the strip changed.
+  if not vm.directory.followFrame(vm.nowMs, frame): return false
+  if vm.directory.find(vm.activeId.val) < 0:
+    vm.activeId.val =
+      if vm.directory.len > 0: vm.directory.sessions[0].id else: ""
+  vm.bump()
+  true
+
 proc applyFrame*(vm: SessionTabStripVM; frame: LifecycleFrame) =
   ## A lifecycle frame from the live feed: a session appears as a new tab at
   ## the end, changes status in place, or its tab goes away.
-  if vm.directory.applyFrame(frame):
-    if vm.directory.find(vm.activeId.val) < 0:
-      vm.activeId.val =
-        if vm.directory.len > 0: vm.directory.sessions[0].id else: ""
-    vm.bump()
+  discard vm.applyFleetFrame(lifecycleFrame(frame))
+
+proc resume*(vm: SessionTabStripVM; event: ResumeEvent): bool =
+  ## The operator's input reached a waiting session (nim-agents'
+  ## `resumeSession`): it no longer waits and runs again. True when that
+  ## changed it.
+  if not vm.directory.resumeSession(event.sessionId, event.atMs): return false
+  vm.nowMs = max(vm.nowMs, event.atMs)
+  vm.bump()
+  true
+
+proc applyProgress*(vm: SessionTabStripVM; event: ProgressEvent): bool =
+  ## A progress event of an initiative the strip groups by (its `n/m` and
+  ## state), through nim-agents' `applyMilestoneStatus`. True when it changed
+  ## the initiative; an unknown initiative or milestone changes nothing.
+  if event.initiativeId notin vm.initiativeProgress: return false
+  var progress = vm.initiativeProgress[event.initiativeId]
+  if not progress.applyMilestoneStatus(event.milestoneId, event.status):
+    return false
+  vm.initiativeProgress[event.initiativeId] = progress
+  vm.bump()
+  true
+
+proc restart*(vm: SessionTabStripVM) =
+  ## Starts over, as after a source's reset: the tabs, their order and the
+  ## active tab are dropped with the data they came from, as are the focus
+  ## and an open overflow menu; the layout settings (mode, grouping, folded
+  ## groups, widths) are the reader's and stay. Then the strip loads again.
+  vm.directory = initSessionDirectory()
+  vm.nowMs = 0
+  vm.activeId.val = ""
+  vm.focusedPlan.val = ""
+  vm.overflowOpen.val = false
+  vm.bump()
+  vm.load()
 
 proc tabs*(vm: SessionTabStripVM): seq[SessionItem] =
   ## Tracked: every tab, in strip order, the active one marked.
@@ -229,7 +312,7 @@ proc singleLine*(vm: SessionTabStripVM): SingleLineLayout =
   ## Tracked: which tabs the single-line strip draws and which overflow.
   singleLineLayout(vm.tabs.len, vm.activeIndex,
                    singleLineCapacity(vm.stripWidthPx.val, vm.tabMinWidth,
-                                      TabGapPx, vm.tabControlsWidth + vm.activeTabExtra))
+                                      vm.tabGap, vm.tabControlsWidth + vm.activeTabExtra))
 
 proc counts*(vm: SessionTabStripVM): array[SessionAttention, int] =
   for tab in vm.tabs: inc result[tab.attention]
@@ -302,14 +385,18 @@ proc originsShown*(vm: SessionTabStripVM): seq[string] =
       result.add tab.originLabel
 
 proc summaryText*(vm: SessionTabStripVM): string =
-  ## `22 sessions · 3 need input · 2 idle · 6 running`.
+  ## `22 sessions · 3 need input · 2 idle · 6 running · 1 queued · 4 ended`:
+  ## the total, then each state that has sessions, in the words and order of
+  ## the fleet's filters (needs input, running, queued, failed, ended), with
+  ## `idle` after needs input where the policy keeps it apart. A state with
+  ## no session is left out, so the parts add up to the total.
   let counts = vm.counts
   var total = 0
   for c in counts: total += c
   var parts = @[$total & (if total == 1: " session" else: " sessions")]
   if counts[saNeedsInput] > 0:
     parts.add $counts[saNeedsInput] & (if counts[saNeedsInput] == 1: " needs input" else: " need input")
-  if counts[saIdle] > 0: parts.add $counts[saIdle] & " idle"
-  if counts[saRunning] > 0: parts.add $counts[saRunning] & " running"
-  if counts[saFailed] > 0: parts.add $counts[saFailed] & " failed"
+  for (state, word) in [(saIdle, " idle"), (saRunning, " running"), (saQueued, " queued"),
+                        (saFailed, " failed"), (saEnded, " ended")]:
+    if counts[state] > 0: parts.add $counts[state] & word
   parts.join(" \xC2\xB7 ")

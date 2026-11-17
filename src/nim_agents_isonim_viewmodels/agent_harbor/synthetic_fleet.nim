@@ -349,31 +349,34 @@ const
   ]
     ## One-off work, launched for no initiative.
   SyntheticSummaries = [
-    "Telemetry uploads that fail are retried with exponential backoff and " &
-      "jitter instead of being dropped on the first collector error, and the " &
-      "queue survives a restart. The specification is agreed; the persisted " &
-      "queue's data model is being written, and the retry budget waits on it.",
-    "The route cache moves onto the new storage layer without a cold start, " &
-      "and the old backend is removed. The data model and the specification " &
-      "are done and the core port is under way; the dashboard work is blocked " &
-      "until the cache exports its hit counters.",
-    "The settings page is split into four tabs with search, unsaved drafts " &
-      "and restart badges. The tab structure and the account move are done; " &
-      "the front-end tabs are in progress and their screenshot tests are half " &
-      "recorded.",
-    "CI moves its Linux and macOS jobs to the new runner pool, with a cached " &
-      "dependency graph and a streamed build log. The matrix runs on the new " &
-      "runners; the migration of the macOS jobs is in progress, and the test " &
-      "milestone is blocked on the clock-skew flake.",
-    "The 3.0 release removes the deprecated sync API, trims the bundle under 40 MB " &
-      "and ships an upgrade guide. The breaking changes are merged and " &
-      "documented; the release candidate's tests are running, and the release " &
-      "notes are being drafted.",
+    ("Telemetry uploads that fail are retried with exponential backoff and " &
+       "jitter instead of being dropped on the first collector error, and the " &
+       "queue survives a restart.",
+     "The specification is agreed; the persisted queue's data model is " &
+       "being written, and the retry budget waits on it."),
+    ("The route cache moves onto the new storage layer without a cold start, " &
+       "and the old backend is removed.",
+     "The data model and the specification are done and the core port is " &
+       "under way; the dashboard work is blocked until the cache exports its " &
+       "hit counters."),
+    ("The settings page is split into four tabs with search, unsaved drafts " &
+       "and restart badges.",
+     "The tab structure and the account move are done; the front-end tabs " &
+       "are in progress and their screenshot tests are half recorded."),
+    ("CI moves its Linux and macOS jobs to the new runner pool, with a cached " &
+       "dependency graph and a streamed build log.",
+     "The matrix runs on the new runners; the migration of the macOS jobs is " &
+       "in progress, and the test milestone is blocked on the clock-skew flake."),
+    ("The 3.0 release removes the deprecated sync API, trims the bundle under " &
+       "40 MB and ships an upgrade guide.",
+     "The breaking changes are merged and documented; the release candidate's " &
+       "tests are running, and the release notes are being drafted."),
   ]
-    ## Each invented initiative's executive summary: what it delivers and
-    ## where it stands, in prose, as an initiative's plan states it. It
-    ## agrees with the milestones `syntheticPlan` gives it (how many are
-    ## done, the current one, a blocked one).
+    ## Each invented initiative's executive summary, in prose, as an
+    ## initiative's plan states it: what it delivers, then where it stands.
+    ## The standing agrees with the milestones `syntheticPlan` gives it (how
+    ## many are done, the current one, a blocked one); `readyForCompletion`
+    ## replaces it once a milestone is about to complete.
   SyntheticOrigins = ["codetracer", "cli", "webui", "codetracer", "tui", "telegram"]
     ## A third of the sessions start in this front-end; the rest elsewhere.
   SyntheticAgents = [("Claude", "2.1.0"), ("Codex", "0.9.4"), ("Grok", "1.2.0"),
@@ -483,6 +486,18 @@ proc syntheticSession(i, initiativeCount, titleIndex: int; nowMs: int64;
   result.recent.add FleetActivity(kind: fakLog, level: level, text: said,
                                   timestampMs: result.updatedAtMs)
 
+proc syntheticSummary(index: int): string =
+  ## An invented plan's executive summary as the working set first shows it:
+  ## what it delivers and where it stands, in prose.
+  SyntheticSummaries[index][0] & " " & SyntheticSummaries[index][1]
+
+proc syntheticSummaryAfter(index: int; progress: MilestoneFileProgress): string =
+  ## The same plan's summary once `progress` has moved on: what it delivers,
+  ## then how many milestones are done and which one is current.
+  SyntheticSummaries[index][0] & " " & $progress.summary.completedMilestones &
+    " of " & $progress.milestones.len & " milestones done; the current one is " &
+    progress.summary.currentMilestoneTitle & "."
+
 proc syntheticPlan(index: int; longNames: bool): Initiative =
   let (id, title, prefix) = SyntheticPlans[index]
   var progress = MilestoneFileProgress(
@@ -514,8 +529,42 @@ proc syntheticPlan(index: int; longNames: bool): Initiative =
   Initiative(id: id, title: title & (if longNames: LongSuffix else: ""),
              repository: "orbit-labs/" & id, planPath: progress.path,
              manager: (if index mod 2 == 0: prefix.toLowerAscii & "-manager" else: ""),
-             executiveSummary: SyntheticSummaries[index],
+             executiveSummary: syntheticSummary(index),
              progress: progress)
+
+proc readyForCompletion*(initiative: var Initiative; milestoneId: string): bool =
+  ## The invented plan made coherent with a progress event that is about to
+  ## complete `milestoneId`, as a plan's author leaves it before the event:
+  ## the milestone's deliverables all done and its tests all passing, and the
+  ## executive summary already stating the plan as it reads once the
+  ## milestone is completed (the next milestone current). The status itself
+  ## is left to the event (`applyMilestoneStatus`), so the event still
+  ## changes the plan. False, and nothing changed, for a milestone the plan
+  ## does not hold.
+  var found = false
+  for m in initiative.progress.milestones.mitems:
+    if m.id == milestoneId:
+      found = true
+      m.deliverables.done = m.deliverables.total
+      m.verifications.passing += m.verifications.pending + m.verifications.failing
+      m.verifications.pending = 0
+      m.verifications.failing = 0
+  if not found: return false
+  var after = initiative.progress
+  discard after.applyMilestoneStatus(milestoneId, "completed")
+  initiative.progress.summarize()
+  var index = -1
+  for i, plan in SyntheticPlans:
+    if plan[0] == initiative.id: index = i
+  initiative.executiveSummary =
+    if index >= 0: syntheticSummaryAfter(index, after)
+    else:
+      # Not one of the invented plans: its header's facts are all there is.
+      initiative.title.replace(LongSuffix, "") & ": " &
+        $after.summary.completedMilestones & " of " & $after.milestones.len &
+        " milestones done; the current one is " &
+        after.summary.currentMilestoneTitle & "."
+  true
 
 proc syntheticWorkingSet*(sessions, initiativeCount: int; nowMs: int64;
                           longNames = false): tuple[snapshot: FleetSnapshot,

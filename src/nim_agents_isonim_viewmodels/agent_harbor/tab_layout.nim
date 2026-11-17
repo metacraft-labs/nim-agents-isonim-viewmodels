@@ -17,6 +17,7 @@ const
     ## have; below 10rem the title would shrink to a few letters, so more
     ## tabs go to the overflow menu instead.
   TabGapPx* = 4
+    ## The space between two tabs, in web pixels.
   TabStripButtonsPx* = 56 + 12 + 26 + 2 * 4
     ## The `+N` chip at its widest (a warning mark and two digits, 56px),
     ## its 12px gap from the "+", the "+" (26px), and their margins.

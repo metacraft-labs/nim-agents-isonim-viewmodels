@@ -1,0 +1,566 @@
+## The playback scenario format: a run of an Agent Harbor fleet, written down
+## as data a playback source (`playback_source.nim`) replays on a clock, so a
+## story can be watched changing and a test can stop it at any moment.
+##
+## A scenario is:
+##
+## - its **first frame**: the fleet listing at the scenario's first moment
+##   (`first`, a `FleetSnapshot` as `GET /api/v1/sessions` answers it) and the
+##   initiatives then (`initiatives`, as the proposed `GET /api/v1/initiatives`
+##   answers them);
+## - its **entries** after that moment, in time order (`entries`), each
+##   stamped with its moment (`atMs`, milliseconds since the Unix epoch) and
+##   of one kind (`ScenarioEntryKind`): a lifecycle frame, a session's listing
+##   entry, one event of a session's event stream, a resume (the operator's
+##   input reached a waiting session), a progress event (a milestone's status
+##   changed in a plan) or a recording-state change (a recording of an
+##   initiative appeared loading, or turned ready or failed). Entries sharing
+##   a moment are one moment: a player delivers them together, in their
+##   order;
+## - the **sessions** it names, each with its whole event history
+##   (`sessions`: identity, start, removal, every event oldest first, those
+##   before the first moment included), from which its listing at any moment
+##   can be rebuilt and its event history answered.
+##
+## Any entry may carry a **named moment** (`moment`), unique in its scenario:
+## a story or a test seeks to it by name, and captures are taken there.
+##
+## Each **view** a scenario feeds (`views`: the fleet list, the session tabs,
+## the session list, the Initiatives panel, the initiative tabs, the
+## Initiative Progress panel, one session's activity timeline;
+## `PlaybackViews`) has its own list of moments: the named moments whose
+## event that view shows, in time order, so every moment of a view's list
+## visibly changes that view. A view of one session names that session
+## (`ScenarioView.sessionId`), and its moments are that session's. The timeline under them
+## is the scenario's one: a view's list only chooses among its named moments,
+## and every named moment is on at least one view's list.
+##
+## Scenarios are Nim values, built by constructors in Nim code
+## (`playback_scenarios.nim`), not files: the same scenario loads on the C and
+## JS targets, with no file IO and no parser. `buildScenario` is the
+## authoring helper: given the sessions' histories and the entries no history
+## implies (resumes, progress events, recording changes), it derives the
+## first listing (each session replayed to the first moment by nim-agents'
+## `sessionAt`) and the fleet entries a live feed would deliver after it:
+## a new session's `session_created` frame and its listing entry, every event,
+## a lifecycle frame beside every `status` event (the feed mirrors them), and
+## removals. `problemsOf` checks a scenario's own invariants (entries in time
+## order and after the first moment, every session introduced before it is
+## named, named moments unique, progress and recording changes naming known
+## initiatives and milestones, every resume matched by the session's own
+## input event).
+##
+## Everything a scenario holds is invented; this format carries no captured
+## data.
+
+import std/[algorithm, json, sets, strutils, tables]
+import nim_agents/agent_harbor/[session_replay, fleet_fold]
+import ./data_source
+
+export data_source
+
+type
+  ScenarioEntryKind* = enum
+    sekLifecycle = "lifecycle"   ## a lifecycle-feed frame
+    sekListing = "listing"       ## one session's listing entry
+    sekEvent = "event"           ## one event of a session's event stream
+    sekResume = "resume"         ## the operator's input reached a session
+    sekProgress = "progress"     ## a milestone's status changed in a plan
+    sekRecording = "recording"   ## a recording appeared or changed state
+
+  ScenarioEntry* = object
+    ## One timestamped entry of a scenario.
+    atMs*: int64
+    moment*: string
+      ## A named moment ("" for none): the scenario's state once every entry
+      ## at `atMs` has been delivered.
+    case kind*: ScenarioEntryKind
+    of sekLifecycle:
+      lifecycle*: LifecycleFrame
+    of sekListing:
+      listing*: FleetSession
+    of sekEvent:
+      sessionId*: string
+      event*: JsonNode
+        ## As the session's event stream sends it: `type`, `timestamp` in
+        ## microseconds since the session started, and its own fields.
+      ordinal*: int
+        ## The event's 1-based place in the session's history.
+    of sekResume:
+      resume*: ResumeEvent
+    of sekProgress:
+      progress*: ProgressEvent
+    of sekRecording:
+      recording*: RecordingEvent
+
+  ScenarioSession* = object
+    ## One session a scenario names.
+    entry*: FleetSession
+      ## What its listing says besides its state (id, prompt, agent, host,
+      ## origin, initiative); its state comes from `history`.
+    startMs*: int64
+    removedAtMs*: int64          ## 0: never removed
+    history*: seq[JsonNode]
+      ## Every event, oldest first; `timestamp` in µs since `startMs`.
+
+  ScenarioView* = object
+    ## The named moments one view shows, in time order.
+    view*: string                ## one of `PlaybackViews`
+    moments*: seq[string]
+    sessionId*: string
+      ## The one session the view shows, for a view of a single session (the
+      ## session activity timeline); "" for a view of the whole fleet. Its
+      ## moments are then that session's: each one has an entry about it.
+
+  PlaybackScenario* = object
+    name*: string                ## an id: `front-ends`, `initiative-run`
+    title*: string               ## what a story's chrome says it shows
+    firstMs*: int64              ## the first moment
+    first*: FleetSnapshot        ## the listing at the first moment
+    initiatives*: seq[Initiative]
+      ## The initiatives at the first moment.
+    sessions*: seq[ScenarioSession]
+    entries*: seq[ScenarioEntry]
+    views*: seq[ScenarioView]
+      ## Each view the scenario feeds, with the moments it shows.
+
+const PlaybackViews* = ["fleet", "session-tabs", "session-list", "initiatives",
+                        "initiative-tabs", "initiative-progress",
+                        "session-activity"]
+  ## The views a scenario can name: the Agent Harbor front-end's sessions and
+  ## initiatives views, and one session's activity timeline, each over its
+  ## viewmodel.
+
+const SessionViews* = ["session-activity"]
+  ## The views of a single session: a scenario names the session each shows
+  ## (`ScenarioView.sessionId`).
+
+# ---------------------------------------------------------------------------
+# Reading a scenario
+# ---------------------------------------------------------------------------
+
+proc isFleetEntry*(entry: ScenarioEntry): bool =
+  ## Whether the entry is one of the fleet's frames (lifecycle, listing,
+  ## event), which a source delivers as a `FleetFrame`.
+  entry.kind in {sekLifecycle, sekListing, sekEvent}
+
+proc frameOf*(entry: ScenarioEntry): FleetFrame =
+  ## A fleet entry as the fleet frame a source delivers, stamped with its
+  ## moment. Raises `ValueError` for an entry of another kind.
+  case entry.kind
+  of sekLifecycle: lifecycleFrame(entry.lifecycle, entry.atMs)
+  of sekListing: sessionFrame(entry.listing, entry.atMs)
+  of sekEvent: eventFrame(entry.sessionId, entry.event, entry.ordinal, entry.atMs)
+  else: raise newException(ValueError, "a " & $entry.kind & " entry is not a fleet frame")
+
+proc `$`*(entry: ScenarioEntry): string =
+  ## An entry as a failing check names it: its moment, kind and subject.
+  result = $entry.atMs & " " & $entry.kind & " "
+  case entry.kind
+  of sekLifecycle, sekListing, sekEvent: result.add $entry.frameOf
+  of sekResume: result.add entry.resume.sessionId
+  of sekProgress:
+    result.add entry.progress.initiativeId & "/" & entry.progress.milestoneId &
+      " -> " & entry.progress.status
+    if entry.progress.hasCounts:
+      result.add " (" & $entry.progress.deliverables.done & "/" &
+        $entry.progress.deliverables.total & " deliverables, " &
+        $entry.progress.verifications.passing & " passing, " &
+        $entry.progress.verifications.failing & " failing, " &
+        $entry.progress.verifications.pending & " pending)"
+  of sekRecording:
+    result.add entry.recording.initiativeId & "/" & entry.recording.entry.id &
+      " -> " & $entry.recording.entry.state
+  if entry.moment.len > 0: result.add " [" & entry.moment & "]"
+
+proc momentNames*(scenario: PlaybackScenario): seq[string] =
+  ## The named moments, in time order.
+  for entry in scenario.entries:
+    if entry.moment.len > 0: result.add entry.moment
+
+proc feeds*(scenario: PlaybackScenario; view: string): bool =
+  ## Whether the scenario names moments for `view`.
+  for v in scenario.views:
+    if v.view == view: return true
+  false
+
+proc momentNames*(scenario: PlaybackScenario; view: string): seq[string] =
+  ## The named moments `view` shows, in time order. Raises `ValueError` for a
+  ## view the scenario does not feed, rather than answering every moment or
+  ## none.
+  for v in scenario.views:
+    if v.view == view: return v.moments
+  raise newException(ValueError, "the scenario " & scenario.name &
+                     " names no moments for the view " & view)
+
+proc sessionOf*(scenario: PlaybackScenario; view: string): string =
+  ## The session a single-session view shows ("" for a fleet view). Raises
+  ## `ValueError` for a view the scenario does not feed.
+  for v in scenario.views:
+    if v.view == view: return v.sessionId
+  raise newException(ValueError, "the scenario " & scenario.name &
+                     " names no moments for the view " & view)
+
+proc entrySession*(entry: ScenarioEntry): string =
+  ## The session an entry is about ("" for a progress or recording change).
+  case entry.kind
+  of sekLifecycle: entry.lifecycle.sessionId
+  of sekListing: entry.listing.id
+  of sekEvent: entry.sessionId
+  of sekResume: entry.resume.sessionId
+  else: ""
+
+proc momentMs*(scenario: PlaybackScenario; name: string): int64 =
+  ## The time of a named moment; -1 when the scenario has none by that name.
+  for entry in scenario.entries:
+    if entry.moment == name: return entry.atMs
+  -1
+
+proc lastMs*(scenario: PlaybackScenario): int64 =
+  ## The moment of the last entry (the first moment when there is none).
+  if scenario.entries.len == 0: scenario.firstMs else: scenario.entries[^1].atMs
+
+proc eventTimeOf*(session: ScenarioSession; event: JsonNode): int64 =
+  ## When one of the session's events happened.
+  session.startMs + event{"timestamp"}.getBiggestInt(0).int64 div 1000
+
+proc findSession*(scenario: PlaybackScenario; id: string): int =
+  ## The index of the named session in `sessions`, or -1.
+  for i, s in scenario.sessions:
+    if s.entry.id == id: return i
+  -1
+
+# ---------------------------------------------------------------------------
+# Authoring
+# ---------------------------------------------------------------------------
+
+proc scenarioEvent*(startMs, atMs: int64; body: JsonNode): JsonNode =
+  ## `body` as an event of a session started at `startMs`, happening at
+  ## `atMs` (its `timestamp`, in µs since the start).
+  result = body.copy
+  result["timestamp"] = %((atMs - startMs) * 1000)
+
+proc resumeEntry*(atMs: int64; sessionId: string; moment = ""): ScenarioEntry =
+  ScenarioEntry(kind: sekResume, atMs: atMs, moment: moment,
+                resume: ResumeEvent(sessionId: sessionId, atMs: atMs))
+
+proc progressEntry*(atMs: int64; initiativeId, milestoneId, status: string;
+                    moment = ""): ScenarioEntry =
+  ScenarioEntry(kind: sekProgress, atMs: atMs, moment: moment,
+                progress: ProgressEvent(initiativeId: initiativeId,
+                                        milestoneId: milestoneId, status: status))
+
+proc progressEntry*(atMs: int64; initiativeId, milestoneId, status: string;
+                    deliverables: DeliverableCounts;
+                    verifications: VerificationCounts; moment = ""): ScenarioEntry =
+  ## A progress event that also carries the milestone's counts as the plan
+  ## now reads them (`ProgressEvent.hasCounts`).
+  result = progressEntry(atMs, initiativeId, milestoneId, status, moment)
+  result.progress.hasCounts = true
+  result.progress.deliverables = deliverables
+  result.progress.verifications = verifications
+
+proc recordingEntry*(atMs: int64; initiativeId: string; recording: RecordingEntry;
+                     moment = ""): ScenarioEntry =
+  ScenarioEntry(kind: sekRecording, atMs: atMs, moment: moment,
+                recording: RecordingEvent(initiativeId: initiativeId,
+                                          entry: recording))
+
+proc buildScenario*(name, title: string; firstMs: int64;
+                    sessions: seq[ScenarioSession]; initiatives: seq[Initiative];
+                    extras: seq[ScenarioEntry] = @[];
+                    moments: openArray[(int64, string)] = [];
+                    views: openArray[(string, seq[string])] = [];
+                    sessionViews: openArray[(string, string, seq[string])] = []): PlaybackScenario =
+  ## A scenario from its sessions' histories and the entries no history
+  ## implies (`extras`: resumes, progress events, recording changes; any
+  ## moment they carry is kept). The first listing holds every session
+  ## started by `firstMs` and not removed by then, in `sessions`' order, each
+  ## replayed to `firstMs` by nim-agents' `sessionAt`. After it come the fleet
+  ## entries the sessions' histories imply (see the module comment) and the
+  ## extras, in time order; at one moment the extras come first (a resume
+  ## before the input event that carries it), and otherwise each keeps the
+  ## order it was given in. `moments` names moments by time: the name goes
+  ## on the last entry at that time. `views` gives each view's moments, by
+  ## name; `sessionViews` each single-session view's session and moments.
+  ## Run `problemsOf` on the result.
+  result = PlaybackScenario(name: name, title: title, firstMs: firstMs,
+                            initiatives: initiatives, sessions: sessions)
+  result.first = FleetSnapshot(capturedAtMs: firstMs,
+                               sourceLabel: "invented scenario: " & title)
+  var timed: seq[(int64, int, int, ScenarioEntry)]   # time, rank, order, entry
+  proc add(rank: int; entry: ScenarioEntry) =
+    timed.add (entry.atMs, rank, timed.len, entry)
+  for extra in extras: add(0, extra)
+  for s in sessions:
+    let id = s.entry.id
+    if s.startMs <= firstMs and (s.removedAtMs == 0 or s.removedAtMs > firstMs):
+      var count = 0
+      for event in s.history:
+        if s.eventTimeOf(event) <= firstMs: inc count
+      result.first.sessions.add s.entry.sessionAt(s.history, count, s.startMs)
+    if s.startMs > firstMs:
+      add(1, ScenarioEntry(kind: sekLifecycle, atMs: s.startMs,
+        lifecycle: LifecycleFrame(event: "lifecycle", kind: "session_created",
+          sessionId: id, status: "queued", agent: s.entry.agentSoftware,
+          atMs: s.startMs)))
+      add(1, ScenarioEntry(kind: sekListing, atMs: s.startMs,
+        listing: s.entry.sessionAt(s.history, 0, s.startMs)))
+    for i, event in s.history:
+      let t = s.eventTimeOf(event)
+      if t <= firstMs: continue
+      add(1, ScenarioEntry(kind: sekEvent, atMs: t, sessionId: id,
+                           event: event, ordinal: i + 1))
+      if event{"type"}.getStr == "status":
+        let status = event{"status"}.getStr
+        add(1, ScenarioEntry(kind: sekLifecycle, atMs: t,
+          lifecycle: LifecycleFrame(event: "lifecycle",
+            kind: (if parseFleetStatus(status).isActive: "session_status_changed"
+                   else: "session_completed"),
+            sessionId: id, status: status, atMs: t)))
+    if s.removedAtMs > firstMs:
+      add(1, ScenarioEntry(kind: sekLifecycle, atMs: s.removedAtMs,
+        lifecycle: LifecycleFrame(event: "lifecycle", kind: "session_removed",
+                                  sessionId: id, atMs: s.removedAtMs)))
+  result.first.total = result.first.sessions.len
+  timed.sort proc(a, b: (int64, int, int, ScenarioEntry)): int =
+    cmp((a[0], a[1], a[2]), (b[0], b[1], b[2]))
+  for t in timed: result.entries.add t[3]
+  for (atMs, moment) in moments:
+    var last = -1
+    for i, entry in result.entries:
+      if entry.atMs == atMs: last = i
+    if last < 0:
+      raise newException(ValueError, "scenario " & name & ": no entry at the moment " &
+                         moment & " (" & $atMs & ")")
+    result.entries[last].moment = moment
+  for (view, names) in views:
+    result.views.add ScenarioView(view: view, moments: names)
+  for (view, sessionId, names) in sessionViews:
+    result.views.add ScenarioView(view: view, sessionId: sessionId, moments: names)
+
+# ---------------------------------------------------------------------------
+# A scenario's own invariants
+# ---------------------------------------------------------------------------
+
+proc problemsOf*(scenario: PlaybackScenario): seq[string] =
+  ## What is wrong with a scenario, one line per problem; empty when it
+  ## holds its invariants: the first listing is taken at the first moment
+  ## and names each session once; entries come after the first moment, in
+  ## time order; every session an entry names was introduced before (in the
+  ## first listing, or by a `session_created` frame or a listing entry) and
+  ## not removed since; a session's events come in its history's order;
+  ## named moments are unique; progress events name a known initiative and
+  ## milestone, recording changes a known initiative and a recording with an
+  ## id; every resume is matched by the session's own input event
+  ## (`user_input` or `session_resumed`) at the same moment, so a view that
+  ## follows events and one that follows resumes agree; each view's moments
+  ## are named moments of the scenario, in time order, each once, the view one
+  ## of `PlaybackViews` named once, and every named moment is on some view's
+  ## list; a single-session view (`SessionViews`) names a session of the
+  ## scenario, and each of its moments has an entry about that session (a
+  ## fleet view names none); every `tool_result` follows its session's
+  ## `tool_use` with the same `tool_execution_id`, and a command trace on it
+  ## names the command that call ran; and no milestone
+  ## reads completed with a deliverable undone or a test pending or failing,
+  ## at the first moment or after any progress event.
+  let label = "scenario " & scenario.name & ": "
+  if scenario.first.capturedAtMs != scenario.firstMs:
+    result.add label & "the first listing is taken at " &
+      $scenario.first.capturedAtMs & ", not at the first moment " & $scenario.firstMs
+  var known = initHashSet[string]()
+  for s in scenario.first.sessions:
+    if s.id in known: result.add label & "the first listing names " & s.id & " twice"
+    known.incl s.id
+  var removed = initHashSet[string]()
+  var milestones = initTable[string, HashSet[string]]()
+  for initiative in scenario.initiatives:
+    var ids = initHashSet[string]()
+    for m in initiative.progress.milestones: ids.incl m.id
+    milestones[initiative.id] = ids
+  var moments = initHashSet[string]()
+  var lastOrdinal = initTable[string, int]()
+  for s in scenario.sessions:
+    var n = 0
+    for event in s.history:
+      if s.eventTimeOf(event) <= scenario.firstMs: inc n
+    lastOrdinal[s.entry.id] = n
+  var previous = scenario.firstMs
+  proc named(i: int; entry: ScenarioEntry; id: string): string =
+    if id.len == 0: return label & "entry " & $i & " (" & $entry & ") names no session"
+    if id in removed:
+      return label & "entry " & $i & " (" & $entry & ") names " & id & " after its removal"
+    if id notin known:
+      return label & "entry " & $i & " (" & $entry & ") names " & id &
+        " before it is introduced"
+    ""
+  for i, entry in scenario.entries:
+    if entry.atMs <= scenario.firstMs:
+      result.add label & "entry " & $i & " (" & $entry & ") is not after the first moment"
+    if entry.atMs < previous:
+      result.add label & "entry " & $i & " (" & $entry & ") comes before the entry ahead of it"
+    previous = max(previous, entry.atMs)
+    if entry.moment.len > 0:
+      if entry.moment in moments:
+        result.add label & "the moment " & entry.moment & " is named twice"
+      moments.incl entry.moment
+    case entry.kind
+    of sekLifecycle:
+      let id = entry.lifecycle.sessionId
+      if entry.lifecycle.kind == "session_created" and id.len > 0 and
+          id notin removed:
+        known.incl id
+      let problem = named(i, entry, id)
+      if problem.len > 0: result.add problem
+      if entry.lifecycle.kind == "session_removed": removed.incl id
+    of sekListing:
+      if entry.listing.id.len > 0 and entry.listing.id notin removed:
+        known.incl entry.listing.id
+      let problem = named(i, entry, entry.listing.id)
+      if problem.len > 0: result.add problem
+    of sekEvent:
+      let problem = named(i, entry, entry.sessionId)
+      if problem.len > 0: result.add problem
+      let expected = lastOrdinal.getOrDefault(entry.sessionId, 0) + 1
+      if entry.ordinal != expected:
+        result.add label & "entry " & $i & " (" & $entry & ") is event #" &
+          $entry.ordinal & " of its session, expected #" & $expected
+      lastOrdinal[entry.sessionId] = entry.ordinal
+      if entry.event.isNil or entry.event.kind != JObject:
+        result.add label & "entry " & $i & " is not a JSON object"
+    of sekResume:
+      let problem = named(i, entry, entry.resume.sessionId)
+      if problem.len > 0: result.add problem
+      if entry.resume.atMs != entry.atMs:
+        result.add label & "entry " & $i & " (" & $entry & ") is stamped " &
+          $entry.resume.atMs & " inside"
+      var matched = false
+      for other in scenario.entries:
+        if other.kind == sekEvent and other.atMs == entry.atMs and
+            other.sessionId == entry.resume.sessionId and
+            other.event{"type"}.getStr in ["user_input", "session_resumed"]:
+          matched = true
+      if not matched:
+        result.add label & "entry " & $i & " (" & $entry &
+          ") has no input event of its session at its moment"
+    of sekProgress:
+      let p = entry.progress
+      if p.initiativeId notin milestones:
+        result.add label & "entry " & $i & " (" & $entry & ") names an unknown initiative"
+      elif p.milestoneId notin milestones[p.initiativeId]:
+        result.add label & "entry " & $i & " (" & $entry & ") names an unknown milestone"
+    of sekRecording:
+      if entry.recording.initiativeId notin milestones:
+        result.add label & "entry " & $i & " (" & $entry & ") names an unknown initiative"
+      if entry.recording.entry.id.len == 0:
+        result.add label & "entry " & $i & " names a recording without an id"
+  # The plans stay coherent at every moment: a milestone the plan reads as
+  # completed has every deliverable done and no test pending or failing, in
+  # the first listing and after each progress event (a status moved without
+  # its counts, or counts that contradict it, read "completed" beside
+  # "0/2 deliverables").
+  var plans = scenario.initiatives
+  var reported = initHashSet[string]()
+    ## Each milestone is reported once, where it first goes wrong.
+  proc outstanding(at: string; plans: seq[Initiative];
+                   reported: var HashSet[string]): seq[string] =
+    for initiative in plans:
+      for m in initiative.progress.milestones:
+        if m.status == "completed" and
+            (m.deliverables.done < m.deliverables.total or
+             m.verifications.pending > 0 or m.verifications.failing > 0) and
+            not reported.containsOrIncl(initiative.id & "/" & m.id):
+          result.add label & at & ", " & initiative.id & "/" & m.id &
+            " is completed with work outstanding (" & $m.deliverables.done & "/" &
+            $m.deliverables.total & " deliverables, " & $m.verifications.pending &
+            " tests pending, " & $m.verifications.failing & " failing)"
+  result.add outstanding("in the first listing", plans, reported)
+  for i, entry in scenario.entries:
+    if entry.kind == sekProgress:
+      discard plans.applyProgressEvent(entry.progress)
+      result.add outstanding("after entry " & $i & " (" & $entry & ")", plans, reported)
+  # Each view's moments: known names, in time order, each once; every named
+  # moment shown by some view.
+  var shown = initHashSet[string]()
+  var views = initHashSet[string]()
+  for v in scenario.views:
+    if v.view notin PlaybackViews:
+      result.add label & "the view " & v.view & " is not one of the playback views"
+    if views.containsOrIncl(v.view):
+      result.add label & "the view " & v.view & " is named twice"
+    var last = int64.low
+    var seen = initHashSet[string]()
+    for name in v.moments:
+      let at = scenario.momentMs(name)
+      if at < 0:
+        result.add label & "the view " & v.view & " names " & name &
+          ", which is not a named moment"
+        continue
+      if seen.containsOrIncl(name):
+        result.add label & "the view " & v.view & " names " & name & " twice"
+      if at < last:
+        result.add label & "the view " & v.view & " names " & name &
+          " out of time order"
+      last = max(last, at)
+      shown.incl name
+  for name in scenario.momentNames:
+    if name notin shown:
+      result.add label & "the moment " & name & " is on no view's list"
+  # A single-session view's moments are its session's.
+  for v in scenario.views:
+    if v.view in SessionViews:
+      if v.sessionId.len == 0 or scenario.findSession(v.sessionId) < 0:
+        result.add label & "the view " & v.view & " names no session of the scenario (" &
+          v.sessionId & ")"
+        continue
+      for name in v.moments:
+        let at = scenario.momentMs(name)
+        if at < 0: continue
+        var about = false
+        for entry in scenario.entries:
+          if entry.atMs == at and entry.entrySession == v.sessionId: about = true
+        if not about:
+          result.add label & "the view " & v.view & " names " & name &
+            ", which has no entry about " & v.sessionId
+    elif v.sessionId.len > 0:
+      result.add label & "the view " & v.view & " shows the whole fleet and names the session " &
+        v.sessionId
+  # Tool calls: a result follows its call, and a trace names the command.
+  for s in scenario.sessions:
+    var commands = initTable[string, string]()
+    for event in s.history:
+      let id = event{"tool_execution_id"}.getStr
+      case event{"type"}.getStr
+      of "tool_use":
+        if id.len > 0: commands[id] = event{"tool_args"}{"command"}.getStr
+      of "tool_result":
+        if id.len == 0 or id notin commands:
+          result.add label & "a tool_result of " & s.entry.id &
+            " names no tool_use before it (" & id & ")"
+          continue
+        let trace = event{"command_trace"}
+        if not trace.isNil:
+          let command = commands[id]
+          let processes = trace{"processes"}
+          if command.len == 0 or processes.isNil or processes.kind != JArray or
+              processes.len == 0:
+            result.add label & "the command trace of " & id & " in " & s.entry.id &
+              " has no processes or traces no command"
+          else:
+            for p in processes:
+              let argv = p{"argv"}
+              let program = if argv.isNil or argv.kind != JArray or argv.len == 0: ""
+                            else: argv[0].getStr
+              if program.len == 0 or program notin command:
+                result.add label & "the command trace of " & id & " in " & s.entry.id &
+                  " names " & program & ", which the command `" & command & "` does not run"
+      else: discard
+  for s in scenario.sessions:
+    if s.entry.id notin known and s.entry.id notin removed:
+      result.add label & "the session " & s.entry.id & " is never introduced"
+    var last = 0'i64
+    for event in s.history:
+      let t = s.eventTimeOf(event)
+      if t < last:
+        result.add label & "the history of " & s.entry.id & " is not in time order"
+      last = t

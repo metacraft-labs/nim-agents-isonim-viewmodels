@@ -37,6 +37,9 @@ type
   RecordingButtons* = object
     buttons*: seq[RecordingButton]
     hidden*: int        ## recordings beyond `maxShown`, behind a `+N`
+    hiddenStates*: seq[RecordingState]
+      ## The states of the hidden recordings, in order: the `+N` takes the
+      ## most severe of them.
 
 proc tooltipOf*(entry: RecordingEntry): string =
   ## `calc test trace · revision 41d7f96 · from ct test run`, and the state
@@ -74,3 +77,20 @@ proc recordingButtons*(entries: openArray[RecordingEntry]; activeId: string;
                                        state: entries[i].state,
                                        active: i == activeAt)
   result.hidden = entries.len - shown.len
+  for i, e in entries:
+    if i notin shown: result.hiddenStates.add e.state
+
+proc applyRecording*(entries: var seq[RecordingEntry]; entry: RecordingEntry): bool =
+  ## One recording appeared or changed (a recording loading turned ready or
+  ## failed): an entry whose id the group holds replaces it in place, any
+  ## other is added at the end, so the buttons keep their numbers. True when
+  ## the group changed; an entry without an id, or one equal to the held
+  ## one, changes nothing.
+  if entry.id.len == 0: return false
+  for e in entries.mitems:
+    if e.id == entry.id:
+      if e == entry: return false
+      e = entry
+      return true
+  entries.add entry
+  true

@@ -10,14 +10,32 @@
 ## `GET /api/v1/initiatives`) and `loadFleet`, whose sessions give each
 ## initiative's sessions their states. An initiative whose sessions the
 ## listing does not hold still shows, with the count it names.
+##
+## Progress events reach it through the seam too: `load` subscribes to the
+## source's progress events (`subscribeProgress`, through a `ProgressFeed`),
+## so a source that sends one moves the rows with no host call; disposing the
+## viewmodel unsubscribes it. `progressState` / `progressError` report the
+## feed (an error when the source does not provide the events).
+##
+## The sessions under each initiative follow the source the same way: `load`
+## also subscribes to its fleet frames (`subscribeFleetFrames`: a session
+## changes state, starts or stops waiting, ends, goes away), resumes
+## (`subscribeResumes`) and resets (`subscribeResets`: the panel starts over,
+## `restart`). An initiative lists the sessions its entry names
+## (`Initiative.sessionIds`) and every session the listing holds for it
+## (`FleetSession.planId`): a session launched for it after the load joins
+## its row with the frame that introduces it, no reload. `feeds` reports
+## every subscription.
 
-import std/[strutils, tables]
-import isonim/core/[signals, computation]
+import std/strutils
+import isonim/core/[signals, computation, owner]
 import isonim/viewmodel
 import ./data_source
+import ./progress_feed
+import ./source_feed
 import ./session_items
 
-export data_source, session_items, viewmodel, signals, computation
+export data_source, progress_feed, session_items, viewmodel, signals, computation
 
 type
   InitiativeRow* = object
@@ -41,10 +59,9 @@ type
   InitiativesVM* = ref object of ViewModel
     source: AgentHarborDataSource
     initiatives: seq[Initiative]
-    sessions: Table[string, FleetSession]
+    directory: SessionDirectory
+      ## The listing's sessions, following the source's frames.
     nowMs: int64
-    unattached: int
-      ## Sessions of the listing launched for no initiative.
     policy*: SessionPolicy
     revision*: Signal[int]
     state*: Signal[AsyncState]
@@ -53,34 +70,87 @@ type
     folded: seq[string]
     expanded: seq[string]
     loadToken: int
+    feeds: SourceFeeds
+    progressState*: Signal[AsyncState]
+      ## The progress feed: `asIdle` before `load`, `asReady` while subscribed,
+      ## `asError` when the source does not provide progress events.
+    progressError*: Signal[string]
 
 proc newInitiativesVM*(source: AgentHarborDataSource;
                        policy = tabStripSessionPolicy()): InitiativesVM =
   withViewModel proc(dispose: proc()): InitiativesVM =
+    let feeds = newSourceFeeds()
+    # Disposing the viewmodel's root unsubscribes it from its source.
+    onCleanup proc() = feeds.close()
     InitiativesVM(source: source, policy: policy,
-                  sessions: initTable[string, FleetSession](),
+                  directory: initSessionDirectory(),
                   revision: createSignal(0), state: createSignal(asIdle),
-                  error: createSignal(""), selectedId: createSignal(""))
+                  error: createSignal(""), selectedId: createSignal(""),
+                  feeds: feeds, progressState: feeds.progress.state,
+                  progressError: feeds.progress.error)
 
 proc sourceLabel*(vm: InitiativesVM): string =
   if vm.source.isNil: "" else: vm.source.label
 
+proc applyProgress*(vm: InitiativesVM; event: ProgressEvent): bool =
+  ## A progress event, as the source's subscription delivers it. True when
+  ## it changed an initiative; one for an unknown initiative or milestone, or
+  ## one that repeats a status, changes nothing and moves no signal.
+  if vm.initiatives.applyProgressEvent(event):
+    vm.revision.val = vm.revision.val + 1
+    return true
+  false
+
+proc lateProgressEvents*(vm: InitiativesVM): int =
+  ## Progress events a source delivered after the viewmodel unsubscribed
+  ## (disposed or reloaded); none of them moved it.
+  vm.feeds.progress.lateEvents
+
+proc feeds*(vm: InitiativesVM): SourceFeeds =
+  ## The panel's subscriptions to its source (`frames`, `resumes`,
+  ## `progress`, `resets`).
+  vm.feeds
+
+proc applyFleetFrame*(vm: InitiativesVM; frame: FleetFrame): bool =
+  ## A fleet frame from the source, folded into the sessions the panel
+  ## holds. True when it changed them.
+  if not vm.directory.followFrame(vm.nowMs, frame): return false
+  vm.revision.val = vm.revision.val + 1
+  true
+
+proc resume*(vm: InitiativesVM; event: ResumeEvent): bool =
+  ## The operator's input reached a waiting session (nim-agents'
+  ## `resumeSession`). True when that changed it.
+  if not vm.directory.resumeSession(event.sessionId, event.atMs): return false
+  vm.nowMs = max(vm.nowMs, event.atMs)
+  vm.revision.val = vm.revision.val + 1
+  true
+
+proc restart*(vm: InitiativesVM)
+
 proc load*(vm: InitiativesVM) =
   ## Ready once the initiatives answer; the sessions fill in when the listing
-  ## answers (a listing failure leaves the sessions as counts only).
+  ## answers (a listing failure leaves the sessions as counts only). Subscribes
+  ## to the source's progress events first, replacing an earlier subscription,
+  ## so no event falls between the answer and the subscription.
   inc vm.loadToken
   let token = vm.loadToken
   vm.state.val = asLoading
   vm.error.val = ""
   let target = vm
+  vm.feeds.progress.openProgress(vm.source, proc(event: ProgressEvent): bool =
+    target.applyProgress(event))
+  vm.feeds.frames.openFleetFrames(vm.source, proc(frame: FleetFrame): bool =
+    target.applyFleetFrame(frame))
+  vm.feeds.resumes.openResumes(vm.source, proc(event: ResumeEvent): bool =
+    target.resume(event))
+  vm.feeds.resets.openResets(vm.source, proc(reset: StreamReset): bool =
+    target.restart()
+    true)
   vm.source.loadFleet proc(answer: DataResult[FleetSnapshot]) =
     if token != target.loadToken or not answer.ok: return
-    target.sessions.clear()
-    target.unattached = 0
+    target.directory = initSessionDirectory(answer.value.sessions)
     target.nowMs = answer.value.capturedAtMs
-    for session in answer.value.sessions:
-      target.sessions[session.id] = session
-      if session.planId.len == 0: inc target.unattached
     target.revision.val = target.revision.val + 1
   vm.source.loadInitiatives proc(answer: DataResult[seq[Initiative]]) =
     if token != target.loadToken: return
@@ -118,14 +188,22 @@ proc rowOf(vm: InitiativesVM; initiative: Initiative; selected: string): Initiat
     selected: initiative.id == selected,
     folded: initiative.id in vm.folded,
     expanded: initiative.id in vm.expanded)
+  proc listed(row: var InitiativeRow; session: FleetSession) =
+    var item = sessionItemOf(session, vm.nowMs, vm.policy)
+    if item.initiativeTitle.len == 0: item.initiativeTitle = initiative.title
+    inc row.sessionCounts[item.attention]
+    row.sessions.add item
   for id in initiative.sessionIds:
-    if id in vm.sessions:
-      var item = sessionItemOf(vm.sessions[id], vm.nowMs, vm.policy)
-      if item.initiativeTitle.len == 0: item.initiativeTitle = initiative.title
-      inc result.sessionCounts[item.attention]
-      result.sessions.add item
-    else:
-      inc result.missingSessions
+    let at = vm.directory.find(id)
+    if at >= 0: result.listed(vm.directory.sessions[at])
+    else: inc result.missingSessions
+  # A session launched for the initiative after its entry is read joins the
+  # row as soon as the listing holds it: the fleet frame that introduces it
+  # names the initiative (`planId`), as the tab strips group it, so the row,
+  # its counts and its state follow it with no reload of the initiatives.
+  for session in vm.directory.sessions:
+    if session.planId == initiative.id and session.id notin initiative.sessionIds:
+      result.listed(session)
   # The sessions that need the reader first (needs input, idle, running,
   # queued, failed, ended), launch order within each.
   var ordered: seq[SessionItem]
@@ -182,6 +260,20 @@ proc summaryText*(vm: InitiativesVM): string =
   var parts = @[$rows.len & (if rows.len == 1: " initiative" else: " initiatives"),
                 $sessions & (if sessions == 1: " session" else: " sessions")]
   if needs > 0: parts.add $needs & (if needs == 1: " needs input" else: " need input")
-  if vm.unattached > 0:
-    parts.add $vm.unattached & " in no initiative"
+  var unattached = 0
+  for session in vm.directory.sessions:
+    if session.planId.len == 0: inc unattached
+  if unattached > 0:
+    parts.add $unattached & " in no initiative"
   parts.join(" \xC2\xB7 ")
+
+proc restart*(vm: InitiativesVM) =
+  ## Starts over, as after a source's reset: the initiatives, their sessions
+  ## and the selection are dropped with the data they came from; folded and
+  ## expanded nodes are the reader's and stay. Then the panel loads again.
+  vm.initiatives = @[]
+  vm.directory = initSessionDirectory()
+  vm.nowMs = 0
+  vm.selectedId.val = ""
+  vm.revision.val = vm.revision.val + 1
+  vm.load()
