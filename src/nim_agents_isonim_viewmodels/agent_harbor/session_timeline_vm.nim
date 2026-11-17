@@ -95,6 +95,10 @@ type
     glyph*: string           ## `▸` / `▾` for an expandable line, else ""
     focused*: bool
     copyText*: string        ## what a detail's copy action copies; "" for none
+    path*: string
+      ## The file path the line's first part ends with ("" for none): a host
+      ## cuts it in its middle (`src/…/client.py`) and the words before it at
+      ## their end.
     count*: int              ## a group's items of its kind
     failed*, running*: int   ## a group's failed and running items
 
@@ -435,7 +439,11 @@ proc buildLines(vm: SessionTimelineVM): seq[TimelineLine] =
     let (parts, role) = itemParts(item)
     var details = detailLines(fold, item)
     let open = item.id in vm.expanded
+    let path = if item.filePath.len > 0 and parts[0].text.endsWith(item.filePath) and
+                   parts[0].text.len > item.filePath.len: item.filePath
+               else: ""
     lines.add TimelineLine(id: item.id, kind: kind, level: level, indent: indent,
+      path: path,
       itemKind: $item.kind, state: item.state, parts: parts, text: partsText(parts),
       textRole: role, expandable: details.len > 0, expanded: open and details.len > 0,
       glyph: (if details.len == 0: "" elif open: Open else: Closed))
@@ -457,15 +465,8 @@ proc buildLines(vm: SessionTimelineVM): seq[TimelineLine] =
       else:
         d.id = "detail:" & item.id & ":" & $k
         lines.add d
-  var previousFailed = false
-    ## The top line before was a failure: a session's own `failed` status
-    ## right after it repeats that fault, and is drawn in the ended role, so
-    ## one fault is red once.
   for node in fold.nodes:
     if not fold.matches(node, query): continue
-    let wasFailed = previousFailed
-    previousFailed = node.kind in {tnItem, tnTurn} and
-      fold.item(node.first).kind == tikFailure
     case node.kind
     of tnGap:
       let text = fold.nodeText(node)
@@ -475,10 +476,14 @@ proc buildLines(vm: SessionTimelineVM): seq[TimelineLine] =
       result.itemLines(vm, fold.item(node.first), tlkTurn, 0, 0)
     of tnItem:
       result.itemLines(vm, fold.item(node.first), tlkItem, 0, 0)
-      let item = fold.item(node.first)
-      if wasFailed and item.kind == tikFailure and item.line.startsWith("Status: "):
-        result[^1].textRole = "ended"
-        result[^1].parts[0].role = "ended"
+      if fold.repeatsFault(node.first):
+        # One fault is red once: a session's failed ending right after the
+        # failure it repeats is drawn as an ending. The fold decides it from
+        # the items, so a filter that hides the failure changes nothing.
+        var at = result.high
+        while result[at].id != node.id: dec at
+        result[at].textRole = "ended"
+        result[at].parts[0].role = "ended"
     of tnGroup:
       let open = node.id in vm.expanded
       var parts: seq[LinePart]

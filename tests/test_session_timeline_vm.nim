@@ -182,6 +182,69 @@ suite "lines":
       vm.dispose()
       disposeRoot()
 
+  test "one fault is red once, whatever the filter keeps or the reader opens":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = newSessionTimelineVM(sourceWith([
+        stamp(1, statusEvent("running")), stamp(2, userInput("Upgrade it.")),
+        stamp(3, agentFailure("the upgrade breaks the tests; stopping")),
+        stamp(4, statusEvent("failed", "The agent stopped."))]), Session)
+      vm.load()
+      check vm.lines.mapIt(it.textRole) == @["label", "error", "ended"]
+      # The filter hides the failure; its ending still repeats it.
+      vm.setFilter("agent stopped")
+      check vm.topTexts == @["Status: failed The agent stopped."]
+      check vm.lines.mapIt(it.textRole) == @["ended"]
+      check vm.lines[0].parts[0].role == "ended"
+      vm.setFilter("")
+      # Opened, the ending's own line keeps the role; its details do not take it.
+      let ended = newSessionTimelineVM(sourceWith([
+        stamp(1, agentFailure("the upgrade breaks the tests; stopping")),
+        stamp(2, %*{"type": "session_ended", "outcome": "failed",
+                    "reason": "The agent stopped.", "exitCode": 1})]), Session)
+      ended.load()
+      let ending = ended.lines[^1]
+      check ending.expandable
+      check ending.textRole == "ended"
+      ended.toggle(ending.id)
+      check ended.lines.len > 2
+      check ended.lines.filterIt(it.id == ending.id).mapIt(it.textRole) == @["ended"]
+      check ended.lines[2 .. ^1].allIt(it.textRole != "ended")
+      ended.dispose()
+      # A failed ending with no failure before it is the fault, in red.
+      let alone = newSessionTimelineVM(sourceWith([
+        stamp(1, userInput("Upgrade it.")),
+        stamp(2, statusEvent("failed", "The agent stopped."))]), Session)
+      alone.load()
+      check alone.lines.mapIt(it.textRole) == @["label", "error"]
+      alone.dispose()
+      vm.dispose()
+      disposeRoot()
+
+  test "a line that names a file says which part is its path":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = newSessionTimelineVM(sourceWith([
+        stamp(1, userInput("Go.")), stamp(2, fileRead("src/upload/retry/client.py")),
+        stamp(3, commandCall("c1", "pytest -q"))]), Session)
+      vm.load()
+      check vm.lines.mapIt(it.path) == @["", "src/upload/retry/client.py", ""]
+      check vm.lines[1].parts[0].text == "Read src/upload/retry/client.py"
+      vm.dispose()
+      disposeRoot()
+
+  test "a wait the server names a question is drawn as one":
+    createRoot proc(disposeRoot: proc()) =
+      let kind = proc(request, value: string): JsonNode =
+        %*{"type": "session_awaiting_input_kind", "request": request, "kind": value}
+      let vm = newSessionTimelineVM(sourceWith([
+        stamp(1, userInput("Go.")),
+        stamp(2, awaitingInput("claude-stop-hook")),
+        stamp(2, kind("claude-stop-hook", "question_pending"))]), Session)
+      vm.load()
+      check vm.lines.mapIt(it.itemKind) == @["operator", "question"]
+      check vm.lines[^1].textRole == "warning"
+      vm.dispose()
+      disposeRoot()
+
 suite "following a session":
   test "only this session's frames are folded, and none twice":
     createRoot proc(disposeRoot: proc()) =
