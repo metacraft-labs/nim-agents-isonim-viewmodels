@@ -18,6 +18,8 @@
 ## `agent_harbor/inbox_item_vm` and `agent_harbor/action_tracker`, answered
 ## in the prototypes by `agent_harbor/scripted_actions`, with invented data
 ## in `agent_harbor/synthetic_changes` and `agent_harbor/synthetic_inbox`.
+## The omnibox composer is `agent_harbor/omnibox_composer_vm`, over its
+## routing seam `agent_harbor/instruction_router`.
 import nim_agents_isonim_viewmodels/activity_vm
 import nim_agents_isonim_viewmodels/agent_harbor/[data_source, fixture_source,
   synthetic_fleet, session_items, fleet_vm, session_tabs_vm, initiatives_vm,
@@ -25,10 +27,12 @@ import nim_agents_isonim_viewmodels/agent_harbor/[data_source, fixture_source,
   initiative_tabs_vm, playback_scenario, playback_scenarios, playback_source,
   session_events, session_timeline_vm, synthetic_timelines, action_tracker,
   scripted_actions, changes_vm, inbox_item_vm, inbox_vm, inbox_playback,
-  synthetic_changes, synthetic_inbox]
+  synthetic_changes, synthetic_inbox,
+  instruction_router, omnibox_composer_vm]
 export activity_vm, data_source, fixture_source, synthetic_fleet, session_items,
   fleet_vm, session_tabs_vm, initiatives_vm, initiative_progress_vm, progress_feed,
   source_feed, recording_switcher, initiative_tabs_vm, playback_scenario,
   playback_scenarios, playback_source, session_events, session_timeline_vm,
   synthetic_timelines, action_tracker, scripted_actions, changes_vm, inbox_item_vm,
-  inbox_vm, inbox_playback, synthetic_changes, synthetic_inbox
+  inbox_vm, inbox_playback, synthetic_changes, synthetic_inbox, instruction_router,
+  omnibox_composer_vm

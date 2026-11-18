@@ -69,6 +69,11 @@ Structure:
   `inbox` and `operator_actions`. `synthetic_changes.nim` and
   `synthetic_inbox.nim` hold their invented data, and
   `inbox_playback.nim` replays a scenario's operator presses (`inbox-run`).
+  The omnibox composer is `omnibox_composer_vm.nim` `OmniboxComposerVM`,
+  over nim-agents' `instruction_composer` and the front-end's own seam
+  `instruction_router.nim` (`InstructionRouter`: the routing agent and the
+  UI-action agent, never Agent Harbor); its deliveries to Agent Harbor are
+  operator actions through `submitAction`.
 - **Writes.** An operator's action leaves a viewmodel only through
   `AgentHarborDataSource.submitAction`. The prototypes answer it with
   `scripted_actions.nim` `ScriptedActionSource` (and the playback source's

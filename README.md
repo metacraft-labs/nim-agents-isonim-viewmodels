@@ -77,6 +77,18 @@ order, the cursor rule, the item pages, the answer form's rules) and
 | `agent_harbor/synthetic_changes.nim`, `agent_harbor/synthetic_inbox.nim` | Invented changes and inboxes for every story (`changesFixture`, `inboxFixture`, `itemFixture`). |
 | `agent_harbor/inbox_playback.nim` | `InboxPlaybackOperator`: replays a playback scenario's operator presses on an `InboxVM`. |
 
+The omnibox as the composer for agent instructions is one more family. Its
+domain is `nim-agents`' `nim_agents/instruction_composer` (`ComposerDraft`:
+the instruction, the context offered, the routing decision and what it
+cites, redirects, deliveries, the launch and initiative forms) and the
+composer's kinds of `operator_actions` (`instructManager`, `launchTask`,
+`startInitiative`, `stopSession`):
+
+| Module | Pattern |
+| --- | --- |
+| `agent_harbor/omnibox_composer_vm.nim` | `OmniboxComposerVM`: a COMPOSER SHEET under a one-line field, in one step -- the routing agent's decision shown live while the operator types (a destination among three in a fixed order: the window's session, a manager agent, a UI action; the context it cites, as chips the operator can cite or uncite), Enter sending at once (or as soon as the decision arrives), redirect after sending, the launch and new-initiative forms, Stop, the recent instructions, gaze context. Every delivery to Agent Harbor is an `OperatorAction` through `submitAction`. |
+| `agent_harbor/instruction_router.nim` | `InstructionRouter`: the front-end's own seam -- the routing agent (`route`) and the agent that performs UI actions (`performUiAction`) -- with `ScriptedRouter`, a pending and a failing router for the prototypes. |
+
 ## The data-source seam
 
 Every Agent Harbor viewmodel reads through an `AgentHarborDataSource`

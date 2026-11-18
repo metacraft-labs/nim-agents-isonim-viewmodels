@@ -41,6 +41,7 @@ type
   ActionRule* = object
     receipt*: ReceiptRule
     reason*: string           ## rrFailed: the error the source answers
+    message*: string          ## rrConfirmed: what the receipt says, if anything
 
   PendingAction* = object
     action*: OperatorAction   ## its secrets forgotten
@@ -63,6 +64,9 @@ proc newActionScript*(rules: openArray[(OperatorActionKind, ActionRule)] = []): 
   for r in rules: result.rules.add r
 
 proc confirmed*(): ActionRule = ActionRule(receipt: rrConfirmed)
+proc confirmedWith*(message: string): ActionRule =
+  ## Confirmed, with what the server says back (a launch's notice).
+  ActionRule(receipt: rrConfirmed, message: message)
 proc failedWith*(reason: string): ActionRule = ActionRule(receipt: rrFailed, reason: reason)
 proc neverAnswered*(): ActionRule = ActionRule(receipt: rrNever)
 
@@ -85,7 +89,7 @@ proc answer(script: ActionScript; rule: ActionRule; action: OperatorAction;
   var kept = action
   kept.clearSecrets()
   case rule.receipt
-  of rrConfirmed: done(success(ActionReceipt(action: kept)))
+  of rrConfirmed: done(success(ActionReceipt(action: kept, message: rule.message)))
   of rrFailed: done(failure[ActionReceipt](rule.reason))
   of rrNever: script.pending.add PendingAction(action: kept, done: done)
 
@@ -355,7 +359,8 @@ proc applyEffects(source: ScriptedActionSource; action: OperatorAction) =
       review.record.stagedCards = kept
     else: discard
     source.reviews[r][1] = review
-  of oaRequestSpecChanges, oaMarkViewing:
+  of oaRequestSpecChanges, oaMarkViewing, oaInstructManager, oaLaunchTask,
+     oaStartInitiative, oaStopSession:
     discard   # recorded; nothing a reader sees changes
 
 method submitAction*(source: ScriptedActionSource; action: OperatorAction;
