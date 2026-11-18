@@ -56,13 +56,29 @@
 ## A viewmodel subscribes to the kinds it follows before it loads (so nothing
 ## falls between its load's answer and its subscription) and cancels when it
 ## is disposed.
+##
+## **Changes and the inbox.** A change's review record (`loadReviewRecord`),
+## its diff relative to a base (`loadChangeDiff`, the file list; and
+## `loadFileDiff`, one file's hunks, loaded when a reader opens the file), the
+## operator's inbox in the server's order (`loadInbox`, then its events through
+## `subscribeInbox`), the inbox cursor the server keeps per user and cursor
+## name (`loadInboxCursor`, `moveInboxCursor`: Previous and Next ask the
+## source, which answers the item landed on; a view keeps no order and no
+## stack of its own), one item's page (`loadInboxItemDetail`), and the
+## operator's actions (`submitAction`). An action is the only way anything is
+## asked of a server: the base answers that the source does not provide it, so
+## a source that has no way to send an action can never report one sent. The
+## prototypes' sources answer actions from a script and never reach a server
+## (`scripted_actions.nim`).
 
 import std/json
-import nim_agents/agent_harbor/[initiatives, fleet_fold]
+import nim_agents/agent_harbor/[initiatives, fleet_fold, review_record,
+                                change_diff, inbox, operator_actions]
 import ./records
 import ./recording_switcher
 
-export records, initiatives, fleet_fold, recording_switcher
+export records, initiatives, fleet_fold, recording_switcher, review_record,
+  change_diff, inbox, operator_actions
 
 type
   DataResult*[T] = object
@@ -119,6 +135,70 @@ type
   TestRunsCallback* = proc(answer: DataResult[seq[TestRunCapture]]) {.closure.}
   ScenarioRunsCallback* = proc(answer: DataResult[seq[ScenarioRunCapture]]) {.closure.}
   InitiativesCallback* = proc(answer: DataResult[seq[Initiative]]) {.closure.}
+
+  ReviewScope* = object
+    ## Which change a Changes panel reviews: a task (whose plan holds the
+    ## review record) and the session whose diff is the Code tab.
+    taskId*: string
+    sessionId*: string
+
+  SpecApprovalRequest* = object
+    ## A feedback request open for approving one spec change: what makes a
+    ## pending card's `Approve` available. A plan's record says only that the
+    ## change is pending; the request is the server's.
+    milestoneId*: string
+    spec*: string
+    feedbackId*: string
+
+  TaskReview* = object
+    ## The answer to `loadReviewRecord`: the record of the task's plan and
+    ## the approval requests open for its spec changes. `hasPlan` false is a
+    ## task with no plan: the panel shows only Code, and Spec Changes read
+    ## from the diff.
+    record*: ReviewRecord
+    hasPlan*: bool
+    approvalRequests*: seq[SpecApprovalRequest]
+
+  DiffBase* = object
+    ## What a change is shown against: `id` is what `loadChangeDiff` takes
+    ## ("" is the merge base with the landing branch), `label` what the base
+    ## selector says (`Since main`, `Session changes`, a branch name).
+    id*: string
+    label*: string
+
+  SessionDiff* = object
+    ## The answer to `loadChangeDiff`: the change's file list against `base`
+    ## (its files' hunks are loaded one file at a time, `loadFileDiff`), and
+    ## the bases the base selector offers.
+    diff*: ChangeDiff
+    base*: DiffBase
+    bases*: seq[DiffBase]
+
+  CursorDirection* = enum
+    cdNext = "next"
+    cdPrev = "prev"
+
+  CursorPosition* = object
+    ## Where an inbox cursor is, as the source keeps it: the item on screen
+    ## (`current.id` empty for none), whether the last move moved, and
+    ## whether Previous has an item to go back to.
+    moved*: bool
+    current*: InboxItemRef
+    canPrev*: bool
+
+  ActionReceipt* = object
+    ## The answer to a submitted action: the action as received (its
+    ## secrets forgotten) and what the source said.
+    action*: OperatorAction
+    message*: string
+
+  ReviewCallback* = proc(answer: DataResult[TaskReview]) {.closure.}
+  SessionDiffCallback* = proc(answer: DataResult[SessionDiff]) {.closure.}
+  FileDiffCallback* = proc(answer: DataResult[ChangedFile]) {.closure.}
+  InboxCallback* = proc(answer: DataResult[InboxSnapshot]) {.closure.}
+  CursorCallback* = proc(answer: DataResult[CursorPosition]) {.closure.}
+  ItemDetailCallback* = proc(answer: DataResult[InboxItemDetail]) {.closure.}
+  ActionCallback* = proc(answer: DataResult[ActionReceipt]) {.closure.}
 
   ProgressEvent* = object
     ## One initiative progress event: the milestone `milestoneId` of the
@@ -400,6 +480,74 @@ method subscribeResets*(source: AgentHarborDataSource;
   endedSubscription[StreamReset](callback, source.unsupported("stream resets"))
 
 # ---------------------------------------------------------------------------
+# Changes and the inbox
+# ---------------------------------------------------------------------------
+
+const MergeBase* = ""
+  ## `DiffBase.id` of the merge base with the landing branch.
+
+method loadReviewRecord*(source: AgentHarborDataSource; scope: ReviewScope;
+                         done: ReviewCallback) {.base.} =
+  ## The review record of a task's plan (the proposed
+  ## `GET /api/v1/tasks/{id}/review-record`); `missing` for a task the source
+  ## does not hold.
+  done(failure[TaskReview](source.unsupported("review records")))
+
+method loadChangeDiff*(source: AgentHarborDataSource; sessionId: string;
+                       base: string; done: SessionDiffCallback) {.base.} =
+  ## A session's change against `base` (`MergeBase`, or an id of
+  ## `SessionDiff.bases`), as a file list with totals and no hunks (the
+  ## proposed `GET /api/v1/sessions/{id}/diff?base=<rev>`); `missing` for a
+  ## session the source does not hold.
+  done(failure[SessionDiff](source.unsupported("change diffs")))
+
+method loadFileDiff*(source: AgentHarborDataSource; sessionId, base,
+                     path: string; done: FileDiffCallback) {.base.} =
+  ## One file of that change, with its hunks; `missing` for a path the change
+  ## does not touch.
+  done(failure[ChangedFile](source.unsupported("file diffs")))
+
+method loadInbox*(source: AgentHarborDataSource; done: InboxCallback) {.base.} =
+  ## The operator's inbox, in the server's order (`GET /api/v1/inbox`).
+  done(failure[InboxSnapshot](source.unsupported("the inbox")))
+
+method subscribeInbox*(source: AgentHarborDataSource;
+                       callback: FeedCallback[InboxEvent]): Subscription[InboxEvent] {.base.} =
+  ## The inbox's changes as they happen (the proposed
+  ## `GET /api/v1/inbox/events`): an item added, updated or resolved, and the
+  ## order after it. The base answers once that the source does not provide
+  ## them.
+  endedSubscription[InboxEvent](callback, source.unsupported("inbox events"))
+
+method loadInboxCursor*(source: AgentHarborDataSource; name: string;
+                        done: CursorCallback) {.base.} =
+  ## Where the inbox cursor `name` is (the proposed
+  ## `GET /api/v1/inbox/cursors/{name}`), so a front-end that opens later
+  ## joins the operator where they are.
+  done(failure[CursorPosition](source.unsupported("inbox cursors")))
+
+method moveInboxCursor*(source: AgentHarborDataSource; name: string;
+                        direction: CursorDirection; done: CursorCallback) {.base.} =
+  ## Moves the inbox cursor `name` (the proposed
+  ## `POST /api/v1/inbox/cursors/{name}/next` and `/prev`) and answers where
+  ## it landed: Next goes to the top of the current order excluding the item
+  ## on screen, Previous back along the items visited.
+  done(failure[CursorPosition](source.unsupported("inbox cursors")))
+
+method loadInboxItemDetail*(source: AgentHarborDataSource; item: InboxItemRef;
+                            done: ItemDetailCallback) {.base.} =
+  ## One item's page (a proposed read); `missing` for an item the source
+  ## does not hold.
+  done(failure[InboxItemDetail](source.unsupported("inbox item pages")))
+
+method submitAction*(source: AgentHarborDataSource; action: OperatorAction;
+                     done: ActionCallback) {.base.} =
+  ## Asks the server to do what the operator pressed (`routeOf` names the
+  ## route). The base sends nothing and answers that the source does not
+  ## provide actions: a view then shows the press as failed, never as sent.
+  done(failure[ActionReceipt](source.unsupported("operator actions")))
+
+# ---------------------------------------------------------------------------
 # State sources: the states no capture shows
 # ---------------------------------------------------------------------------
 
@@ -409,6 +557,11 @@ type
     ## Holds the callbacks so a test can prove none was called.
     pendingFleet*: seq[FleetCallback]
     pendingInitiatives*: seq[InitiativesCallback]
+    pendingReviews*: seq[ReviewCallback]
+    pendingDiffs*: seq[SessionDiffCallback]
+    pendingInbox*: seq[InboxCallback]
+    pendingActions*: seq[ActionCallback]
+    inboxSubscribers*: Subscribers[InboxEvent]
     progressSubscribers*: ProgressSubscribers
       ## Accepted and never sent to: a server whose event stream is open and
       ## silent.
@@ -458,6 +611,43 @@ method subscribeProgress*(source: PendingDataSource;
   ## Accepted; never sends.
   source.progressSubscribers.subscribe(callback)
 
+method loadReviewRecord*(source: PendingDataSource; scope: ReviewScope;
+                         done: ReviewCallback) =
+  source.pendingReviews.add done
+
+method loadChangeDiff*(source: PendingDataSource; sessionId, base: string;
+                       done: SessionDiffCallback) =
+  source.pendingDiffs.add done
+
+method loadInbox*(source: PendingDataSource; done: InboxCallback) =
+  source.pendingInbox.add done
+
+method subscribeInbox*(source: PendingDataSource;
+                       callback: FeedCallback[InboxEvent]): Subscription[InboxEvent] =
+  ## Accepted; never sends.
+  source.inboxSubscribers.subscribe(callback)
+
+method loadInboxCursor*(source: PendingDataSource; name: string;
+                        done: CursorCallback) =
+  discard
+
+method moveInboxCursor*(source: PendingDataSource; name: string;
+                        direction: CursorDirection; done: CursorCallback) =
+  discard
+
+method loadInboxItemDetail*(source: PendingDataSource; item: InboxItemRef;
+                            done: ItemDetailCallback) =
+  discard
+
+method loadFileDiff*(source: PendingDataSource; sessionId, base, path: string;
+                     done: FileDiffCallback) =
+  discard
+
+method submitAction*(source: PendingDataSource; action: OperatorAction;
+                     done: ActionCallback) =
+  ## Accepted; never answered: an action that stays `submitting`.
+  source.pendingActions.add done
+
 proc newFailingDataSource*(error: string;
                            label = "unreachable server"): FailingDataSource =
   FailingDataSource(label: label, error: error)
@@ -495,6 +685,41 @@ method subscribeRecordings*(source: FailingDataSource;
 method subscribeResets*(source: FailingDataSource;
                         callback: FeedCallback[StreamReset]): Subscription[StreamReset] =
   endedSubscription[StreamReset](callback, source.error)
+
+method loadReviewRecord*(source: FailingDataSource; scope: ReviewScope;
+                         done: ReviewCallback) =
+  done(failure[TaskReview](source.error))
+
+method loadChangeDiff*(source: FailingDataSource; sessionId, base: string;
+                       done: SessionDiffCallback) =
+  done(failure[SessionDiff](source.error))
+
+method loadFileDiff*(source: FailingDataSource; sessionId, base, path: string;
+                     done: FileDiffCallback) =
+  done(failure[ChangedFile](source.error))
+
+method loadInbox*(source: FailingDataSource; done: InboxCallback) =
+  done(failure[InboxSnapshot](source.error))
+
+method subscribeInbox*(source: FailingDataSource;
+                       callback: FeedCallback[InboxEvent]): Subscription[InboxEvent] =
+  endedSubscription[InboxEvent](callback, source.error)
+
+method loadInboxCursor*(source: FailingDataSource; name: string;
+                        done: CursorCallback) =
+  done(failure[CursorPosition](source.error))
+
+method moveInboxCursor*(source: FailingDataSource; name: string;
+                        direction: CursorDirection; done: CursorCallback) =
+  done(failure[CursorPosition](source.error))
+
+method loadInboxItemDetail*(source: FailingDataSource; item: InboxItemRef;
+                            done: ItemDetailCallback) =
+  done(failure[InboxItemDetail](source.error))
+
+method submitAction*(source: FailingDataSource; action: OperatorAction;
+                     done: ActionCallback) =
+  done(failure[ActionReceipt](source.error))
 
 proc newSnapshotDataSource*(snapshot: FleetSnapshot;
                             label = "synthetic fleet";

@@ -12,15 +12,23 @@
 ## replays a synthetic scenario on a clock (`agent_harbor/playback_source`,
 ## over `agent_harbor/playback_scenarios`). One session's cardless activity
 ## timeline is `agent_harbor/session_timeline_vm`, with invented timelines
-## for its static stories in `agent_harbor/synthetic_timelines`.
+## for its static stories in `agent_harbor/synthetic_timelines`. A change's
+## review in four tabs is `agent_harbor/changes_vm`; the operator's inbox,
+## its item pages and the actions they send are `agent_harbor/inbox_vm`,
+## `agent_harbor/inbox_item_vm` and `agent_harbor/action_tracker`, answered
+## in the prototypes by `agent_harbor/scripted_actions`, with invented data
+## in `agent_harbor/synthetic_changes` and `agent_harbor/synthetic_inbox`.
 import nim_agents_isonim_viewmodels/activity_vm
 import nim_agents_isonim_viewmodels/agent_harbor/[data_source, fixture_source,
   synthetic_fleet, session_items, fleet_vm, session_tabs_vm, initiatives_vm,
   initiative_progress_vm, progress_feed, source_feed, recording_switcher,
   initiative_tabs_vm, playback_scenario, playback_scenarios, playback_source,
-  session_events, session_timeline_vm, synthetic_timelines]
+  session_events, session_timeline_vm, synthetic_timelines, action_tracker,
+  scripted_actions, changes_vm, inbox_item_vm, inbox_vm, inbox_playback,
+  synthetic_changes, synthetic_inbox]
 export activity_vm, data_source, fixture_source, synthetic_fleet, session_items,
   fleet_vm, session_tabs_vm, initiatives_vm, initiative_progress_vm, progress_feed,
   source_feed, recording_switcher, initiative_tabs_vm, playback_scenario,
   playback_scenarios, playback_source, session_events, session_timeline_vm,
-  synthetic_timelines
+  synthetic_timelines, action_tracker, scripted_actions, changes_vm, inbox_item_vm,
+  inbox_vm, inbox_playback, synthetic_changes, synthetic_inbox

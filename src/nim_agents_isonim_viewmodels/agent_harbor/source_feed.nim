@@ -116,6 +116,13 @@ proc openProgress*(feed: SourceFeed[ProgressEvent]; source: AgentHarborDataSourc
   feed.open(proc(cb: FeedCallback[ProgressEvent]): Subscription[ProgressEvent] =
     source.subscribeProgress(cb), apply)
 
+proc openInbox*(feed: SourceFeed[InboxEvent]; source: AgentHarborDataSource;
+                apply: proc(event: InboxEvent): bool) =
+  ## Follows `source`'s inbox events.
+  if source.isNil: return
+  feed.open(proc(cb: FeedCallback[InboxEvent]): Subscription[InboxEvent] =
+    source.subscribeInbox(cb), apply)
+
 # ---------------------------------------------------------------------------
 # A viewmodel's feeds
 # ---------------------------------------------------------------------------
@@ -129,13 +136,15 @@ type
     recordings*: SourceFeed[RecordingEvent]
     progress*: SourceFeed[ProgressEvent]
     resets*: SourceFeed[StreamReset]
+    inbox*: SourceFeed[InboxEvent]
 
 proc newSourceFeeds*(): SourceFeeds =
   SourceFeeds(frames: newSourceFeed[FleetFrame](),
               resumes: newSourceFeed[ResumeEvent](),
               recordings: newSourceFeed[RecordingEvent](),
               progress: newSourceFeed[ProgressEvent](),
-              resets: newSourceFeed[StreamReset]())
+              resets: newSourceFeed[StreamReset](),
+              inbox: newSourceFeed[InboxEvent]())
 
 proc close*(feeds: SourceFeeds) =
   ## Unsubscribes every feed for good; idempotent.
@@ -145,9 +154,10 @@ proc close*(feeds: SourceFeeds) =
   feeds.recordings.close()
   feeds.progress.close()
   feeds.resets.close()
+  feeds.inbox.close()
 
 proc lateEvents*(feeds: SourceFeeds): int =
   ## Events of any kind that reached a closed or replaced subscription.
   feeds.frames.lateEvents + feeds.resumes.lateEvents +
     feeds.recordings.lateEvents + feeds.progress.lateEvents +
-    feeds.resets.lateEvents
+    feeds.resets.lateEvents + feeds.inbox.lateEvents

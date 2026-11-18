@@ -18,7 +18,10 @@
 ## listing entries and session events to `subscribeFleetFrames`, resumes to
 ## `subscribeResumes`, progress events (milestone statuses) to
 ## `subscribeProgress`, recording-state changes to `subscribeRecordings` (a
-## new subscriber first receives each recording's state at the head). The
+## new subscriber first receives each recording's state at the head), inbox
+## events to `subscribeInbox`, and the operator's presses to `subscribePresses`
+## (a playback's own subscription, which `inbox_playback.nim` turns into
+## presses on the inbox viewmodel). The
 ## source replays; it never decides what an entry means to a viewmodel --
 ## the viewmodels' reducers fold what it sends.
 ##
@@ -31,6 +34,14 @@
 ## subscriber is told to start over (`subscribeResets`, a `StreamReset`),
 ## and the entries up to the target are delivered again. So a seek backwards
 ## ends in the state a fresh playback stepped to the same moment shows.
+##
+## **The inbox.** `loadInbox` answers the inbox at the head; the source keeps
+## the inbox cursors as a server keeps them (`loadInboxCursor`,
+## `moveInboxCursor`, the same `CursorBook` the scripted source keeps), and
+## answers every action from an `ActionScript` that confirms it and records
+## it. What an answer does to the inbox is the scenario's next inbox entry,
+## not the script's. A rebuild returns the cursors and the record to the
+## first frame too.
 ##
 ## **The clock.** Time comes from an injected IsoNim clock (`ClockBase`,
 ## `isonim/core/clock`): a `TestClock` in tests and captures, which moves
@@ -45,8 +56,9 @@ import isonim/core/clock
 import nim_agents/agent_harbor/fleet_fold
 import ./data_source
 import ./playback_scenario
+import ./scripted_actions
 
-export clock, playback_scenario
+export clock, playback_scenario, scripted_actions
 
 type
   PlaybackDataSource* = ref object of AgentHarborDataSource
@@ -71,6 +83,12 @@ type
     recordingSubscribers*: Subscribers[RecordingEvent]
     progressSubscribers*: ProgressSubscribers
     resetSubscribers*: Subscribers[StreamReset]
+    inbox: InboxSnapshot
+    cursors: CursorBook
+    script*: ActionScript
+      ## Answers every action (confirmed) and records it.
+    inboxSubscribers*: Subscribers[InboxEvent]
+    pressSubscribers*: Subscribers[OperatorPress]
 
 proc rebuildState(source: PlaybackDataSource) =
   ## The source's own state at the first frame.
@@ -79,6 +97,9 @@ proc rebuildState(source: PlaybackDataSource) =
   source.fold = initFleetFold(source.scenario.first)
   source.initiatives = source.scenario.initiatives
   source.recordings = @[]
+  source.inbox = source.scenario.inbox
+  source.cursors.clear()
+  source.script = newActionScript()
 
 proc newPlaybackDataSource*(scenario: PlaybackScenario; clock: ClockBase;
                             label = ""): PlaybackDataSource =
@@ -157,6 +178,11 @@ proc deliver(source: PlaybackDataSource; entry: ScenarioEntry) =
         found = true
     if not found: source.recordings.add entry.recording
     discard source.recordingSubscribers.broadcast(success(entry.recording))
+  of sekInbox:
+    discard source.inbox.applyInboxEvent(entry.inbox)
+    discard source.inboxSubscribers.broadcast(success(entry.inbox))
+  of sekOperator:
+    discard source.pressSubscribers.broadcast(success(entry.press))
 
 proc deliverThrough(source: PlaybackDataSource; atMs: int64) =
   ## Delivers, in order, every entry not yet delivered whose moment is at or
@@ -332,3 +358,37 @@ method subscribeRecordings*(source: PlaybackDataSource;
 method subscribeResets*(source: PlaybackDataSource;
                         callback: FeedCallback[StreamReset]): Subscription[StreamReset] =
   source.resetSubscribers.subscribe(callback)
+
+method loadInbox*(source: PlaybackDataSource; done: InboxCallback) =
+  ## The inbox at the head.
+  done(success(source.inbox))
+
+method subscribeInbox*(source: PlaybackDataSource;
+                       callback: FeedCallback[InboxEvent]): Subscription[InboxEvent] =
+  source.inboxSubscribers.subscribe(callback)
+
+proc subscribePresses*(source: PlaybackDataSource;
+                       callback: FeedCallback[OperatorPress]): Subscription[OperatorPress] =
+  ## The operator's presses, each when the head reaches its moment.
+  source.pressSubscribers.subscribe(callback)
+
+method loadInboxCursor*(source: PlaybackDataSource; name: string;
+                        done: CursorCallback) =
+  done(success(source.cursors.positionOf(name)))
+
+method moveInboxCursor*(source: PlaybackDataSource; name: string;
+                        direction: CursorDirection; done: CursorCallback) =
+  done(success(source.cursors.move(name, source.inbox.orderOf, direction)))
+
+method loadInboxItemDetail*(source: PlaybackDataSource; item: InboxItemRef;
+                            done: ItemDetailCallback) =
+  for d in source.scenario.inboxDetails:
+    if d.itemId == item.id:
+      done(success(d))
+      return
+  done(missingResult[InboxItemDetail]("no item " & item.id & " in " & source.label))
+
+method submitAction*(source: PlaybackDataSource; action: OperatorAction;
+                     done: ActionCallback) =
+  ## Confirms and records the action; what it changes is the scenario's.
+  discard source.script.receive(action, done)

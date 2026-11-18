@@ -214,6 +214,65 @@ method loadTestRuns*(source: FixtureDataSource; done: TestRunsCallback) =
         testRunEventsJson: source.files[entry{"testRunEvents"}.getStr]))
     runs
 
+proc planEntry(source: FixtureDataSource; name: string): JsonNode =
+  ## The manifest's plan named `name`: by its name, or its file's name
+  ## without `.milestones.org`.
+  for entry in source.manifest{"plans"}.getElems:
+    let file = entry{"file"}.getStr
+    if entry{"name"}.getStr == name or file.extractFilename == name & ".milestones.org":
+      return entry
+
+method loadReviewRecord*(source: FixtureDataSource; scope: ReviewScope;
+                         done: ReviewCallback) =
+  ## The review record of the plan named by the task id (a manifest plan's
+  ## name, or its file name without `.milestones.org`), parsed from the
+  ## captured text; `missing` for a task with no captured plan. The captures
+  ## hold no feedback request, so no approval request is open.
+  let entry = source.planEntry(scope.taskId)
+  if entry.isNil:
+    done(missingResult[TaskReview]("no plan was captured for task " & scope.taskId))
+    return
+  answer[TaskReview](done):
+    let file = entry{"file"}.getStr
+    TaskReview(record: parseReviewRecord(file, source.files[file]), hasPlan: true)
+
+proc diffEntry(source: FixtureDataSource; name: string): JsonNode =
+  for entry in source.manifest{"diffs"}.getElems:
+    if entry{"name"}.getStr == name: return entry
+
+proc baseOf(entry: JsonNode): DiffBase =
+  DiffBase(id: MergeBase, label: "Since " & entry{"baseRef"}.getStr)
+
+method loadChangeDiff*(source: FixtureDataSource; sessionId, base: string;
+                       done: SessionDiffCallback) =
+  ## The captured diff named by the session id, against its merge base (the
+  ## captures are `git diff <merge-base> <head>`; no other base was
+  ## captured); `missing` for any other.
+  let entry = source.diffEntry(sessionId)
+  if entry.isNil or base != MergeBase:
+    done(missingResult[SessionDiff]("no diff was captured for " & sessionId &
+                                    (if base != MergeBase: " against " & base else: "")))
+    return
+  answer[SessionDiff](done):
+    var diff = parseUnifiedDiff(source.files[entry{"file"}.getStr])
+    for f in diff.files.mitems:
+      f.hunks = @[]
+      f.hasHunks = false
+    SessionDiff(diff: diff, base: entry.baseOf, bases: @[entry.baseOf])
+
+method loadFileDiff*(source: FixtureDataSource; sessionId, base, path: string;
+                     done: FileDiffCallback) =
+  let entry = source.diffEntry(sessionId)
+  if entry.isNil or base != MergeBase:
+    done(missingResult[ChangedFile]("no diff was captured for " & sessionId))
+    return
+  let diff = parseUnifiedDiff(source.files[entry{"file"}.getStr])
+  let found = diff.specDiff(path)
+  if not found.found:
+    done(missingResult[ChangedFile]("the change does not touch " & path))
+    return
+  done(success(found.file))
+
 method loadScenarioRuns*(source: FixtureDataSource;
                          done: ScenarioRunsCallback) =
   answer[seq[ScenarioRunCapture]](done):

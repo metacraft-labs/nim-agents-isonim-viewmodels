@@ -60,6 +60,23 @@ and the policies for streamed or whole-line text and for the operator's
 input. A line says the same words a fleet row's activity line says for the
 same event (`nim_agents/agent_harbor/activity_words`).
 
+A change's review and the operator's inbox are two more families. Their
+domain is `nim-agents`' `review_record` (the plan's review record, its
+approval grammar, the Spec Changes tiers), `change_diff` (a change's files
+and hunks, committed and uncommitted), `inbox` (the served inbox in its
+order, the cursor rule, the item pages, the answer form's rules) and
+`operator_actions` (the operator's writes, as typed values):
+
+| Module | Pattern |
+| --- | --- |
+| `agent_harbor/changes_vm.nim` | `ChangesVM`: one change in four tabs in the reviewer's order -- Spec Changes (requirements and governance files read from the diff, then the record's entries, each with its approval state), Tests (by milestone, failing first), Implementation Details, Code (key source files first, committed and uncommitted marks, a filter, a search, a base, one file's hunks loaded when opened). It opens on the first tab with content and keeps the reader's tab, cards and filter across restarts. |
+| `agent_harbor/inbox_vm.nim` | `InboxVM`: the operator's inbox in the server's order, never re-sorted; Previous and Next ask the source to move a cursor it keeps (the viewmodel keeps no order and no stack), a step asks the host for the item's session tab, and auto-switch moves on only after the operator's own answer, never while they type. |
+| `agent_harbor/inbox_item_vm.nim` | `InboxItemVM`: one item's page -- a question and its form, an ended turn, a permission gate, sudo and network approvals, a login request, a feedback request, a draft -- with validation, the answer states, and the viewing heartbeat while it is shown. |
+| `agent_harbor/action_tracker.nim` | `ActionTracker`: the operator's submitted actions and their states (submitting, confirmed, failed), shared by the three viewmodels above; one action in flight per target. |
+| `agent_harbor/scripted_actions.nim` | `ScriptedActionSource`: the prototypes' source for both families. It answers every action from a script (`ActionScript`), records it (a password as `secret supplied`), and applies what a server would do; it holds no network client. |
+| `agent_harbor/synthetic_changes.nim`, `agent_harbor/synthetic_inbox.nim` | Invented changes and inboxes for every story (`changesFixture`, `inboxFixture`, `itemFixture`). |
+| `agent_harbor/inbox_playback.nim` | `InboxPlaybackOperator`: replays a playback scenario's operator presses on an `InboxVM`. |
+
 ## The data-source seam
 
 Every Agent Harbor viewmodel reads through an `AgentHarborDataSource`
@@ -76,6 +93,7 @@ not provide it:
 | `subscribeRecordings` | `RecordingEvent`: a recording of an initiative appeared, or turned ready or failed | the initiative tab bar's recording switcher |
 | `subscribeProgress` | `ProgressEvent`: a milestone's status changed, optionally with its deliverable and test counts as the plan now reads them (`hasCounts`) | the Initiatives and Initiative Progress panels, both tab bars |
 | `subscribeResets` | `StreamReset`: the source started over; reload | every viewmodel above |
+| `subscribeInbox` | `InboxEvent`: an inbox item added, updated or resolved, with the order after it | the inbox |
 
 A session's event history (`loadSessionEvents`) carries each event's line
 (`events`, newest first) and, where the source has them, the events
@@ -83,6 +101,14 @@ themselves (`rawEvents`, oldest first), which the timeline folds; a session
 the source does not hold is answered `missing`, so a view says it cannot be
 loaded rather than that the server failed. `TimelineDataSource` serves given
 session events and sends the frames a story or test hands it (`sendFrame`).
+
+The Changes and inbox families add their loads -- `loadReviewRecord`,
+`loadChangeDiff`, `loadFileDiff`, `loadInbox`, `loadInboxCursor`,
+`loadInboxItemDetail` -- the cursor move `moveInboxCursor`, and
+`submitAction`, the one way an operator's action leaves a viewmodel. Its
+base answers that the source does not provide actions, so a source with no
+way to send one shows the press failed, never sent; the prototypes answer it
+with `ScriptedActionSource`.
 
 A viewmodel subscribes on `load`, before it asks for anything, and cancels
 when it is disposed (`agent_harbor/source_feed.nim`, `SourceFeeds`); its
@@ -106,11 +132,15 @@ moment. Scenarios are invented data only.
   (`sekListing`), one event of a session's stream (`sekEvent`, with its
   1-based place in the session's history), a resume (`sekResume`), a
   progress event, i.e. a milestone's new status and, when it carries them,
-  its counts (`sekProgress`), or a
-  recording-state change (`sekRecording`). Entries at one moment are one
+  its counts (`sekProgress`), a
+  recording-state change (`sekRecording`), an inbox event (`sekInbox`), or
+  one of the operator's presses on the inbox (`sekOperator`: Next,
+  Previous, an answer, auto-switch on or off). Entries at one moment are one
   moment: they are delivered together, in their order;
 - an entry may carry a named `moment`, unique in its scenario; stories and
   tests seek to moments by name, and captures are taken there;
+- `inbox`, the operator's inbox at the first moment, and `inboxDetails`,
+  the page of every item it ever holds;
 - `sessions`, every session the scenario names with its identity, start,
   removal and whole event history (events before the first moment
   included), from which a session's history at any moment is answered.
@@ -143,6 +173,7 @@ every named moment to changing each viewmodel its entries feed.
 | --- | --- | --- |
 | `front-ends` | Sessions from CodeTracer, the CLI, the WebUI, the TUI and Telegram start, ask, are answered, fail, end and are removed, while their initiative's milestones move. | `new-session`, `port-asks`, `bench-asks`, `port-answered`, `migration-fails`, `config-answered`, `milestone-done`, `importer-ends`, `port-completes`, `importer-removed` |
 | `initiative-run` | One initiative's progress events (a milestone blocked for a while, the plan completed) and its recordings loading, turning ready or failing, and being loaded again. | `specification-done`, `trace-loading`, `trace-ready`, `recording-fails`, `milestone-blocked`, `second-trace-ready`, `queue-done`, `recording-reloaded`, `plan-done`, `session-ends` |
+| `inbox-run` | The operator's inbox: items arrive (nothing takes the screen), the operator walks them with Next, a boost ends and the server reorders, the operator answers with auto-switch off and then on, goes back with Previous, an item is answered on another front-end, and the inbox empties. The presses are replayed through the inbox viewmodel (`inbox_playback.nim`); the source keeps the cursor and confirms every action. | `first-wait`, `three-waiting`, `next`, `boost-ends`, `answered`, `auto-switch`, `prev`, `resolved-elsewhere`, `empty` |
 | `session-run` | One agent session's work for the activity timeline (`session-activity`, over that session): an instruction, reads, searches, a command that fails with its trace, a question and its answer, edits, a plan, a repeated hook, a reply and completion, while a second session's events interleave and never show. | `instruction`, `reads-grouped`, `searches-grouped`, `command-running`, `command-fails`, `agent-asks`, `answered`, `edits-grouped`, `hook-repeats`, `agent-replies`, `session-completes` |
 
 **The source.** Its loads answer the state at the playback head: the first

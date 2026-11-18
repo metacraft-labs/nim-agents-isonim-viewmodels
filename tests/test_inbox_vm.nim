@@ -1,0 +1,372 @@
+## The inbox viewmodel (`InboxVM`): the server's order kept after every
+## event, Previous and Next over a cursor the source keeps (the milestone's
+## "Prev/Next over a fixture cursor"), the empty inbox with both disabled,
+## auto-switch moving only for the operator's own answer, the count and its
+## inks, the position, the explanation strip, the load states and the tab a
+## step asks for.
+##
+## Test doubles, and why each is justified:
+##
+## - `ScriptedActionSource` is the prototypes' production source for the
+##   inbox: it holds an invented inbox, keeps the cursor with the server's
+##   rule (nim-agents' `cursorNext` / `cursorPrev`) and answers actions from
+##   a script. A real server's inbox cursors are not served yet, and the
+##   prototypes may not write to a server, so no live source exists to test
+##   against; this source is the one every story uses.
+## - `PendingDataSource` and `FailingDataSource` are the seam's state
+##   sources: a server that does not answer, and one that fails.
+## - IsoNim's `TestClock` dates the loading line.
+##
+## Expected values are written out by hand from the invented inboxes'
+## documented order (`synthetic_inbox.nim`), never computed through the
+## reducer or the cursor rule.
+
+import std/unittest
+import isonim/core/[owner, signals, clock]
+import nim_agents_isonim_viewmodels
+
+proc ids(vm: InboxVM): seq[string] =
+  for item in vm.items: result.add item.id
+
+proc ids(snapshot: InboxSnapshot): seq[string] =
+  for item in snapshot.items: result.add item.id
+
+proc firstItems(n: int): InboxSnapshot =
+  ## The populated inbox's first `n` items.
+  result = populatedInbox()
+  result.items.setLen n
+
+proc populated(): ScriptedActionSource =
+  ScriptedActionSource(inboxFixture("populated"))
+
+const
+  P = PermissionItem
+  Q = QuestionItem
+  E = EndedTurnItem
+  L = LoginItem
+  F = FeedbackItem
+
+proc resolvedEvent(id: string; order: openArray[string]): InboxEvent =
+  var refs: seq[InboxItemRef]
+  for o in order: refs.add InboxItemRef(id: o)
+  InboxEvent(kind: ieResolved, target: InboxItemRef(id: id), hasOrder: true, order: refs)
+
+suite "the server's order":
+  test "the rows are the source's order, unchanged, after every event":
+    createRoot proc(disposeRoot: proc()) =
+      let source = populated()
+      let vm = newInboxVM(source)
+      vm.load()
+      check vm.ids == @[P, Q, E, L, F]
+      check vm.ids == source.inbox.ids
+      # A low item moved to the top by the server, an item added in the
+      # middle, an update with no order, a resolution: the rows follow each.
+      discard source.sendInbox(InboxEvent(kind: ieReordered, hasOrder: true,
+        order: @[InboxItemRef(id: F), InboxItemRef(id: P), InboxItemRef(id: Q),
+                 InboxItemRef(id: E), InboxItemRef(id: L)]))
+      check vm.ids == @[F, P, Q, E, L]
+      var arriving = source.inbox.items[2]
+      arriving.id = "inbox-item-new"
+      arriving.position = 2
+      discard source.sendInbox(InboxEvent(kind: ieAdded, item: arriving))
+      check vm.ids == @[F, "inbox-item-new", P, Q, E, L]
+      var updated = source.inbox.items[0]
+      updated.effectivePriority = ipUrgent
+      discard source.sendInbox(InboxEvent(kind: ieUpdated, item: updated))
+      check vm.ids == @[F, "inbox-item-new", P, Q, E, L]
+      discard source.sendInbox(resolvedEvent(P, [F, "inbox-item-new", Q, E, L]))
+      check vm.ids == @[F, "inbox-item-new", Q, E, L]
+      check vm.ids == source.inbox.ids
+      vm.dispose()
+      disposeRoot()
+
+  test "the count, its inks, the title and the rows' words":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = newInboxVM(populated())
+      vm.load()
+      check vm.count == 5
+      check vm.blockedCount == 4      # everything but the feedback request
+      check vm.feedbackCount == 1
+      check vm.countText == "5 waiting"
+      check vm.controlTitle == "5 tasks need input"
+      check vm.positionText == "5 waiting"   # nothing on screen yet
+      check vm.items[0].kindWord == "asks for permission"
+      check vm.items[1].priorityChip == "high, raised"
+      check vm.warmthOf(InboxItemRef(id: P), InboxT0) == "warm 3:12"
+      check vm.warmthOf(InboxItemRef(id: P), InboxT0 + 12_000) == "warm 3:00"
+      check vm.warmthOf(InboxItemRef(id: E), InboxT0) == "expiring"
+      check vm.warmthOf(InboxItemRef(id: F), InboxT0) == ""
+      check vm.explanationOf(InboxItemRef(id: E)) == "Waiting longest of the normal items."
+      vm.dispose()
+      disposeRoot()
+
+suite "Previous and Next over a fixture cursor":
+  test "Next goes to the top excluding the item on screen; Previous walks back the visited stack":
+    createRoot proc(disposeRoot: proc()) =
+      let source = ScriptedActionSource(inboxSource(firstItems(3),
+                                                    inboxDetails(), "three items"))
+      let vm = newInboxVM(source)
+      vm.load()
+      check vm.canNext
+      check not vm.canPrev
+      check vm.next()
+      check vm.current.val.id == P
+      check vm.positionText == "1 of 3"
+      check vm.requestedSession.val == sessionIdOf(3)
+      check vm.next()
+      check vm.current.val.id == Q
+      check vm.positionText == "2 of 3"
+      # Next again: the top of the order excluding the question is the
+      # permission gate, already visited -- offered again because it is on top.
+      check vm.next()
+      check vm.current.val.id == P
+      check vm.canPrev
+      # Previous returns along the items visited (the question, then the
+      # permission gate), not to the order's neighbour.
+      check vm.prev()
+      check vm.current.val.id == Q
+      check vm.requestedSession.val == sessionIdOf(1)
+      check vm.prev()
+      check vm.current.val.id == P
+      check not vm.canPrev
+      check not vm.prev()
+      check vm.current.val.id == P
+      check vm.requests.val == 5
+      vm.dispose()
+      disposeRoot()
+
+  test "a second viewmodel on the same cursor name continues from the same item":
+    createRoot proc(disposeRoot: proc()) =
+      let source = populated()
+      let first = newInboxVM(source)
+      first.load()
+      check first.next()
+      check first.next()
+      check first.current.val.id == Q
+      let second = newInboxVM(source)
+      second.load()
+      check second.current.val.id == Q
+      check second.canPrev
+      check second.next()
+      check second.current.val.id == P
+      # Another cursor name is another walk.
+      let other = newInboxVM(source, cursorName = "triage")
+      other.load()
+      check other.current.val.isNone
+      check not other.canPrev
+      first.dispose()
+      second.dispose()
+      other.dispose()
+      disposeRoot()
+
+  test "a story opened mid-walk shows its place and its explanation strip after a step":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = newInboxVM(inboxFixture("cursor-middle"))
+      vm.load()
+      check vm.current.val.id == E
+      check vm.positionText == "3 of 5"
+      check vm.canPrev
+      check vm.explanationStrip == ""    # not reached through a step here
+      check vm.prev()
+      check vm.current.val.id == Q
+      check vm.explanationStrip ==
+        "2 of 5 \xC2\xB7 Raised: its model cache is warm for three more minutes."
+      vm.dispose()
+      disposeRoot()
+
+  test "with no items, Next and Prev are disabled and ask the source nothing":
+    createRoot proc(disposeRoot: proc()) =
+      let source = populated()
+      let vm = newInboxVM(source)
+      vm.load()
+      check vm.next()
+      check vm.next()
+      check vm.canPrev
+      # Everything is answered elsewhere: the cursor still holds a visited
+      # stack, and both buttons are disabled anyway.
+      for id in [P, Q, E, L, F]:
+        var rest: seq[string]
+        for item in source.inbox.items:
+          if item.id != id: rest.add item.id
+        discard source.sendInbox(resolvedEvent(id, rest))
+      check source.cursorOf("default").visited.len == 1
+      check vm.isEmpty
+      check vm.notice == EmptyInboxText
+      check vm.positionText == ""
+      check not vm.canNext
+      check not vm.canPrev
+      let moves = vm.moveCount
+      check not vm.next()
+      check not vm.prev()
+      check vm.moveCount == moves
+      vm.dispose()
+      let empty = newInboxVM(inboxFixture("empty"))
+      empty.load()
+      check empty.isEmpty and not empty.canNext and not empty.canPrev
+      check not empty.next()
+      check empty.moveCount == 0
+      check empty.countText == ""
+      check empty.controlTitle == "No input required"
+      empty.dispose()
+      disposeRoot()
+
+suite "auto-switch":
+  test "the operator's own answer moves on and focuses the next input; with it off nothing moves":
+    createRoot proc(disposeRoot: proc()) =
+      let source = populated()
+      let vm = newInboxVM(source, showPages = true)
+      vm.load()
+      check vm.next()
+      check vm.current.val.id == P
+      # Off: answering leaves the page where it is.
+      check vm.page.choosePermission("allow_once")
+      check vm.ids == @[Q, E, L, F]
+      check vm.current.val.id == P
+      check vm.positionText == "4 waiting"
+      check vm.page.phaseText == AnswerSentText
+      check vm.focusRequests.val == 0
+      # On: Next, answer, and on to the next item by itself.
+      vm.setAutoSwitch(true)
+      check vm.next()
+      check vm.current.val.id == Q
+      vm.page.setText("Keep it behind a flag.")
+      check vm.page.submit()
+      check vm.current.val.id == E
+      check vm.positionText == "1 of 3"
+      check vm.focusRequests.val == 1
+      check vm.requestedSession.val == sessionIdOf(2)
+      check source.record.len == 2
+      vm.dispose()
+      disposeRoot()
+
+  test "an item answered elsewhere, a failed answer and typing never move it":
+    createRoot proc(disposeRoot: proc()) =
+      let source = populated()
+      let vm = newInboxVM(source, showPages = true)
+      vm.load()
+      vm.setAutoSwitch(true)
+      check vm.next()
+      check vm.current.val.id == P
+      # Answered on another front-end: not the operator's own action.
+      discard source.sendInbox(resolvedEvent(P, [Q, E, L, F]))
+      check vm.current.val.id == P
+      check vm.focusRequests.val == 0
+      # A failed answer: the item stays, and so does the page.
+      check vm.next()
+      check vm.current.val.id == Q
+      source.script.setRule(oaAnswerQuestion, failedWith("the session ended"))
+      vm.page.setText("Keep it behind a flag.")
+      check vm.page.submit()
+      check vm.page.phaseText == AnswerFailedText & ": the session ended"
+      check vm.current.val.id == Q
+      check vm.ids == @[Q, E, L, F]
+      # Typing: the operator's own answer leaves the inbox, and the page holds.
+      source.script.setRule(oaAnswerQuestion, confirmed())
+      vm.setTyping(true)
+      vm.page.setText("Keep it behind a flag.")
+      check vm.page.submit()
+      check vm.ids == @[E, L, F]
+      check vm.current.val.id == Q
+      check vm.focusRequests.val == 0
+      # The move held back by typing is dropped, not made once typing stops:
+      # the next change, one the operator did not cause, moves nothing.
+      vm.setTyping(false)
+      var later = source.inbox.items[0]
+      later.explanation = "Still waiting."
+      discard source.sendInbox(InboxEvent(kind: ieUpdated, item: later))
+      check vm.explanationOf(InboxItemRef(id: E)) == "Still waiting."
+      check vm.current.val.id == Q
+      check vm.focusRequests.val == 0
+      vm.dispose()
+      disposeRoot()
+
+  test "an answer sent with auto-switch off never moves it later, when auto-switch is turned on":
+    createRoot proc(disposeRoot: proc()) =
+      let source = populated()
+      let vm = newInboxVM(source, showPages = true)
+      vm.load()
+      check vm.next()
+      check vm.page.choosePermission("allow_once")
+      check vm.ids == @[Q, E, L, F]
+      check vm.current.val.id == P
+      # Auto-switch on afterwards, then a change the operator did not cause:
+      # the answer that left the page was decided on when it left.
+      vm.setAutoSwitch(true)
+      discard source.sendInbox(resolvedEvent(F, [Q, E, L]))
+      check vm.ids == @[Q, E, L]
+      check vm.current.val.id == P
+      check vm.focusRequests.val == 0
+      check vm.moveCount == 1
+      vm.dispose()
+      disposeRoot()
+
+  test "it stops at the end of the inbox":
+    createRoot proc(disposeRoot: proc()) =
+      let source = ScriptedActionSource(inboxSource(firstItems(1),
+                                                    inboxDetails(), "one item"))
+      let vm = newInboxVM(source, showPages = true)
+      vm.load()
+      vm.setAutoSwitch(true)
+      check vm.next()
+      let moves = vm.moveCount
+      check vm.page.choosePermission("allow_once")
+      check vm.isEmpty
+      check vm.current.val.id == P
+      check vm.moveCount == moves
+      check vm.focusRequests.val == 0
+      vm.dispose()
+      disposeRoot()
+
+suite "load states and restarts":
+  test "loading counts its seconds, an error keeps its reason, a degraded server is named":
+    createRoot proc(disposeRoot: proc()) =
+      let clock = newTestClock(0)
+      let pending = newPendingDataSource()
+      let loading = newInboxVM(pending, clock = clock)
+      loading.load()
+      check loading.state.val == asLoading
+      check loading.notice == InboxLoadingNotice
+      clock.advance(7_000)
+      check loading.notice == InboxLoadingNotice & " (7s)"
+      check pending.pendingInbox.len == 1
+      loading.dispose()
+      let failing = newInboxVM(inboxFixture("error"))
+      failing.load()
+      check failing.state.val == asError
+      check failing.error.val == InboxErrorText
+      check failing.notice == ""
+      check not failing.canNext
+      failing.dispose()
+      let fleet = newInboxVM(inboxFixture("fleet"))
+      fleet.load()
+      check fleet.degradedText == @["Incomplete: orbit-west could not be read (connection refused)"]
+      check fleet.items[1].server == "relay-lab"
+      fleet.dispose()
+      disposeRoot()
+
+  test "a reset reloads the inbox and keeps auto-switch":
+    createRoot proc(disposeRoot: proc()) =
+      let source = populated()
+      let vm = newInboxVM(source)
+      vm.load()
+      vm.setAutoSwitch(true)
+      check vm.next()
+      discard source.resetSubscribers.broadcast(success(StreamReset(reason: "test")))
+      check vm.state.val == asReady
+      check vm.current.val.id == P     # the source's cursor, read again
+      check vm.autoSwitch.val
+      check vm.ids == @[P, Q, E, L, F]
+      vm.dispose()
+      disposeRoot()
+
+  test "a held item and an unknown kind are listed in their place":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = newInboxVM(inboxFixture("manager-held"))
+      vm.load()
+      check vm.ids == @[P, "inbox-item-budget", Q]
+      check vm.items[1].kind == ikUnknown
+      check vm.items[1].kindWord == "budget approval"
+      check vm.items[0].holderText == "with the Manager"
+      check vm.items[2].holderText == "needs you"
+      vm.dispose()
+      disposeRoot()

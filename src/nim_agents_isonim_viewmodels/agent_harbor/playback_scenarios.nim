@@ -13,7 +13,12 @@
 ##   event -- reads, searches, commands (one fails, with its trace), a
 ##   question and its answer, edits, a plan, a hook that repeats, a reply,
 ##   completion -- for the session activity timeline, while another
-##   session's events interleave.
+##   session's events interleave;
+## - `inbox-run` (`inboxRunScenario`): the operator's inbox over a run --
+##   items arrive (nothing takes the screen), the operator walks them with
+##   Next, a boost ends and the server reorders, the operator answers with
+##   auto-switch off and then on, goes back with Previous, an item is
+##   answered on another front-end, and the inbox empties.
 ##
 ## Each scenario's named moments are the states its stories are captured at,
 ## each view at the moments whose event it shows (`views`); their expected
@@ -481,8 +486,153 @@ proc sessionRunScenario*(): PlaybackScenario =
     sessionViews = [("session-activity", JitterSessionId, @SessionRunMoments)])
 
 # ---------------------------------------------------------------------------
+# inbox-run
+# ---------------------------------------------------------------------------
 
-const PlaybackScenarioNames* = ["front-ends", "initiative-run", "session-run"]
+const
+  InboxRouteSessionId* = "5ca1ab1e-0e01-4e00-8000-00000000e001"
+    ## Asks a question (the item `run-question`), answered here.
+  InboxLoggingSessionId* = "5ca1ab1e-0e02-4e00-8000-00000000e002"
+    ## Ends its turn (`run-ended-turn`), answered on another front-end.
+  InboxSchemaSessionId* = "5ca1ab1e-0e03-4e00-8000-00000000e003"
+    ## Asks for permission (`run-permission`), allowed here.
+  InboxNotesSessionId* = "5ca1ab1e-0e04-4e00-8000-00000000e004"
+    ## Asks for feedback (`run-feedback`).
+  InboxBenchSessionId* = "5ca1ab1e-0e05-4e00-8000-00000000e005"
+    ## Asks the operator to sign in (`run-login`).
+  RunQuestion* = InboxItemRef(id: "run-question")
+  RunEndedTurn* = InboxItemRef(id: "run-ended-turn")
+  RunPermission* = InboxItemRef(id: "run-permission")
+  RunFeedback* = InboxItemRef(id: "run-feedback")
+  RunLogin* = InboxItemRef(id: "run-login")
+  InboxRunMoments* = ["first-wait", "three-waiting", "next", "boost-ends", "answered",
+                      "auto-switch", "prev", "resolved-elsewhere", "empty"]
+
+proc waiting(r: InboxItemRef; kind: InboxKind; sessionId, title: string;
+             atMs: int64; explanation: string; priority = ipNormal;
+             boosted = false): InboxItem =
+  ## An invented waiting item, as the inbox stream would send it.
+  result = InboxItem(id: r.id, kind: kind, kindText: $kind,
+                     session: InboxSession(id: sessionId, title: title, label: title,
+                                           agent: "Claude Code", host: "build-01",
+                                           status: "running"),
+                     priority: priority, effectivePriority: priority,
+                     explanation: explanation, enteredAtMs: atMs)
+  if boosted:
+    result.effectivePriority = ipHigh
+    result.boost = InboxBoost(active: true, reason: "cache_warm",
+                              reasons: @["cache_warm"], deadlineMs: atMs + 20_000)
+
+proc added(atMs: int64; item: InboxItem; order: openArray[InboxItemRef];
+           moment = ""): ScenarioEntry =
+  inboxEntry(atMs, InboxEvent(kind: ieAdded, item: item, hasOrder: true,
+                              order: @order), moment)
+
+proc updated(atMs: int64; item: InboxItem; order: openArray[InboxItemRef];
+             moment = ""): ScenarioEntry =
+  inboxEntry(atMs, InboxEvent(kind: ieUpdated, item: item, hasOrder: true,
+                              order: @order), moment)
+
+proc resolved(atMs: int64; r: InboxItemRef; order: openArray[InboxItemRef];
+              moment = ""): ScenarioEntry =
+  inboxEntry(atMs, InboxEvent(kind: ieResolved, target: r, hasOrder: true,
+                              order: @order), moment)
+
+proc pressed(atMs: int64; kind: OperatorPressKind; text = "", option = "";
+             on = false; moment = ""): ScenarioEntry =
+  pressEntry(atMs, OperatorPress(kind: kind, text: text, option: option, on: on), moment)
+
+proc inboxRunScenario*(): PlaybackScenario =
+  ## The operator's inbox over a run. Five invented sessions are running
+  ## from before the first moment; their waits reach the inbox as the
+  ## server's inbox events, and the operator's presses are entries of their
+  ## own. The route-cache session's question and the operator's answer are
+  ## also events of its own stream (a question wait is the one a session's
+  ## events say; the others are the listing's). Only the inbox view is fed.
+  var sessions: seq[ScenarioSession]
+  for (id, prompt) in [(InboxRouteSessionId, "Port the route cache"),
+                       (InboxLoggingSessionId, "Tidy the upload client's logging"),
+                       (InboxSchemaSessionId, "Migrate the cache schema"),
+                       (InboxNotesSessionId, "Write the release notes"),
+                       (InboxBenchSessionId, "Benchmark the cache")]:
+    var s = script(invented(id, prompt, "codetracer", "", "", "Claude Code", "2.1.4",
+                            "build-01"), sec(-120))
+    s.started()
+    if id == InboxRouteSessionId:
+      s.asks(sec(10))
+      s.answered(sec(60))
+    sessions.add s.s
+  let question = waiting(RunQuestion, ikBlockedQuestion, InboxRouteSessionId,
+    "Port the route cache", sec(10), "Blocked on your answer for 0:10.")
+  let ended = waiting(RunEndedTurn, ikEndedTurn, InboxLoggingSessionId,
+    "Tidy the upload client's logging", sec(20),
+    "Raised: its model cache is warm for 0:20.", boosted = true)
+  let endedCold = waiting(RunEndedTurn, ikEndedTurn, InboxLoggingSessionId,
+    "Tidy the upload client's logging", sec(20), "Its cache went cold; waiting 0:20.")
+  let permission = waiting(RunPermission, ikPermissionGate, InboxSchemaSessionId,
+    "Migrate the cache schema", sec(20),
+    "Urgent: the migration holds a write lock until you decide.", priority = ipUrgent)
+  let feedback = waiting(RunFeedback, ikAsyncFeedback, InboxNotesSessionId,
+    "Write the release notes", sec(55), "Low priority; the agent keeps working.",
+    priority = ipLow)
+  let login = waiting(RunLogin, ikLoginRequest, InboxBenchSessionId,
+    "Benchmark the cache", sec(55), "Blocked until someone signs in.", priority = ipLow)
+  let extras = @[
+    added(sec(10), question, [RunQuestion]),
+    added(sec(20), ended, [RunEndedTurn, RunQuestion]),
+    added(sec(20), permission, [RunPermission, RunEndedTurn, RunQuestion]),
+    pressed(sec(30), opNext),
+    updated(sec(40), endedCold, [RunPermission, RunQuestion, RunEndedTurn]),
+    pressed(sec(50), opAnswer, option = "allow_once"),
+    resolved(sec(50), RunPermission, [RunQuestion, RunEndedTurn]),
+    added(sec(55), feedback, [RunQuestion, RunEndedTurn, RunFeedback]),
+    added(sec(55), login, [RunQuestion, RunEndedTurn, RunFeedback, RunLogin]),
+    pressed(sec(60), opAutoSwitch, on = true),
+    pressed(sec(60), opNext),
+    pressed(sec(60), opAnswer, text = "Keep it behind a flag."),
+    resolved(sec(60), RunQuestion, [RunEndedTurn, RunFeedback, RunLogin]),
+    pressed(sec(70), opPrev),
+    pressed(sec(75), opNext),
+    resolved(sec(80), RunEndedTurn, [RunFeedback, RunLogin]),
+    resolved(sec(90), RunFeedback, [RunLogin]),
+    resolved(sec(90), RunLogin, [])]
+  result = buildScenario("inbox-run", "the operator's inbox over a run",
+    PlaybackT0, sessions, @[], extras = extras,
+    moments = [(sec(10), "first-wait"), (sec(20), "three-waiting"), (sec(30), "next"),
+               (sec(40), "boost-ends"), (sec(50), "answered"), (sec(60), "auto-switch"),
+               (sec(70), "prev"), (sec(80), "resolved-elsewhere"), (sec(90), "empty")],
+    views = [("inbox", @InboxRunMoments)])
+  result.inbox = InboxSnapshot(generatedAtMs: PlaybackT0)
+  result.inboxDetails = @[
+    InboxItemDetail(itemId: RunQuestion.id, sessionId: InboxRouteSessionId,
+                    kind: ikBlockedQuestion, blocked: true, requestId: "run-q-1",
+                    prompt: "Keep the old behaviour behind a flag?", form: qfFreeForm,
+                    familiar: true),
+    InboxItemDetail(itemId: RunEndedTurn.id, sessionId: InboxLoggingSessionId,
+                    kind: ikEndedTurn, familiar: true,
+                    lastReply: "Done. The upload client logs through its module logger now."),
+    InboxItemDetail(itemId: RunPermission.id, sessionId: InboxSchemaSessionId,
+                    kind: ikPermissionGate, requestId: "run-perm-1", familiar: true,
+                    prompt: "Run `psql -f migrations/0042_cache.sql` against staging?",
+                    permissionOptions: @[
+                      PermissionOption(id: "allow_once", kind: "allow_once",
+                                       label: permissionLabel("allow_once")),
+                      PermissionOption(id: "reject_once", kind: "reject_once",
+                                       label: permissionLabel("reject_once"))]),
+    InboxItemDetail(itemId: RunFeedback.id, sessionId: InboxNotesSessionId,
+                    kind: ikAsyncFeedback, familiar: true,
+                    feedback: FeedbackRequest(id: "run-fb-1", taskId: "release-notes",
+                                              feedbackType: ftQuestion,
+                                              prompt: "Which changes belong in the highlights?")),
+    InboxItemDetail(itemId: RunLogin.id, sessionId: InboxBenchSessionId,
+                    kind: ikLoginRequest, familiar: true,
+                    login: LoginRequest(requestId: "run-login-1", provider: "Example Cloud",
+                                        prompt: "Sign in to read the benchmark bucket."))]
+
+# ---------------------------------------------------------------------------
+
+const PlaybackScenarioNames* = ["front-ends", "initiative-run", "session-run",
+                                "inbox-run"]
   ## Every synthetic playback scenario, by name.
 
 proc playbackScenario*(name: string): PlaybackScenario =
@@ -492,4 +642,5 @@ proc playbackScenario*(name: string): PlaybackScenario =
   of "front-ends": frontEndsScenario()
   of "initiative-run": initiativeRunScenario()
   of "session-run": sessionRunScenario()
+  of "inbox-run": inboxRunScenario()
   else: raise newException(ValueError, "no playback scenario named " & name)

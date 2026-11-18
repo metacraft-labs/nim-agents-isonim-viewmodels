@@ -40,6 +40,10 @@ const Dot = " \xC2\xB7 "
 # What the scenarios hold, read straight from their entries
 # ---------------------------------------------------------------------------
 
+proc inboxSubject(event: InboxEvent): string =
+  ## An inbox event's kind and the item it names.
+  $event.kind & " " & (if event.kind == ieResolved: event.target.id else: event.item.id)
+
 proc subjectOf(entry: ScenarioEntry): string =
   ## What an entry is about, read from its own fields.
   case entry.kind
@@ -50,6 +54,8 @@ proc subjectOf(entry: ScenarioEntry): string =
   of sekProgress: "progress " & entry.progress.milestoneId & "=" & entry.progress.status
   of sekRecording: "recording " & entry.recording.entry.id & "=" &
     $entry.recording.entry.state
+  of sekInbox: "inbox " & inboxSubject(entry.inbox)
+  of sekOperator: "press " & $entry.press.kind
 
 proc expectedLog(scenario: PlaybackScenario; upTo: int64): seq[string] =
   ## The deliveries a playback that reached `upTo` has made, in order.
@@ -75,6 +81,8 @@ type
     progress: ProgressSubscription
     recordings: Subscription[RecordingEvent]
     resetFeed: Subscription[StreamReset]
+    inbox: Subscription[InboxEvent]
+    presses: Subscription[OperatorPress]
 
 proc record(source: PlaybackDataSource): Recorder =
   ## Subscribes to every kind `source` sends. Each delivery is written down
@@ -98,6 +106,12 @@ proc record(source: PlaybackDataSource): Recorder =
     r.log.add $r.source.nextDeliveredMs & " recording " & a.value.entry.id & "=" &
       $a.value.entry.state
     pdApplied
+  r.inbox = source.subscribeInbox proc(a: DataResult[InboxEvent]): ProgressDelivery =
+    r.log.add $r.source.nextDeliveredMs & " inbox " & inboxSubject(a.value)
+    pdApplied
+  r.presses = source.subscribePresses proc(a: DataResult[OperatorPress]): ProgressDelivery =
+    r.log.add $r.source.nextDeliveredMs & " press " & $a.value.kind
+    pdApplied
   r.resetFeed = source.subscribeResets proc(a: DataResult[StreamReset]): ProgressDelivery =
     inc r.resets
     r.log.setLen 0
@@ -117,16 +131,25 @@ type Views = object
   progress: InitiativeProgressVM
   timeline: SessionTimelineVM
     ## nil unless a session's timeline is shown (`timelineSession`).
+  inbox: InboxVM
+    ## nil unless the scenario feeds the inbox (`withInbox`).
+  operator: InboxPlaybackOperator
+    ## The operator's presses on `inbox`, replayed from the scenario.
   initiativeId: string
 
 proc viewsOver(source: AgentHarborDataSource; initiativeId: string;
-               autoSwitch = false; timelineSession = ""): Views =
+               autoSwitch = false; timelineSession = ""; withInbox = false): Views =
   ## The viewmodels of every playback story, loaded over `source`: the fleet
   ## list, the tab strip, the sidebar list, the initiative tab bar, the
   ## Initiatives panel and the Initiative Progress panel showing
   ## `initiativeId`, and, given `timelineSession`, that session's activity
-  ## timeline. Call inside a reactive root.
+  ## timeline, and given `withInbox` (over a playback source) the inbox with
+  ## its item pages and the operator's presses. Call inside a reactive root.
   result.initiativeId = initiativeId
+  if withInbox:
+    result.inbox = newInboxVM(source, showPages = true)
+    result.inbox.load()
+    result.operator = newInboxPlaybackOperator(PlaybackDataSource(source), result.inbox)
   if timelineSession.len > 0:
     result.timeline = newSessionTimelineVM(source, timelineSession)
     result.timeline.load()
@@ -152,6 +175,8 @@ proc dispose(views: Views) =
   views.initiatives.dispose()
   views.progress.dispose()
   if not views.timeline.isNil: views.timeline.dispose()
+  if not views.operator.isNil: views.operator.stop()
+  if not views.inbox.isNil: views.inbox.dispose()
 
 proc shown(views: Views): seq[string] =
   ## Everything the viewmodels publish to a view, one line per surface: the
@@ -172,6 +197,14 @@ proc shown(views: Views): seq[string] =
     var lines: seq[string]
     for line in views.timeline.lines: lines.add line.text & " [" & line.textRole & "]"
     result.add "timeline " & views.timeline.statusLabel & " " & $lines
+  if views.inbox.isNil:
+    result.add "inbox -"
+  else:
+    var ids: seq[string]
+    for item in views.inbox.items: ids.add item.id
+    result.add "inbox " & $ids & " at " & views.inbox.current.val.id & " " &
+      views.inbox.positionText & " next " & $views.inbox.canNext & " prev " &
+      $views.inbox.canPrev & " " & views.inbox.notice
 
 proc agree(a, b: Views; label: string): bool =
   ## Whether two sets of viewmodels show the same; the first difference is
@@ -207,7 +240,8 @@ proc timelineOf(scenario: PlaybackScenario): string =
 proc viewsOf(source: PlaybackDataSource): Views =
   ## Every view of the source's scenario, loaded over it.
   viewsOver(source, source.scenario.initiativeOf,
-            timelineSession = source.scenario.timelineOf)
+            timelineSession = source.scenario.timelineOf,
+            withInbox = source.scenario.feeds("inbox"))
 
 proc testClock(source: PlaybackDataSource): TestClock = TestClock(source.clock)
 
@@ -399,6 +433,56 @@ suite "the synthetic playback scenarios":
     check listed.problemsOf.len == 1
     check "in the first listing" in listed.problemsOf.join("\n")
 
+  test "inbox-run loads, and holds its invariants":
+    let s = inboxRunScenario()
+    check s.name == "inbox-run"
+    check s.invariantFailures.len == 0
+    let problems = s.problemsOf
+    for p in problems: checkpoint p
+    check problems.len == 0
+    # It feeds the inbox only. Its entries are inbox events and presses, and
+    # the question and the answer of the one session whose wait its own
+    # events say; its sessions are running from before the first moment.
+    check s.views.len == 1 and s.views[0].view == "inbox"
+    check s.views[0].moments == @InboxRunMoments
+    var kinds: set[ScenarioEntryKind]
+    var events: seq[string]
+    for entry in s.entries:
+      kinds.incl entry.kind
+      if entry.kind == sekEvent:
+        events.add $(entry.atMs - s.firstMs) & " " & entry.event{"type"}.getStr
+    check kinds == {sekEvent, sekInbox, sekOperator}
+    check events == @["10000 agent_question", "60000 user_input"]
+    check s.first.sessions.len == 5
+    check s.inbox.items.len == 0
+    check s.inboxDetails.len == 5
+
+  test "an inbox scenario's problems are reported":
+    var bad = inboxRunScenario()
+    # An item of a session the scenario does not hold, an order that is not a
+    # permutation of the items, a resolution of an item the inbox does not
+    # hold, an item with no page, and an answer that says nothing.
+    for entry in bad.entries.mitems:
+      if entry.kind == sekInbox and entry.inbox.kind == ieAdded and
+          entry.inbox.item.id == RunQuestion.id:
+        entry.inbox.item.session.id = "no-such-session"
+      if entry.kind == sekInbox and entry.moment == "boost-ends":
+        entry.inbox.order = @[RunPermission, RunQuestion]
+      if entry.kind == sekOperator and entry.press.kind == opAnswer and
+          entry.press.text.len > 0:
+        entry.press.text = ""
+    bad.entries.add inboxEntry(bad.lastMs + 1_000,
+      InboxEvent(kind: ieResolved, target: InboxItemRef(id: "never-added")))
+    bad.inboxDetails = bad.inboxDetails[0 .. 3]   # the login item loses its page
+    let text = bad.problemsOf.join("\n")
+    checkpoint text
+    check "names the session no-such-session, which is not a session of the scenario" in text
+    check "boost-ends" in text and "carries an order that is not a permutation of the items" in text
+    check "resolves an item the inbox does not hold" in text
+    check "names the item run-login, which has no page" in text
+    check "answers with nothing" in text
+    check bad.problemsOf.len == 5
+
   test "an unknown scenario name is refused":
     expect ValueError: discard playbackScenario("no-such-scenario")
     for name in PlaybackScenarioNames: check playbackScenario(name).name == name
@@ -419,8 +503,11 @@ const
     ## Which entries each surface of `shown` shows: a moment whose entries
     ## include one of these kinds must change that surface. The seventh, the
     ## session activity timeline (`TimelineAt`), shows only its own
-    ## session's events.
+    ## session's events; the eighth, the inbox (`InboxAt`), the inbox's
+    ## events and the operator's presses on it.
   TimelineAt = 6
+  InboxAt = 7
+  InboxKinds = {sekInbox, sekOperator}
 
 proc heldStill(views: Views): seq[string] =
   ## `shown`, less what moves with the clock alone (the fleet's ages and
@@ -431,7 +518,7 @@ proc heldStill(views: Views): seq[string] =
     row.ageLabel = ""
     row.durationLabel = ""
   result[0] = "fleet " & $rows & " " & $views.fleet.counts
-  doAssert result.len == TimelineAt + 1
+  doAssert result.len == InboxAt + 1
 
 proc unchangedAtMoments(scenario: PlaybackScenario): seq[string] =
   ## Every (moment, surface) where the moment's entries -- those after the
@@ -464,6 +551,8 @@ proc unchangedAtMoments(scenario: PlaybackScenario): seq[string] =
             " shows the same as at the moment before (" & $(fed * kinds) & ")"
       if timelineFed and now[TimelineAt] == before[TimelineAt]:
         found.add scenario.name & " at " & name & ": timeline shows the same as at the moment before"
+      if (kinds * InboxKinds).card > 0 and now[InboxAt] == before[InboxAt]:
+        found.add scenario.name & " at " & name & ": inbox shows the same as at the moment before"
       before = now
       previousMs = at
     v.dispose()
@@ -472,7 +561,7 @@ proc unchangedAtMoments(scenario: PlaybackScenario): seq[string] =
 
 const ShownAt = [("fleet", 0), ("session-tabs", 1), ("session-list", 2),
                  ("initiative-tabs", 3), ("initiatives", 4), ("initiative-progress", 5),
-                 ("session-activity", TimelineAt)]
+                 ("session-activity", TimelineAt), ("inbox", InboxAt)]
   ## Each view's line of `shown`.
 
 proc shownIndex(view: string): int =
@@ -1069,6 +1158,122 @@ suite "the session activity timeline at each named moment":
         check vm.statusLabel == status
         check vm.topOf == lines
       vm.dispose()
+      disposeRoot()
+
+suite "the inbox at each named moment":
+  test "inbox-run: items arrive, the operator walks, answers and goes back, stepping and seeking back":
+    # Each moment's inbox, written out from `inboxRunScenario`'s documented
+    # entries: the rows in the server's order, the item on screen, the
+    # position, Next and Previous, the notice, the page's answer line,
+    # auto-switch, and the tab the inbox asked for.
+    type Expected = tuple[moment: string, rows: seq[string], at, position: string,
+                          canNext, canPrev: bool, notice, phase: string,
+                          autoSwitch: bool, session: string]
+    let q = RunQuestion.id
+    let e = RunEndedTurn.id
+    let p = RunPermission.id
+    let f = RunFeedback.id
+    let l = RunLogin.id
+    let expected: seq[Expected] = @[
+      ("first-wait", @[q], "", "1 waiting", true, false, "", "", false, ""),
+      ("three-waiting", @[p, e, q], "", "3 waiting", true, false, "", "", false, ""),
+      ("next", @[p, e, q], p, "1 of 3", true, false, "", "", false, InboxSchemaSessionId),
+      # The boost ends and the server reorders; the item on screen stays.
+      ("boost-ends", @[p, q, e], p, "1 of 3", true, false, "", "", false,
+       InboxSchemaSessionId),
+      # Answered with auto-switch off: the page stays, its item gone.
+      ("answered", @[q, e], p, "2 waiting", true, false, "", AnswerSentText, false,
+       InboxSchemaSessionId),
+      # Auto-switch on: Next to the question, answered, and on to the ended
+      # turn by itself.
+      ("auto-switch", @[e, f, l], e, "1 of 3", true, true, "", "", true,
+       InboxLoggingSessionId),
+      # Previous goes back to the item visited, answered since, not to the
+      # order's neighbour.
+      ("prev", @[e, f, l], q, "3 waiting", true, true, "", AnswerSentText, true,
+       InboxRouteSessionId),
+      # Answered on another front-end while on screen: nothing moves, though
+      # auto-switch is on.
+      ("resolved-elsewhere", @[f, l], e, "2 waiting", true, true, "", "", true,
+       InboxLoggingSessionId),
+      ("empty", @[], e, "", false, false, EmptyInboxText, "", true,
+       InboxLoggingSessionId)]
+    proc shownOf(inbox: InboxVM): Expected =
+      var rows: seq[string]
+      for item in inbox.items: rows.add item.id
+      let page = inbox.page
+      (inbox.current.val.id, rows, inbox.current.val.id, inbox.positionText,
+       inbox.canNext, inbox.canPrev, inbox.notice,
+       (if page.isNil: "" else: page.phaseText), inbox.autoSwitch.val,
+       inbox.requestedSession.val)
+    template agreeWith(inbox: InboxVM; x: Expected) =
+      # A template, so each `check` is the test's own (a `check` in a proc
+      # outside the test sets a global and cannot fail it).
+      let got = inbox.shownOf
+      check got.rows == x.rows
+      check got.at == x.at
+      check got.position == x.position
+      check got.canNext == x.canNext
+      check got.canPrev == x.canPrev
+      check got.notice == x.notice
+      check got.autoSwitch == x.autoSwitch
+    createRoot proc(disposeRoot: proc()) =
+      let source = newPlayback("inbox-run")
+      let inbox = newInboxVM(source, showPages = true)
+      inbox.load()
+      let op = newInboxPlaybackOperator(source, inbox)
+      check inbox.isEmpty
+      check not inbox.canNext and not inbox.canPrev
+      for x in expected:
+        checkpoint "stepping to " & x.moment
+        source.stepTo(source.scenario.momentMs(x.moment))
+        check source.currentMoment == x.moment
+        inbox.agreeWith(x)
+        let page = inbox.page
+        check (if page.isNil: "" else: page.phaseText) == x.phase
+        check inbox.requestedSession.val == x.session
+      check op.missed == 0
+      check op.made == 7          # every press of the scenario was made
+      check inbox.focusRequests.val == 1   # auto-switch focused the ended turn's input
+      # The record: every action the operator sent, and no other.
+      check source.script.record == @[
+        "decide-permission session=" & InboxSchemaSessionId &
+          " item=run-permission request=run-perm-1 decision=allow_once",
+        "answer-question session=" & InboxRouteSessionId &
+          " item=run-question request=run-q-1 text=\"Keep it behind a flag.\""]
+      # Seeking back to each moment shows what stepping there showed; a
+      # reset puts auto-switch back where the scenario starts.
+      for i in countdown(expected.high, 0):
+        let x = expected[i]
+        checkpoint "seeking back to " & x.moment
+        source.seek(source.scenario.lastMs)
+        check source.seekMoment(x.moment)
+        inbox.agreeWith(x)
+        let page = inbox.page
+        check (if page.isNil: "" else: page.phaseText) == x.phase
+      op.stop()
+      inbox.dispose()
+      disposeRoot()
+
+  test "a second inbox on the same cursor joins the walk where it is":
+    createRoot proc(disposeRoot: proc()) =
+      let source = newPlayback("inbox-run")
+      let first = newInboxVM(source, showPages = true)
+      first.load()
+      let op = newInboxPlaybackOperator(source, first)
+      check source.seekMoment("auto-switch")
+      let second = newInboxVM(source)
+      second.load()
+      check second.current.val == RunEndedTurn
+      check second.positionText == "1 of 3"
+      check second.canPrev
+      # Previous on the second goes back along the stack the first built.
+      check second.prev()
+      check second.current.val == RunQuestion
+      check second.positionText == "3 waiting"
+      op.stop()
+      first.dispose()
+      second.dispose()
       disposeRoot()
 
 suite "the viewmodels follow a source through the seam":

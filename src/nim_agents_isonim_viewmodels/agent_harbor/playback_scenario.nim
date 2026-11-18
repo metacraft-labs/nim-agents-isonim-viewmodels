@@ -14,7 +14,10 @@
 ##   entry, one event of a session's event stream, a resume (the operator's
 ##   input reached a waiting session), a progress event (a milestone's status
 ##   changed in a plan) or a recording-state change (a recording of an
-##   initiative appeared loading, or turned ready or failed). Entries sharing
+##   initiative appeared loading, or turned ready or failed), an inbox event
+##   (an item added, updated or resolved, with the order after it) or one of
+##   the operator's presses on the inbox (Next, Previous, an answer,
+##   auto-switch on or off). Entries sharing
 ##   a moment are one moment: a player delivers them together, in their
 ##   order;
 ## - the **sessions** it names, each with its whole event history
@@ -50,6 +53,14 @@
 ## initiatives and milestones, every resume matched by the session's own
 ## input event).
 ##
+## A scenario may also hold the operator's **inbox** at its first moment
+## (`inbox`) and each item's page (`inboxDetails`). Its inbox entries
+## (`sekInbox`) are what the server's inbox stream sends; its press entries
+## (`sekOperator`) are what the operator does on the inbox, which a story
+## replays through the inbox viewmodel (`inbox_playback.nim`): the server
+## keeps the inbox's cursor, so where the operator is follows from the
+## presses, never from the scenario.
+##
 ## Everything a scenario holds is invented; this format carries no captured
 ## data.
 
@@ -67,6 +78,21 @@ type
     sekResume = "resume"         ## the operator's input reached a session
     sekProgress = "progress"     ## a milestone's status changed in a plan
     sekRecording = "recording"   ## a recording appeared or changed state
+    sekInbox = "inbox"           ## an inbox event (item added, updated, resolved)
+    sekOperator = "operator"     ## the operator pressed something on the inbox
+
+  OperatorPressKind* = enum
+    opNext = "next"
+    opPrev = "prev"
+    opAnswer = "answer"          ## answers the item on screen
+    opAutoSwitch = "auto-switch" ## turns auto-switch on or off
+
+  OperatorPress* = object
+    ## One of the operator's presses on the inbox.
+    kind*: OperatorPressKind
+    text*: string                ## opAnswer: the typed answer or instruction
+    option*: string              ## opAnswer: a permission option's id
+    on*: bool                    ## opAutoSwitch
 
   ScenarioEntry* = object
     ## One timestamped entry of a scenario.
@@ -92,6 +118,10 @@ type
       progress*: ProgressEvent
     of sekRecording:
       recording*: RecordingEvent
+    of sekInbox:
+      inbox*: InboxEvent
+    of sekOperator:
+      press*: OperatorPress
 
   ScenarioSession* = object
     ## One session a scenario names.
@@ -123,13 +153,17 @@ type
     entries*: seq[ScenarioEntry]
     views*: seq[ScenarioView]
       ## Each view the scenario feeds, with the moments it shows.
+    inbox*: InboxSnapshot
+      ## The operator's inbox at the first moment.
+    inboxDetails*: seq[InboxItemDetail]
+      ## The page of every item the scenario's inbox holds at any moment.
 
 const PlaybackViews* = ["fleet", "session-tabs", "session-list", "initiatives",
                         "initiative-tabs", "initiative-progress",
-                        "session-activity"]
+                        "session-activity", "inbox"]
   ## The views a scenario can name: the Agent Harbor front-end's sessions and
-  ## initiatives views, and one session's activity timeline, each over its
-  ## viewmodel.
+  ## initiatives views, one session's activity timeline, and the operator's
+  ## inbox, each over its viewmodel.
 
 const SessionViews* = ["session-activity"]
   ## The views of a single session: a scenario names the session each shows
@@ -171,6 +205,12 @@ proc `$`*(entry: ScenarioEntry): string =
   of sekRecording:
     result.add entry.recording.initiativeId & "/" & entry.recording.entry.id &
       " -> " & $entry.recording.entry.state
+  of sekInbox:
+    result.add $entry.inbox.kind & " " &
+      (if entry.inbox.kind == ieResolved: entry.inbox.target.id else: entry.inbox.item.id)
+  of sekOperator:
+    result.add $entry.press.kind
+    if entry.press.kind == opAutoSwitch: result.add(if entry.press.on: " on" else: " off")
   if entry.moment.len > 0: result.add " [" & entry.moment & "]"
 
 proc momentNames*(scenario: PlaybackScenario): seq[string] =
@@ -208,6 +248,7 @@ proc entrySession*(entry: ScenarioEntry): string =
   of sekListing: entry.listing.id
   of sekEvent: entry.sessionId
   of sekResume: entry.resume.sessionId
+  of sekInbox: entry.inbox.item.session.id
   else: ""
 
 proc momentMs*(scenario: PlaybackScenario; name: string): int64 =
@@ -265,6 +306,12 @@ proc recordingEntry*(atMs: int64; initiativeId: string; recording: RecordingEntr
   ScenarioEntry(kind: sekRecording, atMs: atMs, moment: moment,
                 recording: RecordingEvent(initiativeId: initiativeId,
                                           entry: recording))
+
+proc inboxEntry*(atMs: int64; event: InboxEvent; moment = ""): ScenarioEntry =
+  ScenarioEntry(kind: sekInbox, atMs: atMs, moment: moment, inbox: event)
+
+proc pressEntry*(atMs: int64; press: OperatorPress; moment = ""): ScenarioEntry =
+  ScenarioEntry(kind: sekOperator, atMs: atMs, moment: moment, press: press)
 
 proc buildScenario*(name, title: string; firstMs: int64;
                     sessions: seq[ScenarioSession]; initiatives: seq[Initiative];
@@ -361,9 +408,13 @@ proc problemsOf*(scenario: PlaybackScenario): seq[string] =
   ## scenario, and each of its moments has an entry about that session (a
   ## fleet view names none); every `tool_result` follows its session's
   ## `tool_use` with the same `tool_execution_id`, and a command trace on it
-  ## names the command that call ran; and no milestone
+  ## names the command that call ran; no milestone
   ## reads completed with a deliverable undone or a test pending or failing,
-  ## at the first moment or after any progress event.
+  ## at the first moment or after any progress event; and, for the inbox,
+  ## every item names a session of the scenario and has a page, a resolved
+  ## item is in the inbox, every order an inbox event carries is a
+  ## permutation of the items after it, and every answer press says what it
+  ## answers.
   let label = "scenario " & scenario.name & ": "
   if scenario.first.capturedAtMs != scenario.firstMs:
     result.add label & "the first listing is taken at " &
@@ -454,6 +505,8 @@ proc problemsOf*(scenario: PlaybackScenario): seq[string] =
         result.add label & "entry " & $i & " (" & $entry & ") names an unknown initiative"
       if entry.recording.entry.id.len == 0:
         result.add label & "entry " & $i & " names a recording without an id"
+    of sekInbox, sekOperator:
+      discard   # checked with the inbox, below
   # The plans stay coherent at every moment: a milestone the plan reads as
   # completed has every deliverable done and no test pending or failing, in
   # the first listing and after each progress event (a status moved without
@@ -525,6 +578,48 @@ proc problemsOf*(scenario: PlaybackScenario): seq[string] =
     elif v.sessionId.len > 0:
       result.add label & "the view " & v.view & " shows the whole fleet and names the session " &
         v.sessionId
+  # The inbox: every item names a session of the scenario and has a page, a
+  # resolved item is in the inbox, every order is a permutation of the
+  # items, and every answer press says what it answers.
+  var inbox = scenario.inbox
+  proc checkItem(at: string; item: InboxItem): seq[string] =
+    if scenario.findSession(item.session.id) < 0:
+      result.add label & at & " names the session " & item.session.id &
+        ", which is not a session of the scenario"
+    var paged = false
+    for d in scenario.inboxDetails:
+      if d.itemId == item.id: paged = true
+    if not paged:
+      result.add label & at & " names the item " & item.id & ", which has no page"
+  for item in inbox.items: result.add checkItem("the first inbox", item)
+  for i, entry in scenario.entries:
+    case entry.kind
+    of sekInbox:
+      let at = "entry " & $i & " (" & $entry & ")"
+      let e = entry.inbox
+      case e.kind
+      of ieAdded, ieUpdated: result.add checkItem(at, e.item)
+      of ieResolved:
+        if inbox.indexOf(e.target) < 0:
+          result.add label & at & " resolves an item the inbox does not hold"
+      of ieReordered: discard
+      if e.hasOrder:
+        var after = inbox
+        discard after.applyInboxEvent(InboxEvent(kind: e.kind, item: e.item,
+                                                 target: e.target))
+        var permutation = after.items.len == e.order.len
+        for j, r in e.order:
+          if after.indexOf(r) < 0: permutation = false
+          for k in j + 1 ..< e.order.len:
+            if e.order[k] == r: permutation = false
+        if not permutation:
+          result.add label & at & " carries an order that is not a permutation of the items"
+      discard inbox.applyInboxEvent(e)
+    of sekOperator:
+      if entry.press.kind == opAnswer and entry.press.text.len == 0 and
+          entry.press.option.len == 0:
+        result.add label & "entry " & $i & " (" & $entry & ") answers with nothing"
+    else: discard
   # Tool calls: a result follows its call, and a trace names the command.
   for s in scenario.sessions:
     var commands = initTable[string, string]()
