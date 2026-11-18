@@ -100,6 +100,67 @@ suite "the server's order":
       vm.dispose()
       disposeRoot()
 
+  test "test_inbox_vm_pending_count: a session's feedback requests are counted by the viewmodel":
+    createRoot proc(disposeRoot: proc()) =
+      let source = populated()
+      let vm = newInboxVM(source)
+      vm.load()
+      let session4 = sessionIdOf(4)
+      check vm.pendingFeedbackCount("", session4) == 1
+      check vm.pendingFeedbackText(InboxItemRef(id: F)) == "Needs Follow-up"
+      # Rows of other kinds carry no mark, and neither does an unknown item.
+      for id in [P, Q, E, L, "inbox-item-none"]:
+        check vm.pendingFeedbackText(InboxItemRef(id: id)) == ""
+      # A second request of the same session arrives: both rows say so.
+      var second = source.inbox.items[4]
+      second.id = "inbox-item-feedback-2"
+      second.position = 6
+      discard source.sendInbox(InboxEvent(kind: ieAdded, item: second))
+      check vm.pendingFeedbackCount("", session4) == 2
+      check vm.pendingFeedbackText(InboxItemRef(id: F)) == "2 pending"
+      check vm.pendingFeedbackText(InboxItemRef(id: "inbox-item-feedback-2")) == "2 pending"
+      # A question of that same session is not a feedback request: its row
+      # carries no mark, and it is not counted.
+      var question = source.inbox.items[0]
+      check question.kind != ikAsyncFeedback
+      question.id = "inbox-item-question-4"
+      question.session = source.inbox.items[4].session
+      question.position = 9
+      discard source.sendInbox(InboxEvent(kind: ieAdded, item: question))
+      check vm.pendingFeedbackText(InboxItemRef(id: "inbox-item-question-4")) == ""
+      check vm.pendingFeedbackCount("", session4) == 2
+      # Another session's request, and the same session id on another
+      # server, are counted apart.
+      var other = source.inbox.items[4]
+      other.id = "inbox-item-feedback-3"
+      other.session.id = sessionIdOf(2)
+      other.position = 7
+      discard source.sendInbox(InboxEvent(kind: ieAdded, item: other))
+      var remote = source.inbox.items[4]
+      remote.id = "inbox-item-feedback-4"
+      remote.server = "relay-lab"
+      remote.position = 8
+      discard source.sendInbox(InboxEvent(kind: ieAdded, item: remote))
+      check vm.pendingFeedbackCount("", session4) == 2
+      check vm.pendingFeedbackCount("", sessionIdOf(2)) == 1
+      check vm.pendingFeedbackCount("relay-lab", session4) == 1
+      check vm.pendingFeedbackText(InboxItemRef(id: "inbox-item-feedback-3")) ==
+        "Needs Follow-up"
+      check vm.pendingFeedbackText(InboxItemRef(server: "relay-lab",
+                                                id: "inbox-item-feedback-4")) ==
+        "Needs Follow-up"
+      # One is answered elsewhere: the count follows the inbox.
+      var order: seq[InboxItemRef]
+      for item in source.inbox.items:
+        if item.id != F: order.add item.refOf
+      discard source.sendInbox(InboxEvent(kind: ieResolved, target: InboxItemRef(id: F),
+                                          hasOrder: true, order: order))
+      check vm.pendingFeedbackCount("", session4) == 1
+      check vm.pendingFeedbackText(InboxItemRef(id: "inbox-item-feedback-2")) ==
+        "Needs Follow-up"
+      vm.dispose()
+      disposeRoot()
+
 suite "Previous and Next over a fixture cursor":
   test "Next goes to the top excluding the item on screen; Previous walks back the visited stack":
     createRoot proc(disposeRoot: proc()) =

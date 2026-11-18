@@ -11,8 +11,10 @@
 ## priority, a boosted item, each warmth state and a draft. Each item has a
 ## page (`inboxDetails`); further pages hold the variants a story shows one
 ## at a time: each question form, no options, sudo and network approvals
-## (two queued), each feedback type, an expired request, a draft and an
-## unfamiliar session. `inboxFixture` builds the source of each story
+## (two queued), each feedback type, an expired request, a draft, an
+## unfamiliar session, and the login request in each of its other states
+## (cancelling, completed, failed, a carry error, and a login item that
+## holds no request). `inboxFixture` builds the source of each story
 ## (`InboxFixtureNames`), and `itemFixture` the source and item of each item
 ## page's story (`ItemFixtureNames`); every source that holds an inbox is
 ## a `ScriptedActionSource` (`loading` and `error` are the seam's pending
@@ -41,9 +43,16 @@ const
   ItemFixtureNames* = ["question", "question-single", "question-multi",
                        "question-confirmation", "question-no-options", "ended-turn",
                        "permission", "sudo", "network", "login", "feedback",
-                       "feedback-options", "feedback-expired", "draft", "unfamiliar"]
+                       "feedback-options", "feedback-expired", "draft", "unfamiliar",
+                       "login-cancelling", "login-completed", "login-failed",
+                       "login-carry-error-pending", "login-none"]
     ## Every item page story's fixture.
   InboxErrorText* = "GET /api/v1/inbox answered 502: the hub is restarting"
+  LoginCarryErrorText* = "Signed in, but the agent's browser profile has not " &
+    "picked up the session yet. Try signing in again."
+    ## The invented carry error of `login-carry-error-pending`.
+  LoginFailedText* = "The sign-in window was closed before the sign-in finished."
+    ## The invented reason of `login-failed`.
 
 proc iso(offsetSeconds: int): string =
   ## The invented moment `offsetSeconds` after `InboxT0`, as ISO-8601.
@@ -154,6 +163,13 @@ proc managerHeldInbox*(): InboxSnapshot =
 
 proc detail(node: JsonNode): InboxItemDetail = inboxItemDetailFromJson(node)
 
+proc loginJson(state: string; error = ""): JsonNode =
+  ## The populated inbox's login request (`login-51`) in `state`.
+  result = %*{"requestId": "login-51", "provider": "Example Cloud",
+              "prompt": "Sign in to read the benchmark bucket.",
+              "mode": "local_desktop", "state": state}
+  if error.len > 0: result["error"] = %error
+
 proc inboxDetails*(): seq[InboxItemDetail] =
   ## The page of every item of `populatedInbox`.
   @[
@@ -177,9 +193,7 @@ proc inboxDetails*(): seq[InboxItemDetail] =
               "familiar": true}),
     detail(%*{"itemId": LoginItem, "sessionId": sessionIdOf(5),
               "kind": "login_request",
-              "login": {"requestId": "login-51", "provider": "Example Cloud",
-                        "prompt": "Sign in to read the benchmark bucket.",
-                        "mode": "local_desktop", "state": "pending"},
+              "login": loginJson("pending"),
               "familiar": true}),
     detail(%*{"itemId": FeedbackItem, "sessionId": sessionIdOf(4),
               "kind": "async_feedback",
@@ -196,6 +210,19 @@ proc variantDetail(name: string): InboxItemDetail =
   ## The page a single item story shows, by fixture name.
   let id = "inbox-item-" & name
   case name
+  of "login-cancelling", "login-completed", "login-failed", "login-carry-error-pending":
+    let login = case name
+      of "login-cancelling": loginJson("cancelling")
+      of "login-completed": loginJson("completed")
+      of "login-failed": loginJson("failed", LoginFailedText)
+      else: loginJson("pending", LoginCarryErrorText)
+    detail(%*{"itemId": id, "sessionId": sessionIdOf(5), "kind": "login_request",
+              "login": login, "familiar": true})
+  of "login-none":
+    # A login item whose request is gone (withdrawn or resolved before the
+    # page read it): the page holds no request.
+    detail(%*{"itemId": id, "sessionId": sessionIdOf(5), "kind": "login_request",
+              "familiar": true})
   of "question":
     detail(%*{"itemId": id, "sessionId": sessionIdOf(1), "kind": "blocked_question",
               "blocked": true, "requestId": "q-12", "form": "free_form", "familiar": true,

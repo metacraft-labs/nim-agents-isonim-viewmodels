@@ -14,7 +14,8 @@
 ##   load, to the first tab with content, then the reader's), the milestone
 ##   in scope, the open cards and which of them shows its diff, the Code
 ##   tab's filter, search, base and selected file, the open Request Changes
-##   input and its text -- is kept on `restart` where it still exists.
+##   input and its text, the card whose revert waits for confirmation -- is
+##   kept on `restart` where it still exists.
 ##
 ## **Loading.** `load` asks for the record (`loadReviewRecord`) and the
 ## diff's file list (`loadChangeDiff`) together, then the hunks of the
@@ -30,11 +31,20 @@
 ## `toggleDiff`, `setFilter`, `setQuery`, `selectBase`, `selectFile`,
 ## `stepFile`, `openInEditor`) move only this viewmodel; `openInEditor`
 ## publishes the path a host opens as a unified-diff editor tab. The writes
-## (`approve`, `submitRequestChanges`, `revert`, `applyStaged`,
+## (`approve`, `submitRequestChanges`, `confirmRevert`, `applyStaged`,
 ## `discardStaged`) go through the shared `ActionTracker` to the source's
 ## `submitAction`; a confirmed one reloads the record, as a server's change
-## reaches a reader. Narrow tab labels come from the domain (`tabLabel`), so
-## every host shortens them alike; widths stay in the hosts.
+## reaches a reader.
+##
+## **Undo / Revert asks first.** Reverting a spec change undoes what the
+## task wrote to the plan, so the press only asks: `requestRevert` marks the
+## card as waiting for the reader's confirmation (`revertCard`, the card's
+## `confirmingRevert`) and sends nothing; `confirmRevert` sends the revert,
+## `cancelRevert` drops the question. One card waits at a time, and a
+## confirmation whose card is no longer listed sends nothing.
+##
+## Narrow tab labels come from the domain (`tabLabel`), so every host
+## shortens them alike; widths stay in the hosts.
 
 import std/[sets, strutils]
 import isonim/core/[signals, owner]
@@ -83,7 +93,13 @@ type
     open*: bool
     showsDiff*: bool
     requestOpen*: bool    ## the Request Changes input is open under it
+    confirmingRevert*: bool
+      ## Its Undo / Revert was pressed and waits for the reader's
+      ## confirmation; nothing has been sent.
     action*: ActionStatus ## the state of its last action
+    actionKind*: OperatorActionKind
+      ## Which write its last action is (meaningful unless `action` is idle),
+      ## so a host can say `Reverting…` rather than a generic word.
     actionReason*: string
 
   FileRow* = object
@@ -138,6 +154,8 @@ type
     requestCard*: Signal[string]
       ## The card whose Request Changes input is open ("" for none).
     requestText*: Signal[string]
+    revertCard*: Signal[string]
+      ## The card whose Undo / Revert waits for confirmation ("" for none).
     editorRequest*: Signal[string]
     editorRequests*: Signal[int]
       ## Moves each time a file is asked to open in the editor.
@@ -156,6 +174,7 @@ proc newChangesVM*(source: AgentHarborDataSource; scope: ReviewScope;
               filter: createSignal(sfAll), query: createSignal(""),
               base: createSignal(MergeBase), selectedFile: createSignal(""),
               requestCard: createSignal(""), requestText: createSignal(""),
+              revertCard: createSignal(""),
               editorRequest: createSignal(""), editorRequests: createSignal(0))
 
 proc tracker*(vm: ChangesVM): ActionTracker = vm.tracker
@@ -416,8 +435,10 @@ proc specCards*(vm: ChangesVM): seq[SpecCardView] =
     v.open = v.key in vm.openCards
     v.showsDiff = v.key in vm.diffCards
     v.requestOpen = vm.requestCard.val == v.key
+    v.confirmingRevert = vm.revertCard.val == v.key
     let entry = vm.tracker.entryOf(vm.actionTarget(v.path))
     v.action = entry.status
+    v.actionKind = entry.action.kind
     v.actionReason = entry.reason
     result.add v
 
@@ -612,8 +633,28 @@ proc submitRequestChanges*(vm: ChangesVM): bool =
   let milestoneId = if c.card.tier == stSpec: c.card.entry.milestoneId else: ""
   vm.send(requestSpecChanges(vm.scope.taskId, milestoneId, path, vm.requestText.val))
 
-proc revert*(vm: ChangesVM; key: string): bool =
-  ## Undo / Revert a spec change.
+proc requestRevert*(vm: ChangesVM; key: string): bool =
+  ## Undo / Revert pressed on a spec card: the card waits for the reader's
+  ## confirmation (replacing any other card's question) and nothing is sent.
+  ## False, and nothing changes, for a card that cannot be reverted (not a
+  ## spec card, not listed) or whose last action is still submitting.
+  let c = vm.cardOf(key)
+  if not c.found or c.card.tier != stSpec: return false
+  if vm.tracker.inFlight(vm.actionTarget(c.card.entry.spec)): return false
+  vm.revertCard.val = key
+  true
+
+proc cancelRevert*(vm: ChangesVM) =
+  ## The reader declined: the question goes and nothing is sent.
+  vm.revertCard.val = ""
+
+proc confirmRevert*(vm: ChangesVM): bool =
+  ## The reader confirmed: sends the revert of the card that asked. False,
+  ## and nothing is sent, when no card asks or the card is no longer listed
+  ## (the question is dropped either way).
+  let key = vm.revertCard.val
+  if key.len == 0: return false
+  vm.revertCard.val = ""
   let c = vm.cardOf(key)
   if not c.found or c.card.tier != stSpec: return false
   vm.send(revertSpecChange(vm.scope.taskId, c.card.entry.milestoneId, c.card.entry.spec))

@@ -374,6 +374,27 @@ proc feedbackCount*(vm: InboxVM): int =
   for item in vm.snapshot.items:
     if item.kind == ikAsyncFeedback: inc result
 
+proc pendingFeedbackCount*(vm: InboxVM; server, sessionId: string): int =
+  ## Tracked: how many feedback requests of one session (of the fleet server
+  ## `server`, "" for the one connected) the inbox holds -- the session's
+  ## pending-request count.
+  discard vm.revision.val
+  for item in vm.snapshot.items:
+    if item.kind == ikAsyncFeedback and item.session.id == sessionId and
+        item.server == server:
+      inc result
+
+proc pendingFeedbackText*(vm: InboxVM; r: InboxItemRef): string =
+  ## Tracked: the pending-request mark a feedback request's row carries:
+  ## `Needs Follow-up` when it is its session's only feedback request,
+  ## `N pending` when the session has several; "" for a row of another kind
+  ## or an item the inbox does not hold. Every host's row reads it here, so
+  ## each counts alike.
+  discard vm.revision.val
+  let found = vm.itemOf(r)
+  if not found.found or found.item.kind != ikAsyncFeedback: return ""
+  pendingCountText(vm.pendingFeedbackCount(found.item.server, found.item.session.id))
+
 proc countText*(vm: InboxVM): string =
   ## Tracked: `3 waiting`, "" for none.
   countText(vm.count)

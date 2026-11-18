@@ -99,6 +99,94 @@ suite "what each page shows":
       pending.dispose()
       disposeRoot()
 
+  test "test_inbox_item_vm_login_states: pending, a carry error, cancelling, completed, failed, no request":
+    createRoot proc(disposeRoot: proc()) =
+      let (_, pending) = pageOf("login")
+      check pending.hasLoginRequest
+      check pending.loginState == lsPending
+      check pending.loginText == LocalSignInText
+      check pending.loginError == ""
+      check pending.canCancelLogin
+      check not pending.canContinueLogin
+      # A carry error: the sign-in finished but the agent could not take it
+      # up; the request stays pending, Cancel stays offered.
+      let (_, carry) = pageOf("login-carry-error-pending")
+      check carry.loginState == lsPending
+      check carry.loginText == LocalSignInText
+      check carry.loginError == LoginCarryErrorText
+      check carry.canCancelLogin
+      check not carry.canContinueLogin
+      # The server's own states.
+      let (cancellingSource, cancelling) = pageOf("login-cancelling")
+      check cancelling.loginState == lsCancelling
+      check cancelling.loginText == CancellingSignInText
+      check not cancelling.canCancelLogin
+      check not cancelling.canContinueLogin
+      check not cancelling.cancelLogin()
+      check cancellingSource.record.len == 0
+      let (_, completed) = pageOf("login-completed")
+      check completed.loginState == lsCompleted
+      check completed.loginText ==
+        "Signed in to Example Cloud \xE2\x80\x94 login complete"
+      check completed.loginError == ""
+      check not completed.canCancelLogin
+      check completed.canContinueLogin           # moving on is the only press
+      let (_, failed) = pageOf("login-failed")
+      check failed.loginState == lsFailed
+      check failed.loginText == SignInFailedText
+      check failed.loginError == LoginFailedText
+      check not failed.canCancelLogin
+      check not failed.canContinueLogin
+      # A login item that holds no request.
+      let (emptySource, empty) = pageOf("login-none")
+      check not empty.hasLoginRequest
+      check empty.loginText == NoLoginRequestText
+      check empty.loginError == ""
+      check not empty.canCancelLogin
+      check not empty.canContinueLogin
+      check not empty.cancelLogin()
+      check emptySource.record.len == 0
+      # Another kind of page has no login line.
+      let (_, question) = pageOf("question")
+      check question.loginText == ""
+      for vm in [pending, carry, cancelling, completed, failed, empty, question]:
+        vm.dispose()
+      disposeRoot()
+
+  test "Cancel on a login request: cancelling while in flight, then no request, or refused and offered again":
+    createRoot proc(disposeRoot: proc()) =
+      let (source, login) = pageOf("login")
+      source.script.setRule(oaCancelLogin, neverAnswered())
+      check login.cancelLogin()
+      check login.loginState == lsCancelling
+      check login.loginText == CancellingSignInText
+      check login.phaseText == ""                # the login line says it
+      check not login.canCancelLogin
+      check not login.cancelLogin()              # one in flight: nothing more sent
+      check source.record.len == 1
+      login.dispose()
+      # Confirmed: the request is withdrawn and the page says there is none.
+      let (confirmedSource, withdrawn) = pageOf("login")
+      check withdrawn.cancelLogin()
+      check not withdrawn.hasLoginRequest
+      check withdrawn.loginText == NoLoginRequestText
+      check withdrawn.phaseText == ""
+      check not withdrawn.cancelLogin()
+      check confirmedSource.record.len == 1
+      withdrawn.dispose()
+      # Refused: the request stays pending, the reason is shown, and Cancel
+      # is offered again.
+      let (refusedSource, refused) = pageOf("login")
+      refusedSource.script.setRule(oaCancelLogin, failedWith("the sign-in window is busy"))
+      check refused.cancelLogin()
+      check refused.loginState == lsPending
+      check refused.phaseText == CancelFailedText & ": the sign-in window is busy"
+      check refused.canCancelLogin
+      check refused.cancelLogin()
+      check refusedSource.record.len == 2
+      refused.dispose()
+      disposeRoot()
+
 suite "the answer form":
   test "validation: an empty answer, no option chosen, a confirmation undecided; nothing is sent":
     createRoot proc(disposeRoot: proc()) =

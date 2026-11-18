@@ -22,6 +22,19 @@
 ## answered (`Answer sent; waiting for the agent to continue.`), failed
 ## (`Failed to submit answer`, with the reason).
 ##
+## **A login request** is drawn in one of its states (`loginState`,
+## `loginText`): pending (the local-desktop handoff), cancelling (the
+## server says so, or the operator's Cancel is in flight), completed in place
+## (`Signed in to <provider> — login complete`), failed; a carry error (the
+## sign-in finished but the agent could not take it up, and the request stays
+## pending) is shown inline (`loginError`). When the item holds no request,
+## or the operator's Cancel was confirmed (the request is withdrawn), the
+## page says `No pending login requests.` (`hasLoginRequest` false). Cancel
+## is offered only on a pending request with no cancel in flight
+## (`canCancelLogin`); Continue only on a completed one (`canContinueLogin`),
+## where it moves on from the item: the host binds it (the Inbox panel to
+## its Next), since the page holds no order of its own.
+##
 ## **Expiry.** A feedback request past its `expiresAt` is drawn with the
 ## `Expired` badge (`expiredBadge`, the request's state), and a submission
 ## to it is refused with the domain's message (`This request has expired`,
@@ -56,6 +69,10 @@ const
   SubmittingText* = "Submitting\xE2\x80\xA6"
   ExpiredBadge* = "Expired"
   LocalSignInText* = "A sign-in window has opened on this desktop."
+  CancellingSignInText* = "Cancelling sign-in\xE2\x80\xA6"
+  SignInFailedText* = "Sign-in failed"
+  NoLoginRequestText* = "No pending login requests."
+  CancelFailedText* = "Failed to cancel the sign-in"
 
 type
   PagePhase* = enum
@@ -184,16 +201,74 @@ proc approvalLines*(vm: InboxItemVM): seq[string] =
   discard vm.revision.val
   for a in vm.detail.approvals: result.add a.approvalSummary
 
-proc loginText*(vm: InboxItemVM): string =
-  ## Tracked: the login request's state line: the local-desktop handoff,
-  ## cancelling, `Signed in to <provider> — login complete`, or its error.
+proc itemTarget(vm: InboxItemVM): string =
+  ## The tracker's target of an action answering this item (`targetOf`).
+  "item:" & vm.item.server & ":" & vm.item.id
+
+proc pageTarget(vm: InboxItemVM): string =
+  ## The target whose state the page shows: its last action's, or, before
+  ## the page sent one, an answer to its item sent from another page of it.
+  if vm.lastTarget.len > 0: vm.lastTarget else: vm.itemTarget
+
+proc cancelEntry(vm: InboxItemVM): tuple[found: bool, entry: TrackedAction] =
+  ## The last action on this item when it is a cancel of its login request
+  ## (from this page or another page of the same item).
+  let e = vm.tracker.entryOf(vm.itemTarget)
+  (e.status != astIdle and e.action.kind == oaCancelLogin, e)
+
+proc hasLoginRequest*(vm: InboxItemVM): bool =
+  ## Tracked: the page has a login request to show: the item is a login
+  ## request, it names one, and the operator's Cancel of it was not
+  ## confirmed (a withdrawn request is gone).
   discard vm.revision.val
+  if vm.detail.kind != ikLoginRequest or vm.detail.login.requestId.len == 0:
+    return false
+  let c = vm.cancelEntry
+  not (c.found and c.entry.status == astConfirmed)
+
+proc loginState*(vm: InboxItemVM): LoginState =
+  ## Tracked: the login request's state as the page draws it: the server's,
+  ## except `lsCancelling` while the operator's Cancel of a pending request
+  ## is in flight.
+  discard vm.revision.val
+  let c = vm.cancelEntry
+  if vm.detail.login.state == lsPending and c.found and c.entry.status == astSubmitting:
+    lsCancelling
+  else: vm.detail.login.state
+
+proc loginText*(vm: InboxItemVM): string =
+  ## Tracked: the login request's state line: the local-desktop handoff (a
+  ## remote view's prompt), `Cancelling sign-in…`, `Signed in to <provider> —
+  ## login complete`, `Sign-in failed`; `No pending login requests.` for a
+  ## login item with no request; "" for another kind.
+  discard vm.revision.val
+  if vm.detail.kind != ikLoginRequest: return ""
+  if not vm.hasLoginRequest: return NoLoginRequestText
   let login = vm.detail.login
-  case login.state
+  case vm.loginState
   of lsPending: (if login.mode == lmLocalDesktop: LocalSignInText else: login.prompt)
-  of lsCancelling: "Cancelling sign-in\xE2\x80\xA6"
+  of lsCancelling: CancellingSignInText
   of lsCompleted: "Signed in to " & login.provider & " \xE2\x80\x94 login complete"
-  of lsFailed: login.error
+  of lsFailed: SignInFailedText
+
+proc loginError*(vm: InboxItemVM): string =
+  ## Tracked: the error shown inline under the request: a pending request's
+  ## carry error, or why a sign-in failed; "" otherwise.
+  if not vm.hasLoginRequest: return ""
+  case vm.loginState
+  of lsPending, lsFailed: vm.detail.login.error
+  of lsCancelling, lsCompleted: ""
+
+proc canCancelLogin*(vm: InboxItemVM): bool =
+  ## Tracked: Cancel is offered: a pending request (a carry error keeps it
+  ## pending) whose cancel is not in flight.
+  vm.state.val == asReady and vm.hasLoginRequest and vm.loginState == lsPending
+
+proc canContinueLogin*(vm: InboxItemVM): bool =
+  ## Tracked: Continue is offered: the login request completed (the sign-in
+  ## is confirmed in place), so the operator can move on from it. It sends
+  ## nothing; what moving on means is the host's (`Next` in the Inbox panel).
+  vm.state.val == asReady and vm.hasLoginRequest and vm.loginState == lsCompleted
 
 proc isExpired*(vm: InboxItemVM; nowMs: int64): bool =
   ## Tracked: a feedback request past its deadline.
@@ -203,15 +278,6 @@ proc isExpired*(vm: InboxItemVM; nowMs: int64): bool =
 proc expiredBadge*(vm: InboxItemVM; nowMs: int64): string =
   ## Tracked: `Expired` for a feedback request past its deadline, "" otherwise.
   if vm.isExpired(nowMs): ExpiredBadge else: ""
-
-proc itemTarget(vm: InboxItemVM): string =
-  ## The tracker's target of an action answering this item (`targetOf`).
-  "item:" & vm.item.server & ":" & vm.item.id
-
-proc pageTarget(vm: InboxItemVM): string =
-  ## The target whose state the page shows: its last action's, or, before
-  ## the page sent one, an answer to its item sent from another page of it.
-  if vm.lastTarget.len > 0: vm.lastTarget else: vm.itemTarget
 
 proc phase*(vm: InboxItemVM): PagePhase =
   ## Tracked: the state of the page's last action (or of the last answer to
@@ -224,14 +290,19 @@ proc phase*(vm: InboxItemVM): PagePhase =
   of astFailed: ppFailed
 
 proc phaseText*(vm: InboxItemVM): string =
-  ## Tracked: the line under the form for the page's last action.
+  ## Tracked: the line under the form for the page's last action. A login
+  ## request's Cancel has none while it is in flight or once it is confirmed
+  ## (the request's own line says `Cancelling sign-in…`, then `No pending
+  ## login requests.`), and `Failed to cancel the sign-in` when refused.
+  let entry = vm.tracker.entryOf(vm.pageTarget)
+  let cancel = entry.status != astIdle and entry.action.kind == oaCancelLogin
   case vm.phase
   of ppIdle: ""
-  of ppSubmitting: SubmittingText
-  of ppAnswered: AnswerSentText
+  of ppSubmitting: (if cancel: "" else: SubmittingText)
+  of ppAnswered: (if cancel: "" else: AnswerSentText)
   of ppFailed:
-    let reason = vm.tracker.entryOf(vm.pageTarget).reason
-    if reason.len > 0: AnswerFailedText & ": " & reason else: AnswerFailedText
+    let head = if cancel: CancelFailedText else: AnswerFailedText
+    if entry.reason.len > 0: head & ": " & entry.reason else: head
 
 proc heartbeats*(vm: InboxItemVM): int =
   ## How many viewing heartbeats the page has sent.
@@ -342,8 +413,9 @@ proc decideApproval*(vm: InboxItemVM; requestId: string;
   false
 
 proc cancelLogin*(vm: InboxItemVM): bool =
-  ## Withdraws the login request.
-  if vm.state.val != asReady or vm.detail.kind != ikLoginRequest: return false
+  ## Withdraws the login request. False, and nothing is sent, unless Cancel
+  ## is offered (`canCancelLogin`).
+  if not vm.canCancelLogin: return false
   vm.send(operator_actions.cancelLogin(vm.sessionId, vm.detail.login.requestId,
                                        itemId = vm.item.id, server = vm.item.server))
 

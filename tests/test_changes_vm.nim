@@ -216,7 +216,8 @@ suite "Spec Changes":
       check not vm.submitRequestChanges()                     # nothing typed
       vm.setRequestText("Name the old port too.")
       check vm.submitRequestChanges()
-      check vm.revert(vm.keyOf("specs/Relay-Glossary.md"))
+      check vm.requestRevert(vm.keyOf("specs/Relay-Glossary.md"))
+      check vm.confirmRevert()
       check vm.keyOf("specs/Relay-Glossary.md") == ""
       check vm.tabLine[0] == "*Spec Changes 7"
       check source.record == @[
@@ -225,6 +226,96 @@ suite "Spec Changes":
         "request-spec-changes task=relay-backpressure milestone=RB-M2 " &
           "spec=specs/Relay-Ports.md text=\"Name the old port too.\"",
         "revert-spec-change task=relay-backpressure milestone=RB-M1 spec=specs/Relay-Glossary.md"]
+      vm.dispose()
+      disposeRoot()
+
+  test "test_changes_vm_revert_confirm: Undo / Revert asks first; nothing is sent until the reader confirms":
+    createRoot proc(disposeRoot: proc()) =
+      let source = ScriptedActionSource(changesFixture("populated"))
+      let vm = newChangesVM(source, relayScope())
+      vm.load()
+      let glossary = vm.keyOf("specs/Relay-Glossary.md")
+      let ports = vm.keyOf("specs/Relay-Ports.md")
+      proc confirming(): seq[string] =
+        for c in vm.specCards:
+          if c.confirmingRevert: result.add c.title
+      # Pressed: the card asks, and nothing reaches the seam.
+      check vm.requestRevert(glossary)
+      check vm.revertCard.val == glossary
+      check confirming() == @["specs/Relay-Glossary.md"]
+      check source.record.len == 0
+      check vm.tracker.sentCount == 0
+      # Declined: the question goes, still nothing sent.
+      vm.cancelRevert()
+      check confirming().len == 0
+      check not vm.confirmRevert()                 # nothing asks any more
+      check source.record.len == 0
+      # One card asks at a time: a second press moves the question.
+      check vm.requestRevert(glossary)
+      check vm.requestRevert(ports)
+      check confirming() == @["specs/Relay-Ports.md"]
+      check source.record.len == 0
+      # Only a spec card reverts; a requirement's card from the diff does not.
+      check not vm.requestRevert(vm.specCards[0].key)
+      check confirming() == @["specs/Relay-Ports.md"]
+      # The question is the reader's: it survives a restart.
+      vm.restart()
+      check confirming() == @["specs/Relay-Ports.md"]
+      check source.record.len == 0
+      # Confirmed: exactly one revert, of the card that asked.
+      check vm.confirmRevert()
+      check confirming().len == 0
+      check source.record == @[
+        "revert-spec-change task=relay-backpressure milestone=RB-M2 spec=specs/Relay-Ports.md"]
+      check vm.keyOf("specs/Relay-Ports.md") == ""   # reverted: the card is gone
+      check not vm.confirmRevert()
+      check source.record.len == 1
+      vm.dispose()
+      disposeRoot()
+
+  test "a revert's states: reverting while the seam holds it, failed with the reason; a gone card sends nothing":
+    createRoot proc(disposeRoot: proc()) =
+      let source = ScriptedActionSource(changesFixture("populated"))
+      source.script.setRule(oaRevertSpecChange, neverAnswered())
+      let vm = newChangesVM(source, relayScope())
+      vm.load()
+      proc cardOf(title: string): SpecCardView =
+        for c in vm.specCards:
+          if c.title == title: return c
+      let glossary = vm.keyOf("specs/Relay-Glossary.md")
+      check vm.requestRevert(glossary)
+      check vm.confirmRevert()
+      check cardOf("specs/Relay-Glossary.md").action == astSubmitting
+      check cardOf("specs/Relay-Glossary.md").actionKind == oaRevertSpecChange
+      # While it is in flight the card cannot ask again.
+      check not vm.requestRevert(glossary)
+      check not cardOf("specs/Relay-Glossary.md").confirmingRevert
+      check source.record.len == 1
+      # A refused revert keeps the card, failed with the seam's reason.
+      source.script.setRule(oaRevertSpecChange, failedWith("the plan changed on the server"))
+      let ports = vm.keyOf("specs/Relay-Ports.md")
+      check vm.requestRevert(ports)
+      check vm.confirmRevert()
+      check cardOf("specs/Relay-Ports.md").action == astFailed
+      check cardOf("specs/Relay-Ports.md").actionKind == oaRevertSpecChange
+      check cardOf("specs/Relay-Ports.md").actionReason == "the plan changed on the server"
+      check source.record.len == 2
+      # A card that left the record while it asked: confirming sends nothing.
+      source.script.setRule(oaRevertSpecChange, confirmed())
+      let metrics = vm.keyOf("specs/Relay-Metrics.md")
+      check vm.requestRevert(metrics)
+      var gone = source.reviews[0][1]
+      for m in gone.record.milestones.mitems:
+        var kept: seq[SpecChange]
+        for c in m.specChanges:
+          if c.spec != "specs/Relay-Metrics.md": kept.add c
+        m.specChanges = kept
+      source.reviews[0][1] = gone
+      vm.restart()
+      check vm.keyOf("specs/Relay-Metrics.md") == ""
+      check not vm.confirmRevert()
+      check vm.revertCard.val == ""
+      check source.record.len == 2
       vm.dispose()
       disposeRoot()
 
