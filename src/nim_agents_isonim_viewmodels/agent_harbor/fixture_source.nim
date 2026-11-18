@@ -38,7 +38,7 @@
 ## reads exactly the files it names and fails to compile if one is missing, so
 ## a fixture set and its manifest cannot drift apart unnoticed.
 
-import std/[json, os, strutils, tables]
+import std/[json, os, staticos, strutils, tables]
 import nim_agents/agent_harbor/session_replay
 import ./data_source
 
@@ -53,11 +53,6 @@ const
     "agent-harbor-front-end" / "fixtures"
     ## The repo-root `config.nims` names the same path in its nimcache key.
 
-proc shellQuoted(path: string): string {.compileTime.} =
-  ## POSIX single quoting, written out because `os.quoteShell` is not
-  ## available when this module is compiled for the JS target.
-  "'" & path.replace("'", "'\\''") & "'"
-
 proc chooseFixtureRoot(): string {.compileTime.} =
   let fromEnv = getEnv("AGENT_HARBOR_FIXTURES")
   if agentHarborFixtures.len > 0:
@@ -66,7 +61,13 @@ proc chooseFixtureRoot(): string {.compileTime.} =
     syntheticFixtureRoot
   elif fromEnv.len > 0:
     fromEnv
-  elif gorgeEx("test -f " & shellQuoted(privateFixtureRoot / "manifest.json")).exitCode == 0:
+  elif staticFileExists(privateFixtureRoot / "manifest.json"):
+    # `staticFileExists`, not a shell `test -f` through `gorgeEx`: `nim check`
+    # and nimsuggest do not run `gorgeEx` and answer exit code 0, so the
+    # probe chose the private set wherever it is absent and `nim check`
+    # failed to read it. `staticFileExists` runs under every command and for
+    # the JS target too, so `nim check` embeds the set `nim c` embeds (the
+    # repo-root `config.nims` probes the same file the same way).
     privateFixtureRoot
   else:
     syntheticFixtureRoot
