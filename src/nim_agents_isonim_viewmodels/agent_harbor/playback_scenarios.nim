@@ -15,10 +15,11 @@
 ##   completion -- for the session activity timeline, while another
 ##   session's events interleave;
 ## - `inbox-run` (`inboxRunScenario`): the operator's inbox over a run --
-##   items arrive (nothing takes the screen), the operator walks them with
-##   Next, a boost ends and the server reorders, the operator answers with
-##   auto-switch off and then on, goes back with Previous, an item is
-##   answered on another front-end, and the inbox empties.
+##   a feedback request is waiting from before the run, items arrive
+##   (nothing takes the screen), the operator walks them with Next, a boost
+##   ends and the server reorders, the operator answers with auto-switch off
+##   and then on, goes back with Previous, an item is answered on another
+##   front-end, and a last item arrives while the operator reads a page.
 ##
 ## Each scenario's named moments are the states its stories are captured at,
 ## each view at the moments whose event it shows (`views`); their expected
@@ -497,16 +498,17 @@ const
   InboxSchemaSessionId* = "5ca1ab1e-0e03-4e00-8000-00000000e003"
     ## Asks for permission (`run-permission`), allowed here.
   InboxNotesSessionId* = "5ca1ab1e-0e04-4e00-8000-00000000e004"
-    ## Asks for feedback (`run-feedback`).
+    ## Asks for feedback (`run-feedback`), waiting from before the run and
+    ## never answered in it.
   InboxBenchSessionId* = "5ca1ab1e-0e05-4e00-8000-00000000e005"
-    ## Asks the operator to sign in (`run-login`).
+    ## Asks the operator to sign in (`run-login`), the run's last item.
   RunQuestion* = InboxItemRef(id: "run-question")
   RunEndedTurn* = InboxItemRef(id: "run-ended-turn")
   RunPermission* = InboxItemRef(id: "run-permission")
   RunFeedback* = InboxItemRef(id: "run-feedback")
   RunLogin* = InboxItemRef(id: "run-login")
-  InboxRunMoments* = ["first-wait", "three-waiting", "next", "boost-ends", "answered",
-                      "auto-switch", "prev", "resolved-elsewhere", "empty"]
+  InboxRunMoments* = ["first-wait", "four-waiting", "next", "boost-ends", "answered",
+                      "auto-switch", "prev", "resolved-elsewhere", "arrives-while-reading"]
 
 proc waiting(r: InboxItemRef; kind: InboxKind; sessionId, title: string;
              atMs: int64; explanation: string; priority = ipNormal;
@@ -549,6 +551,13 @@ proc inboxRunScenario*(): PlaybackScenario =
   ## own. The route-cache session's question and the operator's answer are
   ## also events of its own stream (a question wait is the one a session's
   ## events say; the others are the listing's). Only the inbox view is fed.
+  ##
+  ## The inbox is never empty: a low-priority feedback request is waiting
+  ## from before the first moment and stays to the end, as the sessions are
+  ## running from before it. So the first frame, like every moment, shows
+  ## items, and the story declares data; the empty inbox is a static story
+  ## of its own, and `tests/test_inbox_vm.nim` holds the inbox emptying
+  ## under a walk (Next and Previous disabled though a stack was visited).
   var sessions: seq[ScenarioSession]
   for (id, prompt) in [(InboxRouteSessionId, "Port the route cache"),
                        (InboxLoggingSessionId, "Tidy the upload client's logging"),
@@ -573,36 +582,36 @@ proc inboxRunScenario*(): PlaybackScenario =
     "Migrate the cache schema", sec(20),
     "Urgent: the migration holds a write lock until you decide.", priority = ipUrgent)
   let feedback = waiting(RunFeedback, ikAsyncFeedback, InboxNotesSessionId,
-    "Write the release notes", sec(55), "Low priority; the agent keeps working.",
+    "Write the release notes", sec(-60), "Low priority; the agent keeps working.",
     priority = ipLow)
   let login = waiting(RunLogin, ikLoginRequest, InboxBenchSessionId,
-    "Benchmark the cache", sec(55), "Blocked until someone signs in.", priority = ipLow)
+    "Benchmark the cache", sec(90), "Blocked until someone signs in.", priority = ipLow)
   let extras = @[
-    added(sec(10), question, [RunQuestion]),
-    added(sec(20), ended, [RunEndedTurn, RunQuestion]),
-    added(sec(20), permission, [RunPermission, RunEndedTurn, RunQuestion]),
+    added(sec(10), question, [RunQuestion, RunFeedback]),
+    added(sec(20), ended, [RunEndedTurn, RunQuestion, RunFeedback]),
+    added(sec(20), permission, [RunPermission, RunEndedTurn, RunQuestion, RunFeedback]),
     pressed(sec(30), opNext),
-    updated(sec(40), endedCold, [RunPermission, RunQuestion, RunEndedTurn]),
+    updated(sec(40), endedCold, [RunPermission, RunQuestion, RunEndedTurn, RunFeedback]),
     pressed(sec(50), opAnswer, option = "allow_once"),
-    resolved(sec(50), RunPermission, [RunQuestion, RunEndedTurn]),
-    added(sec(55), feedback, [RunQuestion, RunEndedTurn, RunFeedback]),
-    added(sec(55), login, [RunQuestion, RunEndedTurn, RunFeedback, RunLogin]),
+    resolved(sec(50), RunPermission, [RunQuestion, RunEndedTurn, RunFeedback]),
     pressed(sec(60), opAutoSwitch, on = true),
     pressed(sec(60), opNext),
     pressed(sec(60), opAnswer, text = "Keep it behind a flag."),
-    resolved(sec(60), RunQuestion, [RunEndedTurn, RunFeedback, RunLogin]),
+    resolved(sec(60), RunQuestion, [RunEndedTurn, RunFeedback]),
     pressed(sec(70), opPrev),
     pressed(sec(75), opNext),
-    resolved(sec(80), RunEndedTurn, [RunFeedback, RunLogin]),
-    resolved(sec(90), RunFeedback, [RunLogin]),
-    resolved(sec(90), RunLogin, [])]
+    resolved(sec(80), RunEndedTurn, [RunFeedback]),
+    added(sec(90), login, [RunFeedback, RunLogin])]
   result = buildScenario("inbox-run", "the operator's inbox over a run",
     PlaybackT0, sessions, @[], extras = extras,
-    moments = [(sec(10), "first-wait"), (sec(20), "three-waiting"), (sec(30), "next"),
+    moments = [(sec(10), "first-wait"), (sec(20), "four-waiting"), (sec(30), "next"),
                (sec(40), "boost-ends"), (sec(50), "answered"), (sec(60), "auto-switch"),
-               (sec(70), "prev"), (sec(80), "resolved-elsewhere"), (sec(90), "empty")],
+               (sec(70), "prev"), (sec(80), "resolved-elsewhere"),
+               (sec(90), "arrives-while-reading")],
     views = [("inbox", @InboxRunMoments)])
-  result.inbox = InboxSnapshot(generatedAtMs: PlaybackT0)
+  var waitingBefore = feedback
+  waitingBefore.position = 1   # 1-based, as a listing serves it
+  result.inbox = InboxSnapshot(generatedAtMs: PlaybackT0, items: @[waitingBefore])
   result.inboxDetails = @[
     InboxItemDetail(itemId: RunQuestion.id, sessionId: InboxRouteSessionId,
                     kind: ikBlockedQuestion, blocked: true, requestId: "run-q-1",
