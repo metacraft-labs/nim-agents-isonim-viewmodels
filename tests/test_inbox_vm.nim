@@ -472,3 +472,26 @@ suite "load states and restarts":
       check vm.items[2].holderText == "needs you"
       vm.dispose()
       disposeRoot()
+
+suite "the long inbox":
+  test "every one of its forty items has a page, and one far down loads it":
+    # The hosts' keyboard stories put the item on screen far down the long
+    # list (`InboxLongKeyboard`): every item there must have a page to show.
+    createRoot proc(disposeRoot: proc()) =
+      let source = ScriptedActionSource(inboxFixture("long"))
+      let order = source.inbox.orderOf
+      check order.len == 40
+      var pages: seq[string]
+      for d in source.details: pages.add d.itemId
+      check pages == source.inbox.ids
+      source.setCursor("default", InboxCursor(current: order[31], visited: order[0 .. 30]))
+      let vm = newInboxVM(source, showPages = true)
+      vm.load()
+      check vm.current.val.id == order[31].id
+      check not vm.page.isNil
+      check vm.page.state.val == asReady
+      check vm.prev()
+      check vm.current.val.id == order[30].id
+      check vm.page.state.val == asReady
+      vm.dispose()
+      disposeRoot()

@@ -96,6 +96,7 @@ type
     confirmingRevert*: bool
       ## Its Undo / Revert was pressed and waits for the reader's
       ## confirmation; nothing has been sent.
+    focused*: bool        ## the keyboard is on it (`focus`)
     action*: ActionStatus ## the state of its last action
     actionKind*: OperatorActionKind
       ## Which write its last action is (meaningful unless `action` is idle),
@@ -107,6 +108,7 @@ type
     key*: bool            ## one of the plan's key source files
     counts*: string       ## `+a −r`
     selected*: bool
+    focused*: bool        ## the keyboard is on it (`focus`)
 
   FileDiffView* = object
     state*: FileDiffState
@@ -159,6 +161,10 @@ type
     editorRequest*: Signal[string]
     editorRequests*: Signal[int]
       ## Moves each time a file is asked to open in the editor.
+    focus*: Signal[string]
+      ## The item the keyboard is on in the tab shown: a spec card's key in
+      ## Spec Changes, a file's path in Code ("" for none). The reader's,
+      ## kept on `restart`; changing the tab clears it.
 
 proc newChangesVM*(source: AgentHarborDataSource; scope: ReviewScope;
                    tracker: ActionTracker = nil): ChangesVM =
@@ -175,7 +181,8 @@ proc newChangesVM*(source: AgentHarborDataSource; scope: ReviewScope;
               base: createSignal(MergeBase), selectedFile: createSignal(""),
               requestCard: createSignal(""), requestText: createSignal(""),
               revertCard: createSignal(""),
-              editorRequest: createSignal(""), editorRequests: createSignal(0))
+              editorRequest: createSignal(""), editorRequests: createSignal(0),
+              focus: createSignal(""))
 
 proc tracker*(vm: ChangesVM): ActionTracker = vm.tracker
 
@@ -436,6 +443,7 @@ proc specCards*(vm: ChangesVM): seq[SpecCardView] =
     v.showsDiff = v.key in vm.diffCards
     v.requestOpen = vm.requestCard.val == v.key
     v.confirmingRevert = vm.revertCard.val == v.key
+    v.focused = vm.focus.val == v.key
     let entry = vm.tracker.entryOf(vm.actionTarget(v.path))
     v.action = entry.status
     v.actionKind = entry.action.kind
@@ -488,9 +496,10 @@ proc files*(vm: ChangesVM): seq[FileRow] =
   discard vm.revision.val
   let keys = keySourcePaths(vm.milestonesInScope)
   let selected = vm.selectedFile.val
+  let focus = vm.focus.val
   for f in vm.shownFiles:
     result.add FileRow(file: f, key: f.isKeyFile(keys), counts: countsText(f.added, f.removed),
-                       selected: f.path == selected)
+                       selected: f.path == selected, focused: f.path == focus)
 
 proc filesNotice*(vm: ChangesVM): string =
   ## Tracked: `No files match the current filters` when the filter hides
@@ -537,8 +546,23 @@ proc selectedPosition*(vm: ChangesVM): string =
 # ---------------------------------------------------------------------------
 
 proc selectTab*(vm: ChangesVM; tab: ReviewTab) =
+  ## Shows `tab`; the keyboard's item (`focus`) belongs to the tab it was in
+  ## and is cleared when the tab changes.
   vm.tabChosen = true
+  if tab != vm.activeTab.val: vm.focus.val = ""
   vm.activeTab.val = tab
+
+proc stepTab*(vm: ChangesVM; delta: int): bool =
+  ## The tab `delta` places along the bar (the reviewer's order); false at
+  ## either end, where nothing changes.
+  let shown = vm.tabs
+  var at = -1
+  for i, t in shown:
+    if t.active: at = i
+  let to = at + delta
+  if at < 0 or to < 0 or to > shown.high: return false
+  vm.selectTab(shown[to].tab)
+  true
 
 proc selectMilestone*(vm: ChangesVM; milestoneId: string) =
   ## "" for all milestones.
@@ -588,6 +612,58 @@ proc openInEditor*(vm: ChangesVM; path: string) =
   ## Asks the host to open `path` as a unified-diff editor tab.
   vm.editorRequest.val = path
   vm.editorRequests.val = vm.editorRequests.val + 1
+
+# ---------------------------------------------------------------------------
+# The keyboard's item
+# ---------------------------------------------------------------------------
+
+proc focusables*(vm: ChangesVM): seq[string] =
+  ## Tracked: what the keyboard moves through in the tab shown, in the
+  ## order drawn: the spec cards (Spec Changes), the files (Code); none in
+  ## Tests and Implementation Details, whose rows do not open.
+  case vm.activeTab.val
+  of rtSpecChanges:
+    if vm.notice.len > 0: return
+    for c in vm.specCards: result.add c.key
+  of rtCode:
+    for f in vm.files: result.add f.file.path
+  else: discard
+
+proc stepFocus(vm: ChangesVM; delta: int): bool =
+  let items = vm.focusables
+  if items.len == 0: return false
+  let at = items.find(vm.focus.val)
+  let to = if at < 0: (if delta > 0: 0 else: items.high) else: at + delta
+  if to < 0 or to > items.high: return false
+  vm.focus.val = items[to]
+  vm.bumpReader()
+  true
+
+proc focusNext*(vm: ChangesVM): bool =
+  ## The keyboard moves to the next item (the first when it is on none);
+  ## false at the last, where it stays.
+  vm.stepFocus(1)
+
+proc focusPrevious*(vm: ChangesVM): bool =
+  ## The keyboard moves to the previous item (the last when it is on none);
+  ## false at the first, where it stays.
+  vm.stepFocus(-1)
+
+proc toggleFocused*(vm: ChangesVM): bool =
+  ## Opens or closes the keyboard's item: a spec card opens or closes; a
+  ## file is selected (its diff opens under it) or, selected, unselected.
+  ## False when the keyboard is on nothing the tab shows.
+  let key = vm.focus.val
+  if key.len == 0 or key notin vm.focusables: return false
+  case vm.activeTab.val
+  of rtSpecChanges: vm.toggleCard(key)
+  of rtCode:
+    if vm.selectedFile.val == key:
+      vm.selectedFile.val = ""
+      vm.bumpReader()
+    else: vm.selectFile(key)
+  else: return false
+  true
 
 # ---------------------------------------------------------------------------
 # The writes
