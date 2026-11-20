@@ -73,7 +73,11 @@ Structure:
   over nim-agents' `instruction_composer` and the front-end's own seam
   `instruction_router.nim` (`InstructionRouter`: the routing agent and the
   UI-action agent, never Agent Harbor); its deliveries to Agent Harbor are
-  operator actions through `submitAction`.
+  operator actions through `submitAction`. The omnibox's result commands
+  and search are `result_commands_vm.nim` `ResultCommandsVM`, over
+  nim-agents' `result_commands` and the seams `result_sources.nim`
+  (`SearchProvider` for `/search`, `InputCommandSource` for Agent Harbor's
+  input-command discovery and queries, both read-only).
 - **Writes.** An operator's action leaves a viewmodel only through
   `AgentHarborDataSource.submitAction`. The prototypes answer it with
   `scripted_actions.nim` `ScriptedActionSource` (and the playback source's
