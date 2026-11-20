@@ -361,6 +361,47 @@ suite "auto-switch":
       vm.dispose()
       disposeRoot()
 
+  test "an item that arrives never takes the screen, even with auto-switch on":
+    # Auto-switch moves only after the operator's own answer; an arrival is
+    # the server's change, so it adds a row and nothing else: no step, no tab
+    # asked for, no input focused -- whether nothing is on screen yet or the
+    # operator is reading an item.
+    createRoot proc(disposeRoot: proc()) =
+      let source = populated()
+      let vm = newInboxVM(source, showPages = true)
+      vm.load()
+      vm.setAutoSwitch(true)
+      let tabBefore = vm.requestedSession.val
+      # Nothing on screen: the arrival is listed at the top and stays a row.
+      var first = source.inbox.items[1]
+      first.id = "inbox-item-arrived-1"
+      first.position = 1
+      discard source.sendInbox(InboxEvent(kind: ieAdded, item: first))
+      check vm.ids == @["inbox-item-arrived-1", P, Q, E, L, F]
+      check vm.current.val.isNone
+      check vm.moveCount == 0
+      check vm.focusRequests.val == 0
+      check vm.requestedSession.val == tabBefore
+      # Reading an item: a second arrival above it moves nothing.
+      check vm.next()
+      check vm.current.val.id == "inbox-item-arrived-1"
+      check vm.next()
+      check vm.current.val.id == P
+      let moves = vm.moveCount
+      let tab = vm.requestedSession.val
+      check tab == sessionIdOf(3)
+      var second = source.inbox.items[2]
+      second.id = "inbox-item-arrived-2"
+      second.position = 1
+      discard source.sendInbox(InboxEvent(kind: ieAdded, item: second))
+      check vm.ids == @["inbox-item-arrived-2", "inbox-item-arrived-1", P, Q, E, L, F]
+      check vm.current.val.id == P
+      check vm.moveCount == moves
+      check vm.focusRequests.val == 0
+      check vm.requestedSession.val == tab
+      vm.dispose()
+      disposeRoot()
+
   test "it stops at the end of the inbox":
     createRoot proc(disposeRoot: proc()) =
       let source = ScriptedActionSource(inboxSource(firstItems(1),
