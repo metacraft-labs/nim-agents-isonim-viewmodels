@@ -360,7 +360,7 @@ proc applyEffects(source: ScriptedActionSource; action: OperatorAction) =
     else: discard
     source.reviews[r][1] = review
   of oaRequestSpecChanges, oaMarkViewing, oaInstructManager, oaLaunchTask,
-     oaStartInitiative, oaStopSession:
+     oaStartInitiative, oaStopSession, oaDecideSuggestion:
     discard   # recorded; nothing a reader sees changes
 
 method submitAction*(source: ScriptedActionSource; action: OperatorAction;

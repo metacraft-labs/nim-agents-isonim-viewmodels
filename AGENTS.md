@@ -77,7 +77,15 @@ Structure:
   and search are `result_commands_vm.nim` `ResultCommandsVM`, over
   nim-agents' `result_commands` and the seams `result_sources.nim`
   (`SearchProvider` for `/search`, `InputCommandSource` for Agent Harbor's
-  input-command discovery and queries, both read-only).
+  input-command discovery and queries, both read-only). An agent's suggested UI
+  actions, the block at a session timeline's end, are
+  `suggested_actions_vm.nim` `SuggestedActionsVM`, over nim-agents'
+  `suggested_actions`: approved actions are performed through the
+  front-end's UI-action seam (`InstructionRouter.performUiAction`;
+  `suggested_action_sources.nim` `ScriptedActionPerformer` in the
+  prototypes), the decision goes to Agent Harbor through `submitAction`,
+  and the decided suggestion is drawn as the timeline's own lines
+  (`recordLines`).
 - **Writes.** An operator's action leaves a viewmodel only through
   `AgentHarborDataSource.submitAction`. The prototypes answer it with
   `scripted_actions.nim` `ScriptedActionSource` (and the playback source's

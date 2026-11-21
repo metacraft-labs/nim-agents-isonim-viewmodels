@@ -16,6 +16,7 @@ build-native:
     nim c {{paths}} tests/test_inbox_item_vm.nim
     nim c {{paths}} tests/test_omnibox_composer_vm.nim
     nim c {{paths}} tests/test_result_commands_vm.nim
+    nim c {{paths}} tests/test_suggested_actions_vm.nim
     nim c {{paths}} tests/test_nimcache_is_worktree_local.nim
     nim c {{paths}} tests/test_fixture_set_rebuilds_on_switch.nim
 
@@ -30,6 +31,7 @@ build-js:
     nim js {{paths}} tests/test_inbox_item_vm.nim
     nim js {{paths}} tests/test_omnibox_composer_vm.nim
     nim js {{paths}} tests/test_result_commands_vm.nim
+    nim js {{paths}} tests/test_suggested_actions_vm.nim
 
 test: test-native test-js
 
@@ -44,6 +46,7 @@ test-native:
     nim c -r {{paths}} tests/test_inbox_item_vm.nim
     nim c -r {{paths}} tests/test_omnibox_composer_vm.nim
     nim c -r {{paths}} tests/test_result_commands_vm.nim
+    nim c -r {{paths}} tests/test_suggested_actions_vm.nim
     nim c -r {{paths}} tests/test_nimcache_is_worktree_local.nim
     nim c -r {{paths}} tests/test_fixture_set_rebuilds_on_switch.nim
 
@@ -58,6 +61,7 @@ test-js:
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_inbox_item_vm.nim
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_omnibox_composer_vm.nim
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_result_commands_vm.nim
+    bash tools/nim-js-test-gate.sh {{paths}} tests/test_suggested_actions_vm.nim
 
 lint: lint-nim lint-nix
 
@@ -73,6 +77,7 @@ lint-nim:
     nim check {{paths}} tests/test_inbox_item_vm.nim
     nim check {{paths}} tests/test_omnibox_composer_vm.nim
     nim check {{paths}} tests/test_result_commands_vm.nim
+    nim check {{paths}} tests/test_suggested_actions_vm.nim
     nim check {{paths}} tests/test_nimcache_is_worktree_local.nim
     nim check {{paths}} tests/test_fixture_set_rebuilds_on_switch.nim
 

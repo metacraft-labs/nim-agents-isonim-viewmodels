@@ -21,7 +21,9 @@
 ## The omnibox composer is `agent_harbor/omnibox_composer_vm`, over its
 ## routing seam `agent_harbor/instruction_router`; its result commands and
 ## search are `agent_harbor/result_commands_vm`, over the seams
-## `agent_harbor/result_sources`.
+## `agent_harbor/result_sources`. An agent's suggested UI actions, the block
+## at a session timeline's end, are `agent_harbor/suggested_actions_vm`,
+## performed through `agent_harbor/suggested_action_sources`.
 import nim_agents_isonim_viewmodels/activity_vm
 import nim_agents_isonim_viewmodels/agent_harbor/[data_source, fixture_source,
   synthetic_fleet, session_items, fleet_vm, session_tabs_vm, initiatives_vm,
@@ -30,11 +32,13 @@ import nim_agents_isonim_viewmodels/agent_harbor/[data_source, fixture_source,
   session_events, session_timeline_vm, synthetic_timelines, action_tracker,
   scripted_actions, changes_vm, inbox_item_vm, inbox_vm, inbox_playback,
   synthetic_changes, synthetic_inbox,
-  instruction_router, omnibox_composer_vm, result_sources, result_commands_vm]
+  instruction_router, omnibox_composer_vm, result_sources, result_commands_vm,
+  suggested_action_sources, suggested_actions_vm]
 export activity_vm, data_source, fixture_source, synthetic_fleet, session_items,
   fleet_vm, session_tabs_vm, initiatives_vm, initiative_progress_vm, progress_feed,
   source_feed, recording_switcher, initiative_tabs_vm, playback_scenario,
   playback_scenarios, playback_source, session_events, session_timeline_vm,
   synthetic_timelines, action_tracker, scripted_actions, changes_vm, inbox_item_vm,
   inbox_vm, inbox_playback, synthetic_changes, synthetic_inbox, instruction_router,
-  omnibox_composer_vm, result_sources, result_commands_vm
+  omnibox_composer_vm, result_sources, result_commands_vm, suggested_action_sources,
+  suggested_actions_vm
