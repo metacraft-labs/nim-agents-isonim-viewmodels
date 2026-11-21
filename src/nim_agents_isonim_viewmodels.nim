@@ -21,19 +21,21 @@
 ## The omnibox composer is `agent_harbor/omnibox_composer_vm`, over its
 ## routing seam `agent_harbor/instruction_router`; its result commands and
 ## search are `agent_harbor/result_commands_vm`, over the seams
-## `agent_harbor/result_sources`.
+## `agent_harbor/result_sources`. The progress pie every row and tab
+## carries (its state's colour family, its progress and the words that name
+## it) is `agent_harbor/progress_pie`.
 import nim_agents_isonim_viewmodels/activity_vm
 import nim_agents_isonim_viewmodels/agent_harbor/[data_source, fixture_source,
   synthetic_fleet, session_items, fleet_vm, session_tabs_vm, initiatives_vm,
   initiative_progress_vm, progress_feed, source_feed, recording_switcher,
-  initiative_tabs_vm, playback_scenario, playback_scenarios, playback_source,
+  initiative_tabs_vm, progress_pie, playback_scenario, playback_scenarios, playback_source,
   session_events, session_timeline_vm, synthetic_timelines, action_tracker,
   scripted_actions, changes_vm, inbox_item_vm, inbox_vm, inbox_playback,
   synthetic_changes, synthetic_inbox,
   instruction_router, omnibox_composer_vm, result_sources, result_commands_vm]
 export activity_vm, data_source, fixture_source, synthetic_fleet, session_items,
   fleet_vm, session_tabs_vm, initiatives_vm, initiative_progress_vm, progress_feed,
-  source_feed, recording_switcher, initiative_tabs_vm, playback_scenario,
+  source_feed, recording_switcher, initiative_tabs_vm, progress_pie, playback_scenario,
   playback_scenarios, playback_source, session_events, session_timeline_vm,
   synthetic_timelines, action_tracker, scripted_actions, changes_vm, inbox_item_vm,
   inbox_vm, inbox_playback, synthetic_changes, synthetic_inbox, instruction_router,

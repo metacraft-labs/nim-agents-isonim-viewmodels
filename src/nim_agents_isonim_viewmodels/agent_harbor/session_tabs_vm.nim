@@ -59,6 +59,9 @@ type
     tabs*: seq[SessionItem]
     state*: InitiativeState     ## the initiative's state at a glance
     progressText*: string       ## `3/19` milestones; "" when unknown
+    pie*: ProgressPie
+      ## The initiative's indicator (`progress_pie`): its state and its
+      ## milestones; unknown progress when its plan is not known.
     collapsed*: bool            ## the tree node is folded
 
   SessionTabStripVM* = ref object of ViewModel
@@ -283,6 +286,9 @@ proc groups*(vm: SessionTabStripVM): seq[SessionTabGroup] =
       let s = vm.initiativeProgress[g.planId].summary
       done = planDone(s.completedMilestones, s.totalMilestones)
     g.state = initiativeStateOf(attentions, blocked, done)
+    g.pie = pieOf(g.state, if g.planId in vm.initiativeProgress:
+                             vm.initiativeProgress[g.planId].summary
+                           else: MilestoneSummary())
     g.collapsed = g.planId in vm.collapsedPlans
     result.add g
   if vm.policy.order == soAttention:
