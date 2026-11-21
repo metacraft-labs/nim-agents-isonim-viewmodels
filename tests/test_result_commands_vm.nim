@@ -118,11 +118,14 @@ suite "/search over every provider":
     f.symbols.hold = true
     f.vm.setInput("/s retry jitter")
     # The slow provider answered the older text; none of its rows stand.
-    check f.vm.groups[1].group.state == psSearching
-    check f.vm.groups[1].rows.len == 0
-    check f.vm.groups[2].ids == @["ses-1"]
+    # (No file matches the newer text: Files is named on the empty line.)
+    check f.vm.groupIds == @["symbols", "agent-harbor-search"]
+    check f.vm.emptyProviders == @["Files"]
+    check f.vm.groups[0].group.state == psSearching
+    check f.vm.groups[0].rows.len == 0
+    check f.vm.groups[1].ids == @["ses-1"]
     f.symbols.release()
-    check f.vm.groups[1].ids == @["retry_with_jitter"]
+    check f.vm.groups[0].ids == @["retry_with_jitter"]
 
   test "an answer to an older query that arrives late changes nothing":
     let f = fixture()
@@ -143,7 +146,24 @@ suite "/search over every provider":
     check f.vm.groups[2].group.stateWord == "failed: Agent Harbor is not reachable"
     check f.vm.groups[0].rows.len == 2
     check f.vm.headerText == "4 results from 2 of 3 providers \xC2\xB7 Agent Harbor sessions failed \xC2\xB7 Enter opens"
-    check f.vm.headerRole == "error"
+    # The summary stays neutral; only the failed group says it in the error role.
+    check f.vm.headerRole == "caption"
+
+  test "a provider that answered with nothing is named on one line, not drawn as a group":
+    let f = fixture()
+    f.symbols.answer = proc(text: string): seq[ResultRow] = @[]
+    f.vm.setInput("/s retry")
+    check f.vm.groupIds == @["files", "agent-harbor-search"]
+    check f.vm.emptyProviders == @["Symbols"]
+    check f.vm.selectableRows.len == 4     # the empty group holds no row
+    # A provider still searching keeps its group; alone, nothing is named.
+    f.files.hold = true
+    f.vm.setInput("/s upload")
+    check f.vm.groupIds == @["files", "agent-harbor-search"]
+    check f.vm.groups[0].group.state == psSearching
+    f.files.release()
+    f.vm.showGroup("files")
+    check f.vm.emptyProviders.len == 0
 
   test "nothing matches: one line in place of the groups":
     let f = fixture()

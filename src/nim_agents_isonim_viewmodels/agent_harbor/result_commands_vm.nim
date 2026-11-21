@@ -185,19 +185,39 @@ proc rawGroups(vm: ResultCommandsVM): seq[ProviderGroup] =
   of qkCompletion: vm.completionGroups
   of qkAhUnknown, qkNone: @[]
 
+proc collapsesEmpty(vm: ResultCommandsVM; g: ProviderGroup): bool =
+  ## A `/search` provider that answered with no rows is not drawn as a group
+  ## (P2c study D60): `emptyProviders` names it, on one quiet line after the
+  ## groups.
+  vm.query.kind == qkSearch and vm.alone.val.len == 0 and
+    g.state == psAnswered and g.rows.len == 0
+
 proc groups*(vm: ResultCommandsVM): seq[ShownGroup] =
   ## The groups the sheet shows, in order, with the rows each draws; one
   ## group when one is shown alone. None while a line stands in their place
-  ## (`notice`).
+  ## (`notice`). A `/search` provider that answered with nothing is left
+  ## out (`emptyProviders`).
   discard vm.revision.val
   let alone = vm.alone.val
   if vm.query.kind == qkSearch and vm.search.nothingMatches: return
   var at = 0
   for g in vm.rawGroups:
     if alone.len > 0 and g.id != alone: continue
+    if vm.collapsesEmpty(g): continue
     let (rows, more) = g.shownRows(alone = alone.len > 0)
     result.add ShownGroup(group: g, rows: rows, more: more, first: at)
     at += rows.len
+
+proc emptyProviders*(vm: ResultCommandsVM): seq[string] =
+  ## The `/search` providers that answered with no rows, by title, in the
+  ## providers' order: the sheet names them on one quiet line after the
+  ## groups (`No matches in Files, Symbols`), where each took a group of its
+  ## own before (P2c study D60). None while a line stands in place of the
+  ## groups, or while a group is shown alone.
+  discard vm.revision.val
+  if vm.query.kind != qkSearch or vm.search.nothingMatches: return
+  for g in vm.rawGroups:
+    if vm.collapsesEmpty(g): result.add g.title
 
 proc selectableRows*(vm: ResultCommandsVM): seq[ResultRow] =
   ## Every row drawn, in order: what `↑` / `↓` move through.
@@ -343,13 +363,12 @@ proc headerText*(vm: ResultCommandsVM): string =
   of qkNone: ""
 
 proc headerRole*(vm: ResultCommandsVM): string =
-  ## `body` once a row was opened; `error` while a provider of the query
-  ## failed; `caption` otherwise.
+  ## `body` once a row was opened; `caption` otherwise. A provider that
+  ## failed is named in the header in the same caption role: the failed
+  ## group's own state says why in the error role, and the summary stays
+  ## neutral (P2c study D61; it was the error role in D41).
   discard vm.revision.val
   if vm.openedText.len > 0: return "body"
-  if vm.query.kind == qkSearch and vm.alone.val.len == 0:
-    for g in vm.search.groups:
-      if g.state == psFailed: return "error"
   "caption"
 
 proc sheetWidthFor*(vm: ResultCommandsVM; window: int): int =
