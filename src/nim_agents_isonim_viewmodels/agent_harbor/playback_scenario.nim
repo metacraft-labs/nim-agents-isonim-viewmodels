@@ -160,10 +160,11 @@ type
 
 const PlaybackViews* = ["fleet", "session-tabs", "session-list", "initiatives",
                         "initiative-tabs", "initiative-progress",
-                        "session-activity", "inbox"]
+                        "session-activity", "inbox", "control-center"]
   ## The views a scenario can name: the Agent Harbor front-end's sessions and
-  ## initiatives views, one session's activity timeline, and the operator's
-  ## inbox, each over its viewmodel.
+  ## initiatives views, one session's activity timeline, the operator's
+  ## inbox, and the control center (the initiatives and the sessions waiting
+  ## for the operator), each over its viewmodel.
 
 const SessionViews* = ["session-activity"]
   ## The views of a single session: a scenario names the session each shows

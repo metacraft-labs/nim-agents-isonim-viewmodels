@@ -135,10 +135,14 @@ type Views = object
     ## nil unless the scenario feeds the inbox (`withInbox`).
   operator: InboxPlaybackOperator
     ## The operator's presses on `inbox`, replayed from the scenario.
+  center: ControlCenterVM
+    ## nil unless the scenario feeds the control center (`withCenter`): the
+    ## initiatives, and the sessions waiting for the operator.
   initiativeId: string
 
 proc viewsOver(source: AgentHarborDataSource; initiativeId: string;
-               autoSwitch = false; timelineSession = ""; withInbox = false): Views =
+               autoSwitch = false; timelineSession = ""; withInbox = false;
+               withCenter = false): Views =
   ## The viewmodels of every playback story, loaded over `source`: the fleet
   ## list, the tab strip, the sidebar list, the initiative tab bar, the
   ## Initiatives panel and the Initiative Progress panel showing
@@ -160,6 +164,9 @@ proc viewsOver(source: AgentHarborDataSource; initiativeId: string;
   result.bar.autoSwitch.val = autoSwitch
   result.initiatives = newInitiativesVM(source)
   result.progress = newInitiativeProgressVM(source, initiativeId)
+  if withCenter:
+    result.center = newControlCenterVM(source, newScriptedRouter("test router"), source)
+    result.center.load()
   result.fleet.load()
   result.tabs.load()
   result.list.load()
@@ -174,6 +181,7 @@ proc dispose(views: Views) =
   views.bar.dispose()
   views.initiatives.dispose()
   views.progress.dispose()
+  if not views.center.isNil: views.center.dispose()
   if not views.timeline.isNil: views.timeline.dispose()
   if not views.operator.isNil: views.operator.stop()
   if not views.inbox.isNil: views.inbox.dispose()
@@ -205,6 +213,12 @@ proc shown(views: Views): seq[string] =
     result.add "inbox " & $ids & " at " & views.inbox.current.val.id & " " &
       views.inbox.positionText & " next " & $views.inbox.canNext & " prev " &
       $views.inbox.canPrev & " " & views.inbox.notice
+  if views.center.isNil:
+    result.add "control-center -"
+  else:
+    var waiting: seq[string]
+    for row in views.center.waiting: waiting.add row.item.id & " " & row.words
+    result.add "control-center " & $waiting & " " & $views.center.initiatives.rows
 
 proc agree(a, b: Views; label: string): bool =
   ## Whether two sets of viewmodels show the same; the first difference is
@@ -241,7 +255,8 @@ proc viewsOf(source: PlaybackDataSource): Views =
   ## Every view of the source's scenario, loaded over it.
   viewsOver(source, source.scenario.initiativeOf,
             timelineSession = source.scenario.timelineOf,
-            withInbox = source.scenario.feeds("inbox"))
+            withInbox = source.scenario.feeds("inbox"),
+            withCenter = source.scenario.feeds("control-center"))
 
 proc testClock(source: PlaybackDataSource): TestClock = TestClock(source.clock)
 
@@ -511,6 +526,9 @@ const
     ## events and the operator's presses on it.
   TimelineAt = 6
   InboxAt = 7
+  ControlCenterAt = 8
+    ## The ninth, the control center: its waiting sessions and the
+    ## initiatives' summary.
   InboxKinds = {sekInbox, sekOperator}
 
 proc heldStill(views: Views): seq[string] =
@@ -522,7 +540,7 @@ proc heldStill(views: Views): seq[string] =
     row.ageLabel = ""
     row.durationLabel = ""
   result[0] = "fleet " & $rows & " " & $views.fleet.counts
-  doAssert result.len == InboxAt + 1
+  doAssert result.len == ControlCenterAt + 1
 
 proc unchangedAtMoments(scenario: PlaybackScenario): seq[string] =
   ## Every (moment, surface) where the moment's entries -- those after the
@@ -565,7 +583,8 @@ proc unchangedAtMoments(scenario: PlaybackScenario): seq[string] =
 
 const ShownAt = [("fleet", 0), ("session-tabs", 1), ("session-list", 2),
                  ("initiative-tabs", 3), ("initiatives", 4), ("initiative-progress", 5),
-                 ("session-activity", TimelineAt), ("inbox", InboxAt)]
+                 ("session-activity", TimelineAt), ("inbox", InboxAt),
+                 ("control-center", ControlCenterAt)]
   ## Each view's line of `shown`.
 
 proc shownIndex(view: string): int =

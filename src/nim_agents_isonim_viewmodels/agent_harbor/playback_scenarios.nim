@@ -274,7 +274,9 @@ proc frontEndsScenario*(): PlaybackScenario =
     # it logs at milestone-done. The Initiatives panel shows the route
     # cache's sessions and milestones, and in its header the sessions in no
     # initiative (the importer's removal); not the importer's or the config
-    # session's state.
+    # session's state. The control center shows the Initiatives panel's
+    # moments and, in its waiting list, each session that comes to wait or
+    # is answered (the config question answered too).
     views = [
       ("fleet", @["new-session", "port-asks", "bench-asks", "port-answered",
                   "migration-fails", "config-answered", "milestone-done",
@@ -287,7 +289,10 @@ proc frontEndsScenario*(): PlaybackScenario =
                          "importer-ends", "port-completes", "importer-removed"]),
       ("initiatives", @["new-session", "port-asks", "bench-asks", "port-answered",
                         "migration-fails", "milestone-done", "port-completes",
-                        "importer-removed"])])
+                        "importer-removed"]),
+      ("control-center", @["new-session", "port-asks", "bench-asks", "port-answered",
+                           "migration-fails", "config-answered", "milestone-done",
+                           "port-completes", "importer-removed"])])
 
 # ---------------------------------------------------------------------------
 # initiative-run

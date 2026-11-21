@@ -25,7 +25,11 @@
 ## at a session timeline's end, are `agent_harbor/suggested_actions_vm`,
 ## performed through `agent_harbor/suggested_action_sources`. The progress
 ## pie every row and tab carries (its state's colour family, its progress and
-## the words that name it) is `agent_harbor/progress_pie`.
+## the words that name it) is `agent_harbor/progress_pie`. The control
+## center, the tab that launches tasks and initiatives and shows every
+## initiative with the sessions waiting for the operator, is
+## `agent_harbor/control_center_vm`; the status line's gaze mark is
+## `agent_harbor/gaze_status_vm`.
 import nim_agents_isonim_viewmodels/activity_vm
 import nim_agents_isonim_viewmodels/agent_harbor/[data_source, fixture_source,
   synthetic_fleet, session_items, fleet_vm, session_tabs_vm, initiatives_vm,
@@ -35,7 +39,7 @@ import nim_agents_isonim_viewmodels/agent_harbor/[data_source, fixture_source,
   scripted_actions, changes_vm, inbox_item_vm, inbox_vm, inbox_playback,
   synthetic_changes, synthetic_inbox,
   instruction_router, omnibox_composer_vm, result_sources, result_commands_vm,
-  suggested_action_sources, suggested_actions_vm]
+  suggested_action_sources, suggested_actions_vm, control_center_vm, gaze_status_vm]
 export activity_vm, data_source, fixture_source, synthetic_fleet, session_items,
   fleet_vm, session_tabs_vm, initiatives_vm, initiative_progress_vm, progress_feed,
   source_feed, recording_switcher, initiative_tabs_vm, progress_pie, playback_scenario,
@@ -43,4 +47,4 @@ export activity_vm, data_source, fixture_source, synthetic_fleet, session_items,
   synthetic_timelines, action_tracker, scripted_actions, changes_vm, inbox_item_vm,
   inbox_vm, inbox_playback, synthetic_changes, synthetic_inbox, instruction_router,
   omnibox_composer_vm, result_sources, result_commands_vm, suggested_action_sources,
-  suggested_actions_vm
+  suggested_actions_vm, control_center_vm, gaze_status_vm

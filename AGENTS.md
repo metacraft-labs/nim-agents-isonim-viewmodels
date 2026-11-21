@@ -86,6 +86,14 @@ Structure:
   prototypes), the decision goes to Agent Harbor through `submitAction`,
   and the decided suggestion is drawn as the timeline's own lines
   (`recordLines`).
+  The control center is `control_center_vm.nim` `ControlCenterVM`, over
+  nim-agents' `control_center`: the composer's launch and initiative forms
+  inline (the operator's `New task` / `New initiative` is the composer's
+  `chooseIntent`; a launch goes through the chosen initiative's manager),
+  every initiative through an `InitiativesVM` over the same source, and the
+  sessions waiting for the operator in inbox order, each with its progress
+  pie's words. The status line's gaze mark is `gaze_status_vm.nim`
+  `GazeStatusVM` (its words, tooltip and pause key are `instruction_composer`'s).
 - **Writes.** An operator's action leaves a viewmodel only through
   `AgentHarborDataSource.submitAction`. The prototypes answer it with
   `scripted_actions.nim` `ScriptedActionSource` (and the playback source's

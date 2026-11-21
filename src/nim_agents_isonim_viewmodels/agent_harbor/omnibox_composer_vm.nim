@@ -202,7 +202,7 @@ proc canSend*(vm: OmniboxComposerVM): bool =
   discard vm.revision.val
   let d = vm.draft
   if d.phase != cpComposing or d.text.strip.len == 0: return false
-  if d.route == rsRouting and not d.operatorChose: return true
+  if d.route == rsRouting and not d.operatorChose and not d.intentChosen: return true
   d.isAvailable(d.chosen) and d.sendProblems.len == 0
 
 proc sendDisabledReason*(vm: OmniboxComposerVM): string =
@@ -318,6 +318,24 @@ proc setGaze*(vm: OmniboxComposerVM; state: GazeState;
     if lookedAt.id.len > 0: kept.add lookedAt
   vm.draft.context = kept
   vm.bump()
+
+proc chooseIntent*(vm: OmniboxComposerVM; intent: RouteIntent) =
+  ## The operator says what is being composed (the control center's `New
+  ## task` and `New initiative`): a launch or a new initiative goes to the
+  ## manager whatever the router decides, and its form opens; `riInstruct`
+  ## gives the decision back to the router (`instruction_composer.chooseIntent`).
+  let changed = vm.draft.chooseIntent(intent)
+  # The form opens for the intent chosen, whether or not it was chosen
+  # already (a press on the mode already pressed opens a folded form).
+  if intent != riInstruct and vm.draft.phase == cpComposing and
+      vm.draft.intentChosen and vm.draft.chosenIntent == intent:
+    vm.optionsOpen.val = true
+  if changed: vm.bump()
+
+proc chosenIntent*(vm: OmniboxComposerVM): RouteIntent =
+  ## Tracked: the intent the operator chose, `riInstruct` when none.
+  discard vm.revision.val
+  if vm.draft.intentChosen: vm.draft.chosenIntent else: riInstruct
 
 proc updateLaunch*(vm: OmniboxComposerVM; options: LaunchOptions) =
   if not vm.draft.isBeforeSend: return
