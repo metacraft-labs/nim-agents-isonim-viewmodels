@@ -47,9 +47,10 @@ import isonim/viewmodel
 import nim_agents/agent_harbor/[session_directory, activity_digest, fleet_fold]
 import ./data_source
 import ./source_feed
+import ./progress_pie
 
 export data_source, source_feed, viewmodel, signals, computation,
-  activity_digest, fleet_fold
+  activity_digest, fleet_fold, progress_pie
 
 const
   FleetActivityLineLimit* = 3
@@ -80,6 +81,9 @@ type
     initiative*: string
     workspace*: string         ## the workspace, unless it is already the title
     category*: FleetCategory
+    pie*: ProgressPie
+      ## Its category and its session's plan progress in one indicator
+      ## (`progress_pie`).
     status*: FleetStatus
     statusLabel*: string
     agentLabel*: string
@@ -241,6 +245,7 @@ proc toRow(session: FleetSession; digest: openArray[DigestLine]; nowMs: int64;
     initiative: session.initiative,
     workspace: if session.workspaceName == title: "" else: session.workspaceName,
     category: session.category,
+    pie: pieOf(session.category, session.planDone, session.planTotal),
     status: session.status,
     statusLabel: session.effectiveStatusLabel,
     agentLabel: agentLabel(session.agentSoftware, session.agentVersion),

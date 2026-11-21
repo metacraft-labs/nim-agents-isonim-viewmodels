@@ -206,6 +206,23 @@ proc inboxDetails*(): seq[InboxItemDetail] =
                         "confidence": "high", "drafter": "release-manager"},
               "familiar": true})]
 
+proc longInboxDetails*(count = 40): seq[InboxItemDetail] =
+  ## The page of every item of `longInbox(count)`: a question or a session
+  ## whose turn ended, as the item's kind says, so an item reached by Next
+  ## down the long list shows its page.
+  for i in 1 .. count:
+    let id = "inbox-item-" & $i
+    let session = "5ca1ab1e-0d" & $i
+    if i mod 3 == 0:
+      result.add detail(%*{"itemId": id, "sessionId": session, "kind": "ended_turn",
+                           "lastReply": "Done with step " & $i & " of the invented plan.",
+                           "familiar": true})
+    else:
+      result.add detail(%*{"itemId": id, "sessionId": session, "kind": "blocked_question",
+                           "blocked": true, "requestId": "q-long-" & $i,
+                           "prompt": "Invented question " & $i & ": keep going as planned?",
+                           "form": "free_form", "familiar": true})
+
 proc variantDetail(name: string): InboxItemDetail =
   ## The page a single item story shows, by fixture name.
   let id = "inbox-item-" & name
@@ -295,7 +312,7 @@ proc inboxFixture*(name: string): AgentHarborDataSource =
   ## `ValueError` for an unknown name.
   case name
   of "populated": inboxSource(populatedInbox(), inboxDetails(), "invented inbox")
-  of "long": inboxSource(longInbox(), @[], "invented inbox: a long list")
+  of "long": inboxSource(longInbox(), longInboxDetails(), "invented inbox: a long list")
   of "fleet": inboxSource(fleetInbox(), inboxDetails(), "invented fleet inbox")
   of "empty": inboxSource(InboxSnapshot(generatedAtMs: InboxT0), @[], "invented inbox: empty")
   of "cursor-middle":

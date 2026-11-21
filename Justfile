@@ -9,6 +9,7 @@ build-native:
     nim c {{paths}} tests/test_activity_vm.nim
     nim c {{paths}} tests/test_agent_harbor_fleet_vm.nim
     nim c {{paths}} tests/test_agent_harbor_sessions_vm.nim
+    nim c {{paths}} tests/test_progress_pie.nim
     nim c {{paths}} tests/test_playback.nim
     nim c {{paths}} tests/test_session_timeline_vm.nim
     nim c {{paths}} tests/test_changes_vm.nim
@@ -24,6 +25,7 @@ build-js:
     nim js {{paths}} tests/test_activity_vm.nim
     nim js {{paths}} tests/test_agent_harbor_fleet_vm.nim
     nim js {{paths}} tests/test_agent_harbor_sessions_vm.nim
+    nim js {{paths}} tests/test_progress_pie.nim
     nim js {{paths}} tests/test_playback.nim
     nim js {{paths}} tests/test_session_timeline_vm.nim
     nim js {{paths}} tests/test_changes_vm.nim
@@ -39,6 +41,7 @@ test-native:
     nim c -r {{paths}} tests/test_activity_vm.nim
     nim c -r {{paths}} tests/test_agent_harbor_fleet_vm.nim
     nim c -r {{paths}} tests/test_agent_harbor_sessions_vm.nim
+    nim c -r {{paths}} tests/test_progress_pie.nim
     nim c -r {{paths}} tests/test_playback.nim
     nim c -r {{paths}} tests/test_session_timeline_vm.nim
     nim c -r {{paths}} tests/test_changes_vm.nim
@@ -54,6 +57,7 @@ test-js:
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_activity_vm.nim
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_agent_harbor_fleet_vm.nim
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_agent_harbor_sessions_vm.nim
+    bash tools/nim-js-test-gate.sh {{paths}} tests/test_progress_pie.nim
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_playback.nim
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_session_timeline_vm.nim
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_changes_vm.nim
@@ -70,6 +74,7 @@ lint-nim:
     nim check {{paths}} tests/test_activity_vm.nim
     nim check {{paths}} tests/test_agent_harbor_fleet_vm.nim
     nim check {{paths}} tests/test_agent_harbor_sessions_vm.nim
+    nim check {{paths}} tests/test_progress_pie.nim
     nim check {{paths}} tests/test_playback.nim
     nim check {{paths}} tests/test_session_timeline_vm.nim
     nim check {{paths}} tests/test_changes_vm.nim

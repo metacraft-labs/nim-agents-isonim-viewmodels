@@ -519,6 +519,104 @@ suite "Code":
       vm.dispose()
       disposeRoot()
 
+suite "the keyboard":
+  test "test_changes_vm_keyboard_focus: Down and Up walk the cards in the order drawn, and stop at the ends":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = changesOver("populated")
+      var keys: seq[string]
+      for c in vm.specCards: keys.add c.key
+      check keys.len > 2
+      check vm.focusables == keys
+      check vm.focus.val == ""
+      check vm.focusPrevious()
+      check vm.focus.val == keys[^1]
+      vm.focus.val = ""
+      for i in 0 ..< keys.len:
+        check vm.focusNext()
+        check vm.focus.val == keys[i]
+      check not vm.focusNext()
+      check vm.focus.val == keys[^1]
+      for i in countdown(keys.high - 1, 0):
+        check vm.focusPrevious()
+        check vm.focus.val == keys[i]
+      check not vm.focusPrevious()
+      var focused: seq[string]
+      for c in vm.specCards:
+        if c.focused: focused.add c.key
+      check focused == @[keys[0]]
+      vm.dispose()
+      disposeRoot()
+
+  test "test_changes_vm_keyboard_toggle: Enter opens and closes the card the keyboard is on, and only it":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = changesOver("populated")
+      check not vm.toggleFocused()
+      check vm.focusNext()
+      check vm.focusNext()
+      let key = vm.focus.val
+      check vm.toggleFocused()
+      var open: seq[string]
+      for c in vm.specCards:
+        if c.open: open.add c.key
+      check open == @[key]
+      check vm.toggleFocused()
+      open = @[]
+      for c in vm.specCards:
+        if c.open: open.add c.key
+      check open.len == 0
+      vm.dispose()
+      disposeRoot()
+
+  test "test_changes_vm_keyboard_files: in Code the keyboard walks the files, and Enter selects and unselects one":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = changesOver("populated")
+      vm.selectTab(rtCode)
+      check vm.focusables == vm.paths
+      check vm.focusNext()
+      check vm.focusNext()
+      let path = vm.focus.val
+      check path == vm.paths[1]
+      check vm.files[1].focused and not vm.files[0].focused
+      check vm.toggleFocused()
+      check vm.selectedFile.val == path
+      check vm.toggleFocused()
+      check vm.selectedFile.val == ""
+      vm.dispose()
+      disposeRoot()
+
+  test "test_changes_vm_keyboard_tabs: Right and Left step the tabs, clear the keyboard's item, and stop at the ends; Tests has nothing to focus":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = changesOver("populated")
+      check vm.focusNext()
+      check vm.activeTab.val == rtSpecChanges
+      check not vm.stepTab(-1)
+      check vm.stepTab(1)
+      check vm.activeTab.val == rtTests
+      check vm.focus.val == ""
+      check vm.focusables.len == 0
+      check not vm.focusNext()
+      check vm.stepTab(1)
+      check vm.stepTab(1)
+      check vm.activeTab.val == rtCode
+      check not vm.stepTab(1)
+      check vm.activeTab.val == rtCode
+      vm.dispose()
+      disposeRoot()
+
+  test "the keyboard's item survives a restart":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = changesOver("populated")
+      check vm.focusNext()
+      let key = vm.focus.val
+      vm.restart()
+      check vm.focus.val == key
+      var focused = ""
+      for c in vm.specCards:
+        if c.focused: focused = c.key
+      check focused == key
+      vm.dispose()
+      disposeRoot()
+
 suite "load states":
   test "loading, an error, and a diff that cannot be read beside a readable record":
     createRoot proc(disposeRoot: proc()) =

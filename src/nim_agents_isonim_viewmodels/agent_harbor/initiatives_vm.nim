@@ -47,6 +47,8 @@ type
     progressText*: string         ## `3/19 · 16%`
     progressLong*: string         ## `3 of 19 milestones · 16%`, for a tooltip
     state*: InitiativeState       ## its state at a glance, from its sessions
+    pie*: ProgressPie
+      ## Its state and its milestones in one indicator (`progress_pie`).
     progressPercent*: int
     statusCounts*: array[MilestoneStatusClass, int]
     sessions*: seq[SessionItem]   ## in launch order
@@ -216,6 +218,7 @@ proc rowOf(vm: InitiativesVM; initiative: Initiative; selected: string): Initiat
   let s = initiative.progress.summary
   result.state = initiativeStateOf(attentions, result.statusCounts[mscBlocked],
                                    planDone(s.completedMilestones, s.totalMilestones))
+  result.pie = pieOf(result.state, s)
 
 proc rows*(vm: InitiativesVM): seq[InitiativeRow] =
   ## Tracked: the initiatives that need the reader first -- by their state

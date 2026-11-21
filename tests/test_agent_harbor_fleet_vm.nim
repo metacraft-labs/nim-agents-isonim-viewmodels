@@ -625,7 +625,8 @@ proc replayedFromScratch(session: FleetSession; events: openArray[JsonNode];
   ## The session after its first `count` events, derived from the whole
   ## prefix at once: the last `status` event's status, a question wait when
   ## it is live and its last event is the agent asking, its end at its last
-  ## update when it is no longer live, and its last three events.
+  ## update when it is no longer live, its last three events, and its plan
+  ## progress: the last `plan` event's entries, completed of all.
   result = session
   let n = max(0, min(count, events.len))
   result.rawStatus = "queued"
@@ -641,6 +642,15 @@ proc replayedFromScratch(session: FleetSession; events: openArray[JsonNode];
     result.updatedAtMs = max(result.updatedAtMs, at)
     if events[i]{"type"}.getStr == "status":
       result.rawStatus = events[i]{"status"}.getStr
+  result.planDone = 0
+  result.planTotal = 0
+  for i in 0 ..< n:
+    let entries = events[i]{"entries"}
+    if events[i]{"type"}.getStr == "plan" and not entries.isNil and entries.kind == JArray:
+      result.planTotal = entries.len
+      result.planDone = 0
+      for entry in entries:
+        if entry{"status"}.getStr == "completed": inc result.planDone
   result.status = parseFleetStatus(result.rawStatus)
   if not result.status.isActive:
     result.endedAtMs = result.updatedAtMs

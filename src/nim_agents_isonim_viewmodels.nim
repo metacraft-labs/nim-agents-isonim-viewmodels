@@ -23,12 +23,14 @@
 ## search are `agent_harbor/result_commands_vm`, over the seams
 ## `agent_harbor/result_sources`. An agent's suggested UI actions, the block
 ## at a session timeline's end, are `agent_harbor/suggested_actions_vm`,
-## performed through `agent_harbor/suggested_action_sources`.
+## performed through `agent_harbor/suggested_action_sources`. The progress
+## pie every row and tab carries (its state's colour family, its progress and
+## the words that name it) is `agent_harbor/progress_pie`.
 import nim_agents_isonim_viewmodels/activity_vm
 import nim_agents_isonim_viewmodels/agent_harbor/[data_source, fixture_source,
   synthetic_fleet, session_items, fleet_vm, session_tabs_vm, initiatives_vm,
   initiative_progress_vm, progress_feed, source_feed, recording_switcher,
-  initiative_tabs_vm, playback_scenario, playback_scenarios, playback_source,
+  initiative_tabs_vm, progress_pie, playback_scenario, playback_scenarios, playback_source,
   session_events, session_timeline_vm, synthetic_timelines, action_tracker,
   scripted_actions, changes_vm, inbox_item_vm, inbox_vm, inbox_playback,
   synthetic_changes, synthetic_inbox,
@@ -36,7 +38,7 @@ import nim_agents_isonim_viewmodels/agent_harbor/[data_source, fixture_source,
   suggested_action_sources, suggested_actions_vm]
 export activity_vm, data_source, fixture_source, synthetic_fleet, session_items,
   fleet_vm, session_tabs_vm, initiatives_vm, initiative_progress_vm, progress_feed,
-  source_feed, recording_switcher, initiative_tabs_vm, playback_scenario,
+  source_feed, recording_switcher, initiative_tabs_vm, progress_pie, playback_scenario,
   playback_scenarios, playback_source, session_events, session_timeline_vm,
   synthetic_timelines, action_tracker, scripted_actions, changes_vm, inbox_item_vm,
   inbox_vm, inbox_playback, synthetic_changes, synthetic_inbox, instruction_router,

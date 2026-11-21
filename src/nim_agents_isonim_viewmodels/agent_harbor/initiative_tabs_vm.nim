@@ -59,6 +59,9 @@ type
     title*: string
     progressText*: string       ## `3/19` (initiatives)
     state*: InitiativeState     ## initiatives
+    pie*: ProgressPie
+      ## The tab's indicator (`progress_pie`): an initiative's state and its
+      ## milestones, or a session tab's own (`session.pie`).
     session*: SessionItem       ## session tabs: the session
     tooltip*: string
     active*: bool
@@ -299,14 +302,6 @@ proc stateOf*(vm: InitiativeTabStripVM; initiative: Initiative): InitiativeState
   initiativeStateOf(attentions, statusCounts(initiative.progress)[mscBlocked],
                     planDone(s.completedMilestones, s.totalMilestones))
 
-proc stateWord*(state: InitiativeState): string =
-  case state
-  of isNeedsInput: "needs input"
-  of isBlocked: "blocked"
-  of isWorking: "working"
-  of isIdle: "idle"
-  of isEnded: "ended"
-
 proc tabs*(vm: InitiativeTabStripVM): seq[StripTab] =
   ## Tracked: initiative tabs in the server's order, then the open sessions
   ## launched for no initiative, in launch order.
@@ -318,6 +313,7 @@ proc tabs*(vm: InitiativeTabStripVM): seq[StripTab] =
     let progress = $p.completedMilestones & "/" & $p.totalMilestones
     result.add StripTab(kind: stkInitiative, id: initiative.id,
       title: initiative.title, progressText: progress, state: state,
+      pie: pieOf(state, p),
       tooltip: initiative.title & "\n" & stateWord(state) & " \xC2\xB7 " &
         progress & " milestones",
       active: active == initiativeKey(initiative.id))
@@ -325,7 +321,7 @@ proc tabs*(vm: InitiativeTabStripVM): seq[StripTab] =
     if not vm.inInitiativeTab(s) and s.id in vm.openIds:
       let item = vm.itemOf(s)
       result.add StripTab(kind: stkSession, id: s.id, title: item.title,
-                          session: item, tooltip: item.tooltip,
+                          session: item, pie: item.pie, tooltip: item.tooltip,
                           active: active == sessionKey(s.id))
 
 proc compact*(vm: InitiativeTabStripVM): bool =

@@ -14,8 +14,9 @@
 import std/strutils
 import nim_agents/agent_harbor/[session_directory, activity_digest, fleet_fold]
 import ./records
+import ./progress_pie
 
-export session_directory, activity_digest
+export session_directory, activity_digest, progress_pie
 
 type
   SessionItem* = object
@@ -39,15 +40,9 @@ type
     failureText*: string
     tooltip*: string
     active*: bool
-
-proc attentionWord*(attention: SessionAttention): string =
-  case attention
-  of saNeedsInput: "needs input"
-  of saIdle: "idle"
-  of saRunning: "running"
-  of saQueued: "queued"
-  of saFailed: "failed"
-  of saEnded: "ended"
+    pie*: ProgressPie
+      ## Its state and its plan's progress (`progress_pie`), as every
+      ## sessions view draws them in one indicator.
 
 proc lastActivityLine*(item: SessionItem): string =
   ## The one line a session row or tab shows of what the session last did:
@@ -66,6 +61,7 @@ proc sessionItemOf*(session: FleetSession; nowMs: int64; policy: SessionPolicy;
     id: session.id, shortId: shortIdOf(session.id), title: title,
     titleSource: source,
     attention: session.attentionOf(policy.status),
+    pie: session.pieOf(session.attentionOf(policy.status)),
     statusLabel: session.statusLabelOf(policy.status),
     waitText: session.waitDescription,
     origin: session.originFrontEnd, originLabel: originLabel(session.originFrontEnd),
