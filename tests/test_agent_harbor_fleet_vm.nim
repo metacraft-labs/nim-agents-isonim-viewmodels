@@ -221,6 +221,39 @@ suite "FixtureDataSource":
       if AgentHarborFixtureSet == "private":
         check "codetracer-pm" in AgentHarborFixtureRoot
 
+  test "the embedded inputs are every file it read, and the probes that chose them":
+    # A consumer that bundles these files (CodeTracer's StoryBook components
+    # bundle) decides whether its build is current from these two lists, so
+    # they must name exactly what the compile depended on.
+    let source = newFixtureDataSource()
+    check AgentHarborFixtureInputs.len == source.fixturePaths.len + 1
+    # Absolute already unless the set was chosen by a relative path, which
+    # the inputs resolve against `fixture_source.nim`'s directory.
+    let root =
+      if AgentHarborFixtureRoot.isAbsolute: AgentHarborFixtureRoot
+      else: AgentHarborFixtureInputs[0].parentDir
+    check AgentHarborFixtureInputs[0] == root / "manifest.json"
+    for path in source.fixturePaths:
+      check root / path in AgentHarborFixtureInputs
+    for input in AgentHarborFixtureInputs:
+      check input.isAbsolute
+    when not defined(js):
+      for input in AgentHarborFixtureInputs:
+        check fileExists(input)
+    if forcedFixtures.len > 0 or AgentHarborFixtureSet == "private":
+      # Chosen explicitly, or by the private manifest's PRESENCE (which is
+      # itself an input): no absence decided anything.
+      check AgentHarborFixtureAbsentProbes.len == 0
+    else:
+      # The fallback: the synthetic set because the private manifest was
+      # missing; that manifest appearing would change what is embedded.
+      check AgentHarborFixtureAbsentProbes.len == 1
+      check AgentHarborFixtureAbsentProbes[0].endsWith(
+        "codetracer-pm" / "design" / "agent-harbor-front-end" / "fixtures" /
+        "manifest.json")
+      when not defined(js):
+        check not fileExists(AgentHarborFixtureAbsentProbes[0])
+
   test "the fleet snapshot decodes every listed session":
     let source = newFixtureDataSource()
     let raw = source.fleetJson

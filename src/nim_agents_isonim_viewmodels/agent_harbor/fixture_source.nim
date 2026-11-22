@@ -88,6 +88,47 @@ proc readFixtureFiles(): seq[(string, string)] {.compileTime.} =
 
 const fixtureFiles = readFixtureFiles()
 
+proc asRead(path: string): string {.compileTime.} =
+  ## The file `staticRead(path)` read: a relative path (a relative
+  ## `-d:agentHarborFixtures` or `AGENT_HARBOR_FIXTURES`) is resolved against
+  ## this module's directory, as the compiler's `opSlurp` resolves it, so a
+  ## consumer comparing these paths compares the files that were embedded.
+  ##
+  ## Not `os.isAbsolute`: for the JS target it asks node at run time (an
+  ## `emit`), which the compile-time VM cannot run, so it answers false for
+  ## every path and an absolute root would be joined onto this directory.
+  let absolute = path.len > 0 and (path[0] in {'/', '\\'} or
+    (path.len > 1 and path[0] in {'a'..'z', 'A'..'Z'} and path[1] == ':'))
+  if absolute: path else: currentSourcePath().parentDir / path
+
+proc fixtureInputs(): seq[string] {.compileTime.} =
+  result.add(asRead(fixtureRoot / "manifest.json"))
+  for (path, _) in fixtureFiles:
+    result.add(asRead(fixtureRoot / path))
+
+proc fixtureAbsentProbes(): seq[string] {.compileTime.} =
+  # Mirrors `chooseFixtureRoot`: only its fallback branch depends on a file
+  # being MISSING. An explicit choice depends on no probe, and the private
+  # branch depends on the private manifest's presence, which is already in
+  # `AgentHarborFixtureInputs`.
+  if agentHarborFixtures.len == 0 and getEnv("AGENT_HARBOR_FIXTURES").len == 0 and
+      fixtureRoot == syntheticFixtureRoot:
+    result.add(privateFixtureRoot / "manifest.json")
+
+const
+  AgentHarborFixtureInputs* = fixtureInputs()
+    ## The absolute path of every file this module embedded: the manifest
+    ## first, then each file it lists. A consumer that ships the embedded
+    ## bytes (CodeTracer's StoryBook components bundle) compares its build
+    ## with these to tell whether the bundle is older than its fixture set;
+    ## Nim's own dependency list (`--genScript`'s `.deps`) does not name
+    ## `staticRead` files.
+  AgentHarborFixtureAbsentProbes* = fixtureAbsentProbes()
+    ## Paths whose ABSENCE decided which set is embedded: the private
+    ## manifest when the synthetic set was chosen because it was missing,
+    ## and nothing when the set was chosen explicitly or the private set was
+    ## found. If one of these appears, a rebuild would embed another set.
+
 type
   FixtureDataSource* = ref object of AgentHarborDataSource
     ## Serves the committed captures. `failSessions` makes chosen sessions'
