@@ -28,7 +28,7 @@
 ## test (counts, percentages, groups, current milestone), not computed
 ## through `applyMilestoneStatus` or `applyProgress`.
 
-import std/[algorithm, json, sets, strutils, tables, unittest]
+import std/[algorithm, json, sequtils, sets, strutils, tables, unittest]
 import isonim/core/[computation, owner, signals]
 import nim_agents_isonim_viewmodels
 
@@ -712,6 +712,19 @@ suite "the initiative tab bar":
     b = recordingButtons(entries, "r11", 9)
     check b.buttons[^1].number == 12 and b.buttons[^1].active
     check recordingButtons(newSeq[RecordingEntry](), "", 9).buttons.len == 0
+    # A correlation marker's ring (a multi-process recording's process,
+    # P2c study D25): on exactly the button it names, never the active one,
+    # and on the chip when that recording is behind `+N`; none by default.
+    check recordingButtons(entries, "r0", 9).buttons.allIt(not it.ringed)
+    check not recordingButtons(entries, "r0", 9).hiddenRinged
+    b = recordingButtons(entries, "r0", 9, ringedId = "r5")
+    check b.buttons.filterIt(it.ringed).mapIt(it.id) == @["r5"]
+    check not b.hiddenRinged
+    b = recordingButtons(entries, "r0", 9, ringedId = "r0")
+    check b.buttons.allIt(not it.ringed)
+    b = recordingButtons(entries, "r0", 9, ringedId = "r10")
+    check b.buttons.allIt(not it.ringed)
+    check b.hiddenRinged
     let (snapshot, initiatives) = syntheticWorkingSet(4, 1, Now)
     withVM(proc(): InitiativeTabStripVM =
         newInitiativeTabStripVM(newSnapshotDataSource(snapshot, "x", initiatives))) do (vm: InitiativeTabStripVM):

@@ -33,6 +33,10 @@ type
     tooltip*: string
     state*: RecordingState
     active*: bool
+    ringed*: bool
+      ## A correlation marker leads to this recording (a multi-process
+      ## recording's process): drawn with a quiet ring until the reader
+      ## follows it. Never the active one.
 
   RecordingButtons* = object
     buttons*: seq[RecordingButton]
@@ -40,6 +44,8 @@ type
     hiddenStates*: seq[RecordingState]
       ## The states of the hidden recordings, in order: the `+N` takes the
       ## most severe of them.
+    hiddenRinged*: bool
+      ## The ringed recording is behind `+N`: the chip carries the ring.
 
 proc tooltipOf*(entry: RecordingEntry): string =
   ## `calc test trace · revision 41d7f96 · from ct test run`, and the state
@@ -57,10 +63,13 @@ proc tooltipOf*(entry: RecordingEntry): string =
     result.add " (missing" & (if entry.error.len > 0: ": " & entry.error else: "") & ")"
 
 proc recordingButtons*(entries: openArray[RecordingEntry]; activeId: string;
-                       maxShown = high(int)): RecordingButtons =
+                       maxShown = high(int); ringedId = ""): RecordingButtons =
   ## The buttons in order. When more recordings exist than `maxShown`, the
   ## first `maxShown - 1` are drawn and the active one takes the last place
-  ## (the session strip's rule), the rest counted in `hidden`.
+  ## (the session strip's rule), the rest counted in `hidden`. `ringedId`
+  ## names the recording a correlation marker leads to (none by default; a
+  ## ring on the active recording is ignored): its button is `ringed`, or,
+  ## when it is hidden, the chip (`hiddenRinged`).
   if entries.len == 0: return
   var activeAt = -1
   for i, e in entries:
@@ -75,10 +84,15 @@ proc recordingButtons*(entries: openArray[RecordingEntry]; activeId: string;
     result.buttons.add RecordingButton(number: i + 1, id: entries[i].id,
                                        tooltip: tooltipOf(entries[i]),
                                        state: entries[i].state,
-                                       active: i == activeAt)
+                                       active: i == activeAt,
+                                       ringed: ringedId.len > 0 and i != activeAt and
+                                               entries[i].id == ringedId)
   result.hidden = entries.len - shown.len
   for i, e in entries:
-    if i notin shown: result.hiddenStates.add e.state
+    if i notin shown:
+      result.hiddenStates.add e.state
+      if ringedId.len > 0 and e.id == ringedId and i != activeAt:
+        result.hiddenRinged = true
 
 proc applyRecording*(entries: var seq[RecordingEntry]; entry: RecordingEntry): bool =
   ## One recording appeared or changed (a recording loading turned ready or
