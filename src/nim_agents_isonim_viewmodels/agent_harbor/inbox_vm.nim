@@ -34,7 +34,9 @@
 ##
 ## **Pages.** With `showPages` on, the viewmodel keeps an `InboxItemVM` for
 ## the item on screen (`page`), replaced when the cursor moves, visible while
-## `pagesVisible` is on (its viewing heartbeat runs only then).
+## `pagesVisible` is on (its viewing heartbeat runs only then). With items
+## waiting but none on screen, the page's place holds a hint
+## (`wantsItemHint`); the viewmodel never puts an item on screen to fill it.
 
 import isonim/core/[signals, owner, clock]
 import isonim/viewmodel
@@ -450,6 +452,16 @@ proc notice*(vm: InboxVM; nowMs = -1'i64): string =
     if waited > 0: InboxLoadingNotice & " (" & $waited & "s)" else: InboxLoadingNotice
   of asReady: (if vm.isEmpty: EmptyInboxText else: "")
   else: ""
+
+proc wantsItemHint*(vm: InboxVM): bool =
+  ## Tracked: the place an item's page takes holds the quiet hint that an
+  ## item can be chosen (a press on a row, or Next) instead: items wait and
+  ## none is on screen. With pages on, the page then opens there; without,
+  ## the host opens the item's session. Nothing is opened for the reader: an
+  ## item reaches the screen only through the reader's own press, never by
+  ## arriving or by being first.
+  discard vm.revision.val
+  vm.state.val == asReady and vm.snapshot.items.len > 0 and vm.current.val.isNone
 
 proc degradedText*(vm: InboxVM): seq[string] =
   ## Tracked: one line per server the inbox could not read.

@@ -201,6 +201,16 @@ proc approvalLines*(vm: InboxItemVM): seq[string] =
   discard vm.revision.val
   for a in vm.detail.approvals: result.add a.approvalSummary
 
+proc approvalSubject*(request: ApprovalRequest): string =
+  ## What a queued approval asks for, drawn as code on a line of its own:
+  ## the command of a sudo approval, the domain of a network one.
+  if request.scope == asNetwork: request.domain else: request.command
+
+proc approvalPurpose*(request: ApprovalRequest): string =
+  ## Why the agent asks, as the agent gave it ("" for no reason given),
+  ## drawn as prose under the subject.
+  request.reason
+
 proc itemTarget(vm: InboxItemVM): string =
   ## The tracker's target of an action answering this item (`targetOf`).
   "item:" & vm.item.server & ":" & vm.item.id

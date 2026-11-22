@@ -63,6 +63,13 @@ suite "what each page shows":
       let (_, network) = pageOf("network")
       check network.approvalLines ==
         @["packages.example.org in order to: download the pinned benchmark tool"]
+      # The same approvals split for the page: the subject (a command, a
+      # domain) on a line of its own, the purpose as the agent gave it.
+      check sudo.detail.approvals[0].approvalSubject == "systemctl restart relay"
+      check sudo.detail.approvals[0].approvalPurpose == "load the new queue limit"
+      check sudo.detail.approvals[1].approvalSubject == "chown relay /var/lib/relay"
+      check network.detail.approvals[0].approvalSubject == "packages.example.org"
+      check network.detail.approvals[0].approvalPurpose == "download the pinned benchmark tool"
       let (_, login) = pageOf("login")
       check login.loginText == LocalSignInText
       let (_, feedback) = pageOf("feedback")

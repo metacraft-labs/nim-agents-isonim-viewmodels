@@ -402,6 +402,44 @@ suite "auto-switch":
       vm.dispose()
       disposeRoot()
 
+  test "test_inbox_vm_item_hint: with items and nothing on screen the page's place holds the hint, and nothing opens":
+    # The hint is the reader's cue to choose; asking for it opens nothing.
+    # It goes once an item is on screen (with pages or without: a host
+    # without pages opens the item's session), and never shows with nothing
+    # waiting or before the inbox is read.
+    createRoot proc(disposeRoot: proc()) =
+      let source = populated()
+      let vm = newInboxVM(source, showPages = true)
+      check not vm.wantsItemHint    # not loaded yet
+      vm.load()
+      check vm.wantsItemHint
+      check vm.wantsItemHint        # asking twice still opens nothing
+      check vm.current.val.isNone
+      check vm.page.isNil
+      check vm.moveCount == 0
+      check vm.requests.val == 0
+      check vm.next()
+      check not vm.wantsItemHint
+      check not vm.page.isNil
+      vm.dispose()
+      let noPages = newInboxVM(populated())
+      noPages.load()
+      check noPages.wantsItemHint
+      check noPages.next()
+      check noPages.page.isNil
+      check not noPages.wantsItemHint
+      noPages.dispose()
+      let empty = newInboxVM(inboxFixture("empty"), showPages = true)
+      empty.load()
+      check empty.isEmpty
+      check not empty.wantsItemHint
+      empty.dispose()
+      let waiting = newInboxVM(newPendingDataSource(), showPages = true)
+      waiting.load()
+      check not waiting.wantsItemHint
+      waiting.dispose()
+      disposeRoot()
+
   test "it stops at the end of the inbox":
     createRoot proc(disposeRoot: proc()) =
       let source = ScriptedActionSource(inboxSource(firstItems(1),
