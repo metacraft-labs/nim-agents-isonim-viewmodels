@@ -99,8 +99,8 @@ Structure:
   Run / Record / open rules every surface over the same tests calls; never
   restate one in a viewmodel), over nim-agents' `test_runs`; the trace
   links' button is `trace_opener_vm.nim` `TraceOpenerVM` (where a trace
-  opens: `trace_placement.nim`), over nim-agents' `trace_links`. Their
-  invented data is
+  opens: `trace_placement.nim`), over nim-agents' `trace_links`, whose link
+  parts `SessionTimelineVM` also carries. Their invented data is
   `synthetic_test_runs.nim`, and `ScriptedTestRunSource`
   (`scripted_actions.nim`) answers their writes. This package does not
   re-export nim-agents' `test_runs` or `trace_links` (their names would

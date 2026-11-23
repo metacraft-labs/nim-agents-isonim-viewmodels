@@ -15,6 +15,7 @@
 import std/[json, sequtils, sets, strutils, unittest]
 import isonim/core/[owner, signals, clock]
 import nim_agents_isonim_viewmodels
+import nim_agents/agent_harbor/trace_links
 
 const
   Session = "5ca1ab1e-0f01-4f00-8000-00000000f001"
@@ -509,3 +510,194 @@ suite "the invented timelines":
             checkpoint name & ": " & marker & " in " & text
             fail()
     expect ValueError: discard syntheticTimeline("no-such-timeline")
+
+# ---------------------------------------------------------------------------
+# Links in an agent's messages, and the session's test runs
+# ---------------------------------------------------------------------------
+#
+# These read through `TraceLinkSource` (`synthetic_test_runs.nim`), the
+# prototypes' scripted source for trace links: it serves the session's
+# messages like `TimelineDataSource`, plus their link spans and the
+# session's test runs, which no other source in this repository serves. The
+# control for each line is the same events through `TimelineDataSource`,
+# which serves neither.
+
+proc linkedTimeline(fixture: string; origin = TestRunsServer): SessionTimelineVM =
+  result = newSessionTimelineVM(traceLinkFixture(fixture), TestRunsSessionId,
+                                serverOrigin = origin)
+  result.load()
+
+proc plainTimeline(fixture: string): SessionTimelineVM =
+  ## The same messages with no links served and no server known.
+  let source = traceLinkFixture(fixture)
+  result = newSessionTimelineVM(newTimelineDataSource(@[(TestRunsSessionId, source.sessionEvents)]),
+                                TestRunsSessionId)
+  result.load()
+
+proc agentLine(vm: SessionTimelineVM): TimelineLine =
+  for line in vm.lines:
+    if line.itemKind == "agent": return line
+
+proc linkKinds(line: TimelineLine): seq[string] =
+  for p in line.parts[0].links:
+    result.add $p.kind & (if p.kind == lpTrace: ":" & $p.reference.kind else: "") &
+      (if p.reason.len > 0: "!" else: "")
+
+proc joined(line: TimelineLine): string =
+  for p in line.parts[0].links: result.add p.text
+
+suite "links in an agent's messages":
+  test "test_session_timeline_vm_link_leaves_text_copy_and_path_unchanged":
+    createRoot proc(disposeRoot: proc()) =
+      let linked = linkedTimeline("link")
+      let plain = plainTimeline("link")
+      check linked.state.val == asReady and plain.state.val == asReady
+      let a = linked.agentLine
+      let b = plain.agentLine
+      check a.text == LinkText
+      check a.text == b.text
+      check a.copyText == b.copyText
+      check a.path == b.path
+      check a.parts.len == b.parts.len
+      for i in 0 ..< a.parts.len:
+        check a.parts[i].text == b.parts[i].text
+        check a.parts[i].role == b.parts[i].role
+      check a.textRole == b.textRole
+      # Every other line is the same too.
+      check linked.texts == plain.texts
+      # The control serves no link spans: its line has no file link.
+      check "file" in a.linkKinds and "file" notin b.linkKinds
+      check a.joined == a.parts[0].text
+      check a.linkKinds == @["text", "file", "text", "trace:agent-harbor", "text"]
+      var names: seq[string]
+      for p in a.parts[0].links:
+        if linkName(p).len > 0: names.add linkName(p)
+      check names == @["File src/relay/metrics.py", "Trace " & OneTraceId]
+      linked.dispose()
+      plain.dispose()
+      disposeRoot()
+
+  test "the https form is a trace on the session's server only; another origin stays a plain link":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = linkedTimeline("many-links")
+      let line = vm.agentLine
+      check line.joined == manyLinksText()
+      check line.linkKinds == @["text", "trace:agent-harbor", "text", "trace:agent-harbor",
+                                "text", "url", "text"]
+      check line.parts[0].links[3].reference.id == SecondTraceId
+      check line.parts[0].links[3].reference.query == "at=frame-118"
+      let unknown = linkedTimeline("many-links", origin = "")
+      check unknown.agentLine.linkKinds == @["text", "trace:agent-harbor", "text", "url", "text",
+                                             "url", "text"]
+      vm.dispose()
+      unknown.dispose()
+      disposeRoot()
+
+  test "a malformed trace link stays text, saying why; a recording link is its own kind":
+    createRoot proc(disposeRoot: proc()) =
+      let bad = linkedTimeline("malformed")
+      let line = bad.agentLine
+      check line.joined == malformedText()
+      var reasons: seq[string]
+      for p in line.parts[0].links:
+        check p.kind != lpTrace
+        if p.reason.len > 0: reasons.add p.reason
+      check reasons.len == 4
+      check reasons[0] == "Not a trace link: the trace id is empty"
+      let local = linkedTimeline("local-recording")
+      let l = local.agentLine
+      check l.linkKinds == @["text", "trace:local-recording", "text", "trace:agent-harbor", "text"]
+      check linkName(l.parts[0].links[1]) == "Recording test_queue_bound_holds"
+      check l.parts[0].links[1].reference.query == "mode=refresh"
+      bad.dispose()
+      local.dispose()
+      disposeRoot()
+
+  test "file links of each kind, named by their target":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = linkedTimeline("file-links")
+      let line = vm.agentLine
+      check line.joined == FileLinksText
+      var files: seq[string]
+      for p in line.parts[0].links:
+        if p.kind == lpFile:
+          files.add p.text & " -> " & linkName(p) & " (" & fileLinkTitle(p.targets) & ")"
+      check files == @[
+        "src/relay/queue.py -> File src/relay/queue.py (Open src/relay/queue.py:31)",
+        "src/relay/flow.py -> File src/relay/flow.py (Several files match; choose one)",
+        "src/relay/ -> File src/relay (src/relay is a directory; nothing to open)",
+        "docs/missing.md -> File docs/missing.md (File not found in this session)",
+        "crates/relay-codec/src/transports/websocket/framing/compression/window.rs -> " &
+          "File crates/relay-codec/src/transports/websocket/framing/compression/window.rs " &
+          "(Open crates/relay-codec/src/transports/websocket/framing/compression/window.rs)"]
+      vm.dispose()
+      disposeRoot()
+
+  test "a message with no link carries none":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = newSessionTimelineVM(sourceWith([stamp(1, agentReply("Nothing to link here."))]),
+                                    Session, serverOrigin = TestRunsServer)
+      vm.load()
+      check vm.agentLine.text == "Nothing to link here."
+      check not vm.agentLine.hasLinks
+      vm.dispose()
+      disposeRoot()
+
+suite "the session's test runs":
+  test "test_session_timeline_vm_test_run_summary_lines":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = linkedTimeline("summary")
+      var runs: seq[TimelineLine]
+      for line in vm.lines:
+        if line.itemKind == "test-run": runs.add line
+      check runs.len == 2
+      check runs[0].text == "Ran 1 test on 2 platforms: 1 failed"
+      check runs[0].state == tisFailed
+      check runs[0].textRole == "error" and runs[0].parts.len == 1
+      check runs[1].text == "Ran 2 tests on 1 platform: 1 passed, 1 failed"
+      check runs[0].id == "test-run:run-7"
+      check runs[0].indent == 0 and runs[0].expandable
+      # Never a member of a group, and the timeline's other lines unchanged.
+      for line in vm.lines:
+        if line.kind == tlkGroup:
+          for item in vm.items:
+            check item.kind != tikTestRun or item.id notin line.id
+      let plain = plainTimeline("summary")
+      var others: seq[string]
+      for line in vm.lines:
+        if line.itemKind != "test-run": others.add line.text
+      check others == plain.texts
+      vm.toggle(runs[0].id)
+      var details: seq[string]
+      for line in vm.lines:
+        if line.kind == tlkDetail and line.id.startsWith("detail:test-run:run-7"):
+          details.add line.text
+      check details == @["failed test_oldest_frame_is_shed (Linux x86-64 passed \xC2\xB7 Windows x86-64 failed)"]
+      vm.dispose()
+      plain.dispose()
+      disposeRoot()
+
+  test "a run still active is followed, and its line moves with its events":
+    createRoot proc(disposeRoot: proc()) =
+      let source = traceLinkFixture("summary")
+      var run = newTestRunState("run-9", @[LinuxX86], @["reprobuild"], relayTests()[0 .. 1])
+      run.startedMs = 8_000
+      run.foldEvents([runStartedEvent("run-9", LinuxX86, "reprobuild", "pytest")])
+      source.runs.add run
+      let vm = newSessionTimelineVM(source, TestRunsSessionId, serverOrigin = TestRunsServer)
+      vm.load()
+      proc lineOf(vm: SessionTimelineVM): TimelineLine =
+        for line in vm.lines:
+          if line.id == "test-run:run-9": return line
+      check vm.lineOf.text == "Running 2 tests on 1 platform"
+      check vm.lineOf.state == tisRunning
+      discard source.sendEvent(testFinishedEvent("run-9", LinuxX86, relayTests()[0].id, "passed", 9))
+      check vm.lineOf.text == "Running 2 tests on 1 platform: 1 passed"
+      discard source.sendEvent(testFinishedEvent("run-9", LinuxX86, relayTests()[1].id, "failed", 9))
+      discard source.sendEvent(runFinishedEvent("run-9", LinuxX86))
+      check vm.lineOf.text == "Ran 2 tests on 1 platform: 1 passed, 1 failed"
+      check vm.lineOf.state == tisFailed
+      vm.dispose()
+      # Disposed: an event no longer reaches it.
+      check source.sendEvent(diagnosticEvent("run-9", LinuxX86, "info", "late")) == newSeq[ProgressDelivery]()
+      disposeRoot()

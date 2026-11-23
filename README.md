@@ -107,6 +107,11 @@ types are named.
 | `agent_harbor/trace_placement.nim` | Where a trace opens (a new tab, this tab, the tab it has) and the Test Results pane's sentence that says so. |
 | `agent_harbor/synthetic_test_runs.nim` | Invented platforms, catalogs and runs of the relay change (`testRunsFixture`), trace-link messages (`traceLinkFixture`), and the `test-run` scenario. |
 
+`SessionTimelineVM` reads an agent message's links into its line's parts
+(`LinePart.links`, joining back to the part's text, so `text`, `copyText`
+and `path` do not change) and folds the session's test runs as cardless
+lines that never join a group.
+
 ## The data-source seam
 
 Every Agent Harbor viewmodel reads through an `AgentHarborDataSource`

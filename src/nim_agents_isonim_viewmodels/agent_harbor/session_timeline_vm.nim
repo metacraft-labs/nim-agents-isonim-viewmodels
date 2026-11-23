@@ -40,12 +40,33 @@
 ## filter over the lines). A host binds them to keys; the ones this family
 ## proposes are `→` and `←` to open and close, `Enter` to step in, and `+`
 ## and `-` to expand and collapse everything.
+##
+## **Links.** An agent's message is also read for links (nim-agents'
+## `trace_links.linkSpans`): a trace Agent Harbor holds
+## (`agent-harbor://trace/<id>`, or its https form on the session's server,
+## `serverOrigin`), a recording on this machine
+## (`codetracer://recordings/<test>`), a plain https link, and the file links
+## the source's link spans name (`loadLinkSpans`, by the message's place in
+## the session's history). They are a part's `links`: the part's text split
+## into pieces that join back to it exactly, so a line with links has the
+## same `text`, `parts`, `copyText` and `path` as without them, and a host
+## that does not draw links draws the line as before. `linkName` is a link's
+## accessible name (`Trace <id>`, `Recording <test>`, `File <path>`).
+##
+## **Test runs.** The session's test runs (`loadSessionTestRuns`) are folded
+## as one cardless line each at the run's start (nim-agents'
+## `applyTestRun`), worded by `test_runs.summaryLine`; the line never joins a
+## group, and opens to one line per test. A run still active is followed
+## through `subscribeTestRun`. A source that serves neither leaves the
+## timeline as it was.
 
 import std/[json, sets, strutils]
 import isonim/core/[signals, computation, owner]
 import isonim/viewmodel
 import nim_agents/activity_groups
 import nim_agents/agent_harbor/session_replay
+import nim_agents/agent_harbor/trace_links as domain_trace_links
+import nim_agents/agent_harbor/test_runs as domain_test_runs
 import ./data_source
 import ./source_feed
 
@@ -80,6 +101,10 @@ type
     ## `removed`, `mono` (commands, output, paths in details).
     text*: string
     role*: string
+    links*: seq[domain_trace_links.LinkPart]
+      ## The part's text split into plain text and links (traces,
+      ## recordings, https links, files), joining back to `text` exactly;
+      ## empty when it holds no link.
 
   TimelineLine* = object
     id*: string              ## what `toggle` and focus name
@@ -131,15 +156,31 @@ type
     connection*: Signal[string]
       ## The connection state a header badge shows ("" for none); a host
       ## sets it, since this viewmodel's source reports no connection.
+    serverOrigin*: string
+      ## The session's server (`https://host[:port]`), whose https trace
+      ## links are traces; "" when unknown.
+    ordinals: seq[(int, string)]
+      ## Each folded event's place in the history, and the item it made or
+      ## changed.
+    linkSpans: seq[MessageLinkSpans]
+    testRuns: seq[domain_test_runs.TestRunState]
+    runFeeds: seq[Subscription[TestRunUpdate]]
 
 proc newSessionTimelineVM*(source: AgentHarborDataSource; sessionId: string;
-                           policies = agentHarborPolicies()): SessionTimelineVM =
+                           policies = agentHarborPolicies();
+                           serverOrigin = ""): SessionTimelineVM =
   ## A timeline of `sessionId` over `source`; nothing loads until `load`.
+  ## `serverOrigin` is the session's server, for its https trace links.
   withViewModel proc(dispose: proc()): SessionTimelineVM =
     let feeds = newSourceFeeds()
+    var created: SessionTimelineVM
     # Disposing the viewmodel's root unsubscribes it from its source.
-    onCleanup proc() = feeds.close()
-    SessionTimelineVM(source: source, sessionId: sessionId, policies: policies,
+    onCleanup proc() =
+      feeds.close()
+      if not created.isNil:
+        for s in created.runFeeds: s.cancel()
+    created = SessionTimelineVM(source: source, sessionId: sessionId,
+                      policies: policies, serverOrigin: serverOrigin,
                       fold: initTimelineFold(policies),
                       session: FleetSession(id: sessionId, rawStatus: "queued",
                                             status: fsQueued),
@@ -150,6 +191,7 @@ proc newSessionTimelineVM*(source: AgentHarborDataSource; sessionId: string;
                       focus: createSignal(""), follow: createSignal(true),
                       readingAt: createSignal(""), filter: createSignal(""),
                       connection: createSignal(""))
+    created
 
 proc sourceLabel*(vm: SessionTimelineVM): string =
   if vm.source.isNil: "" else: vm.source.label
@@ -170,6 +212,13 @@ proc foldEvent(vm: SessionTimelineVM; event: JsonNode): TimelineChange =
   result = vm.fold.applyJson(vm.sessionId, event)
   let before = vm.session.rawStatus
   inc vm.folded
+  # Which item the event made or changed, so a message's link spans (named
+  # by the event's place in the history) find its line.
+  let made = if result.newItems > 0 and vm.fold.timeline.entries.len > 0:
+               vm.fold.timeline.entries[^1].id
+             elif result.updated.len > 0: result.updated[^1]
+             else: ""
+  if made.len > 0: vm.ordinals.add (vm.folded, made)
   vm.session.foldEvent(event, vm.folded, 0)
   if vm.session.rawStatus != before: result.changed = true
 
@@ -208,6 +257,72 @@ proc applyFrame*(vm: SessionTimelineVM; frame: FleetFrame): bool =
 
 proc restart*(vm: SessionTimelineVM)
 
+proc testRunBody(state: domain_test_runs.TestRunState): string =
+  ## One line per test: its word across platforms, its name, and each
+  ## platform's word.
+  var lines: seq[string]
+  for testId in state.order:
+    var words: seq[string]
+    for run in state.platformRuns:
+      let key = platformKey(run.platform)
+      words.add (if run.platform.label.len > 0: run.platform.label
+                 else: platformLabel(run.platform.features)) & " " &
+        statusWord(state.cell(key, testId).status)
+    # The test's own name: after its runner's prefix and its file
+    # (`pytest/tests/test_queue.py::test_x` is `test_x`).
+    var name = testId
+    let runner = runnerOf(testId)
+    if runner.len > 0: name = testId[runner.len + 1 .. ^1]
+    let colons = name.rfind("::")
+    if colons >= 0 and colons + 2 < name.len: name = name[colons + 2 .. ^1]
+    lines.add statusWord(state.rollupOf(testId)) & " " & name & " (" &
+      words.join(Dot) & ")"
+  lines.join("\n")
+
+proc foldTestRun(vm: SessionTimelineVM; state: domain_test_runs.TestRunState): bool =
+  ## One run into the fold (its line, its state, its tests); true when it
+  ## changed the timeline.
+  var item = tisOk
+  if state.isActive: item = tisRunning
+  else:
+    let counts = state.countsOf
+    if counts.failed + counts.errored > 0: item = tisFailed
+  vm.fold.applyTestRun(state.id, state.startedMs, summaryLine(state), item,
+                       testRunBody(state)).changed
+
+proc followRun(vm: SessionTimelineVM; id: string; token: int) =
+  let target = vm
+  vm.runFeeds.add vm.source.subscribeTestRun(id,
+    proc(update: DataResult[TestRunUpdate]): ProgressDelivery =
+      if token != target.loadToken or not update.ok or update.value.kind != truEvent:
+        return pdUnchanged
+      for run in target.testRuns.mitems:
+        if run.id == id:
+          var event = update.value.event
+          if event.testRunId.len == 0: event.testRunId = id
+          if run.applyTestRunEvent(event) and target.foldTestRun(run):
+            target.bump()
+            return pdApplied
+      pdUnchanged)
+
+proc loadLinksAndRuns(vm: SessionTimelineVM; token: int) =
+  ## After the history: the file links of the messages and the session's
+  ## test runs. A source that serves neither changes nothing.
+  let target = vm
+  vm.source.loadLinkSpans(vm.sessionId, proc(answer: DataResult[seq[MessageLinkSpans]]) =
+    if token != target.loadToken or not answer.ok or answer.value.len == 0: return
+    target.linkSpans = answer.value
+    target.bump())
+  vm.source.loadSessionTestRuns(vm.sessionId,
+    proc(answer: DataResult[seq[domain_test_runs.TestRunState]]) =
+      if token != target.loadToken or not answer.ok or answer.value.len == 0: return
+      target.testRuns = answer.value
+      var changed = false
+      for run in target.testRuns:
+        if target.foldTestRun(run): changed = true
+        if run.isActive: target.followRun(run.id, token)
+      if changed: target.bump())
+
 proc load*(vm: SessionTimelineVM) =
   ## Subscribes to the source's frames and resets, then loads the session's
   ## history; `asLoading` until it answers. An answer to an older `load` is
@@ -238,7 +353,8 @@ proc load*(vm: SessionTimelineVM) =
       let pending = target.pending
       target.pending = @[]
       for frame in pending: discard target.applyFrame(frame)
-      target.bump())
+      target.bump()
+      target.loadLinksAndRuns(token))
 
 proc restart*(vm: SessionTimelineVM) =
   ## Starts over, as after a source's reset: what the data put in is
@@ -247,6 +363,11 @@ proc restart*(vm: SessionTimelineVM) =
   vm.fold = initTimelineFold(vm.policies)
   vm.session = FleetSession(id: vm.sessionId, rawStatus: "queued", status: fsQueued)
   vm.folded = 0
+  vm.ordinals = @[]
+  vm.linkSpans = @[]
+  vm.testRuns = @[]
+  for s in vm.runFeeds: s.cancel()
+  vm.runFeeds = @[]
   vm.unseen.val = 0
   vm.bump()
   vm.load()
@@ -336,6 +457,14 @@ proc itemParts(item: TimelineItem): (seq[LinePart], string) =
     var parts = @[LinePart(text: item.line, role: "ended")]
     if item.body.len > 0: parts.add LinePart(text: item.body, role: "body")
     (parts, "ended")
+  of tikTestRun:
+    # A test run's line is its summary; failing in the error role, running
+    # in the running role. Its tests are its details.
+    let role = case item.state
+      of tisRunning: "running"
+      of tisFailed: "error"
+      else: "body"
+    (@[LinePart(text: item.line, role: role)], role)
   of tikEdit:
     if item.added + item.removed > 0:
       (@[LinePart(text: "Edited " & item.filePath, role: "body"),
@@ -361,6 +490,9 @@ proc detailLines(fold: TimelineFold; item: TimelineItem): seq[TimelineLine] =
                            copyText: (if copy: text else: ""))
   if item.kind in {tikThought, tikCompleted} and detail.body.len > 0:
     result.add(detail.body, "body", copy = true)
+  if item.kind == tikTestRun and detail.body.len > 0:
+    for test in detail.body.splitLines:
+      result.add(test, "body")
   if detail.options.len > 0:
     result.add("Options: " & detail.options.join(Dot), "body")
   for fact in detail.facts:
@@ -431,12 +563,30 @@ proc matches(fold: TimelineFold; node: TimelineNode; query: string): bool =
     if q in item.line.toLowerAscii or q in item.body.toLowerAscii: return true
   false
 
+proc spansOf(vm: SessionTimelineVM; itemId: string): seq[FileLinkSpan] =
+  ## The link spans of the messages that made or changed the item.
+  for (ordinal, id) in vm.ordinals:
+    if id != itemId: continue
+    for m in vm.linkSpans:
+      if m.ordinal == ordinal: result.add m.spans
+
+proc linksOf(vm: SessionTimelineVM; item: TimelineItem; text: string): seq[domain_trace_links.LinkPart] =
+  ## The message's text as plain text and links, or none when it holds no
+  ## link. File spans count only over the message's own text (its body).
+  let spans = if item.body.len > 0 and text == item.body: vm.spansOf(item.id)
+              else: @[]
+  let parts = linkSpans(text, vm.serverOrigin, spans)
+  for p in parts:
+    if p.kind != lpText or p.reason.len > 0: return parts
+  @[]
+
 proc buildLines(vm: SessionTimelineVM): seq[TimelineLine] =
   let fold = vm.fold
   let query = vm.filter.val
   proc itemLines(lines: var seq[TimelineLine]; vm: SessionTimelineVM;
                  item: TimelineItem; kind: TimelineLineKind; level, indent: int) =
-    let (parts, role) = itemParts(item)
+    var (parts, role) = itemParts(item)
+    if item.kind == tikAgent: parts[0].links = vm.linksOf(item, parts[0].text)
     var details = detailLines(fold, item)
     let open = item.id in vm.expanded
     let path = if item.filePath.len > 0 and parts[0].text.endsWith(item.filePath) and
@@ -670,3 +820,31 @@ proc anchor*(vm: SessionTimelineVM): string =
 
 proc setFilter*(vm: SessionTimelineVM; query: string) =
   vm.filter.val = query.strip
+
+# ---------------------------------------------------------------------------
+# Links and test runs
+# ---------------------------------------------------------------------------
+
+proc linkName*(link: domain_trace_links.LinkPart): string =
+  ## A link's accessible name, naming its target: `Trace <id>`, `Recording
+  ## <test>`, `File <path>`, `Link <url>`; "" for plain text.
+  case link.kind
+  of lpTrace: accessibleName(link.reference)
+  of lpFile:
+    for t in link.targets:
+      if t.exists: return "File " & t.path
+    "File " & (if link.targets.len > 0: link.targets[0].path else: link.text)
+  of lpUrl: "Link " & link.text
+  of lpText: ""
+
+proc hasLinks*(line: TimelineLine): bool =
+  ## Whether a part of the line holds a link (or a link-like text that is
+  ## not one, with its tooltip).
+  for p in line.parts:
+    if p.links.len > 0: return true
+  false
+
+proc testRunsOf*(vm: SessionTimelineVM): seq[domain_test_runs.TestRunState] =
+  ## Tracked: the session's test runs, as their lines show them.
+  discard vm.revision.val
+  vm.testRuns
