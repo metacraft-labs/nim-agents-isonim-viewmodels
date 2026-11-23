@@ -56,6 +56,7 @@ proc subjectOf(entry: ScenarioEntry): string =
     $entry.recording.entry.state
   of sekInbox: "inbox " & inboxSubject(entry.inbox)
   of sekOperator: "press " & $entry.press.kind
+  of sekTestRun: "testrun " & entry.testRun.testRunId & " " & entry.testRun.kindText
 
 proc expectedLog(scenario: PlaybackScenario; upTo: int64): seq[string] =
   ## The deliveries a playback that reached `upTo` has made, in order.
@@ -83,6 +84,7 @@ type
     resetFeed: Subscription[StreamReset]
     inbox: Subscription[InboxEvent]
     presses: Subscription[OperatorPress]
+    testRuns: Subscription[TestRunUpdate]
 
 proc record(source: PlaybackDataSource): Recorder =
   ## Subscribes to every kind `source` sends. Each delivery is written down
@@ -112,6 +114,10 @@ proc record(source: PlaybackDataSource): Recorder =
   r.presses = source.subscribePresses proc(a: DataResult[OperatorPress]): ProgressDelivery =
     r.log.add $r.source.nextDeliveredMs & " press " & $a.value.kind
     pdApplied
+  r.testRuns = source.subscribeTestRunEvents proc(a: DataResult[TestRunUpdate]): ProgressDelivery =
+    r.log.add $r.source.nextDeliveredMs & " testrun " & a.value.testRunId & " " &
+      a.value.event.kindText
+    pdApplied
   r.resetFeed = source.subscribeResets proc(a: DataResult[StreamReset]): ProgressDelivery =
     inc r.resets
     r.log.setLen 0
@@ -138,11 +144,13 @@ type Views = object
   center: ControlCenterVM
     ## nil unless the scenario feeds the control center (`withCenter`): the
     ## initiatives, and the sessions waiting for the operator.
+  tests: TestRunsVM
+    ## nil unless the scenario feeds the Tests panel (`testsSession`).
   initiativeId: string
 
 proc viewsOver(source: AgentHarborDataSource; initiativeId: string;
                autoSwitch = false; timelineSession = ""; withInbox = false;
-               withCenter = false): Views =
+               withCenter = false; testsSession = ""): Views =
   ## The viewmodels of every playback story, loaded over `source`: the fleet
   ## list, the tab strip, the sidebar list, the initiative tab bar, the
   ## Initiatives panel and the Initiative Progress panel showing
@@ -167,6 +175,9 @@ proc viewsOver(source: AgentHarborDataSource; initiativeId: string;
   if withCenter:
     result.center = newControlCenterVM(source, newScriptedRouter("test router"), source)
     result.center.load()
+  if testsSession.len > 0:
+    result.tests = newTestRunsVM(source, ReviewScope(sessionId: testsSession))
+    result.tests.load()
   result.fleet.load()
   result.tabs.load()
   result.list.load()
@@ -182,6 +193,7 @@ proc dispose(views: Views) =
   views.initiatives.dispose()
   views.progress.dispose()
   if not views.center.isNil: views.center.dispose()
+  if not views.tests.isNil: views.tests.dispose()
   if not views.timeline.isNil: views.timeline.dispose()
   if not views.operator.isNil: views.operator.stop()
   if not views.inbox.isNil: views.inbox.dispose()
@@ -219,6 +231,21 @@ proc shown(views: Views): seq[string] =
     var waiting: seq[string]
     for row in views.center.waiting: waiting.add row.item.id & " " & row.words
     result.add "control-center " & $waiting & " " & $views.center.initiatives.rows
+  if views.tests.isNil:
+    result.add "tests -"
+  else:
+    var rows: seq[string]
+    for g in views.tests.groups:
+      for r in g.rows:
+        var cells: seq[string]
+        for c in r.cells:
+          cells.add c.statusWord & (if c.cell.reused: " reused" else: "") &
+            (if c.recordingWord.len > 0: " " & c.recordingWord else: "") &
+            (if c.cell.trace.len > 0: " trace" else: "")
+        rows.add r.name & " " & cells.join("|")
+    var heads: seq[string]
+    for h in views.tests.platformHeads: heads.add h.label & ": " & h.runWord
+    result.add "tests " & views.tests.headline & " " & $heads & " " & $rows
 
 proc agree(a, b: Views; label: string): bool =
   ## Whether two sets of viewmodels show the same; the first difference is
@@ -247,6 +274,12 @@ proc initiativeOf(scenario: PlaybackScenario): string =
 proc firstInitiative(name: string): string =
   playbackScenario(name).initiativeOf
 
+proc testsOf(scenario: PlaybackScenario): string =
+  ## The session whose tests a scenario's Tests panel shows ("" when it
+  ## feeds none).
+  if scenario.feeds("tests") and scenario.testRuns.len > 0: scenario.testRuns[0].sessionId
+  else: ""
+
 proc timelineOf(scenario: PlaybackScenario): string =
   ## The session a scenario's activity timeline shows ("" when it feeds none).
   if scenario.feeds("session-activity"): scenario.sessionOf("session-activity") else: ""
@@ -256,7 +289,8 @@ proc viewsOf(source: PlaybackDataSource): Views =
   viewsOver(source, source.scenario.initiativeOf,
             timelineSession = source.scenario.timelineOf,
             withInbox = source.scenario.feeds("inbox"),
-            withCenter = source.scenario.feeds("control-center"))
+            withCenter = source.scenario.feeds("control-center"),
+            testsSession = source.scenario.testsOf)
 
 proc testClock(source: PlaybackDataSource): TestClock = TestClock(source.clock)
 
@@ -529,6 +563,9 @@ const
   ControlCenterAt = 8
     ## The ninth, the control center: its waiting sessions and the
     ## initiatives' summary.
+  TestsAt = 9
+    ## The tenth, the Tests panel: its headline, platform heads and cells,
+    ## which a test run's events move.
   InboxKinds = {sekInbox, sekOperator}
 
 proc heldStill(views: Views): seq[string] =
@@ -540,7 +577,7 @@ proc heldStill(views: Views): seq[string] =
     row.ageLabel = ""
     row.durationLabel = ""
   result[0] = "fleet " & $rows & " " & $views.fleet.counts
-  doAssert result.len == ControlCenterAt + 1
+  doAssert result.len == TestsAt + 1
 
 proc unchangedAtMoments(scenario: PlaybackScenario): seq[string] =
   ## Every (moment, surface) where the moment's entries -- those after the
@@ -575,6 +612,8 @@ proc unchangedAtMoments(scenario: PlaybackScenario): seq[string] =
         found.add scenario.name & " at " & name & ": timeline shows the same as at the moment before"
       if (kinds * InboxKinds).card > 0 and now[InboxAt] == before[InboxAt]:
         found.add scenario.name & " at " & name & ": inbox shows the same as at the moment before"
+      if sekTestRun in kinds and scenario.testsOf.len > 0 and now[TestsAt] == before[TestsAt]:
+        found.add scenario.name & " at " & name & ": tests shows the same as at the moment before"
       before = now
       previousMs = at
     v.dispose()
@@ -584,7 +623,7 @@ proc unchangedAtMoments(scenario: PlaybackScenario): seq[string] =
 const ShownAt = [("fleet", 0), ("session-tabs", 1), ("session-list", 2),
                  ("initiative-tabs", 3), ("initiatives", 4), ("initiative-progress", 5),
                  ("session-activity", TimelineAt), ("inbox", InboxAt),
-                 ("control-center", ControlCenterAt)]
+                 ("control-center", ControlCenterAt), ("tests", TestsAt)]
   ## Each view's line of `shown`.
 
 proc shownIndex(view: string): int =
@@ -1464,4 +1503,114 @@ suite "the viewmodels follow a source through the seam":
       let buttons = bar.recordingButtonsOf("x").buttons
       check buttons.len == 2 and buttons[0].active and not buttons[1].active
       bar.dispose()
+      disposeRoot()
+
+# ---------------------------------------------------------------------------
+# The Tests panel over `test-run`
+# ---------------------------------------------------------------------------
+
+suite "test-run: the Tests panel at each named moment":
+  test "test-run loads, and holds its invariants":
+    let s = testRunScenario()
+    check s.name == "test-run"
+    check s.invariantFailures.len == 0
+    let problems = s.problemsOf
+    for p in problems: checkpoint p
+    check problems.len == 0
+    check s.momentNames == @["started", "first-results", "reused", "recording", "recorded",
+                             "cancelled"]
+    check s.momentNames("tests") == s.momentNames
+    check s.testRuns.len == 2
+    check s.testPlatforms.len == 3
+    var kinds: set[ScenarioEntryKind]
+    for entry in s.entries: kinds.incl entry.kind
+    check kinds == {sekLifecycle, sekEvent, sekTestRun}
+
+  test "a test-run entry naming an unknown run or platform, or out of order, is reported":
+    var bad = testRunScenario()
+    var stray = bad.entries[^1]
+    doAssert stray.kind == sekTestRun
+    stray.atMs = bad.lastMs + 1_000
+    stray.moment = ""
+    stray.testRun.testRunId = "run-404"
+    bad.entries.add stray
+    var foreign = bad.entries[^2]
+    foreign.atMs = bad.lastMs + 1_000
+    foreign.moment = ""
+    foreign.testRun.platform = @["arch.riscv64", "os.linux"]
+    bad.entries.add foreign
+    # A test that finished on Linux starts again: illegal.
+    var restart = testRunEntry(bad.lastMs + 1_000,
+      testStartedEvent("run-2", LinuxX86, relayTests()[0].id))
+    bad.entries.add restart
+    let text = bad.problemsOf.join("\n")
+    checkpoint text
+    check "names a run the scenario did not create" in text
+    check "names a platform its run did not create" in text
+    check "is not legal where it comes" in text
+    check bad.problemsOf.len == 3
+
+  test "test-run: queued, started, results, reused, recording, recorded, cancelled; stepping and seeking back":
+    proc panelAt(source: PlaybackDataSource; vm: TestRunsVM): seq[string] =
+      ## The headline, each platform head, and the depth test's cells.
+      result.add vm.headline
+      for h in vm.platformHeads: result.add h.label & ": " & h.runWord
+      let depth = relayTests()[4].id
+      for g in vm.groups:
+        for r in g.rows:
+          if r.testId == depth:
+            for c in r.cells:
+              result.add c.label & " " & c.statusWord &
+                (if c.recordingWord.len > 0: " " & c.recordingWord else: "") &
+                (if $c.open.kind == "open-existing": " open" else: "")
+    let expected = @[
+      ("", @["running\xE2\x80\xA6", "Linux x86-64: queued on reprobuild",
+             "macOS arm64: queued on ah-executors", "Windows x86-64: queued on reprobuild",
+             "Linux x86-64 queued", "macOS arm64 queued", "Windows x86-64 queued"]),
+      ("started", @["running\xE2\x80\xA6", "Linux x86-64: running on reprobuild (pytest)",
+             "macOS arm64: running on ah-executors (pytest)", "Windows x86-64: queued on reprobuild",
+             "Linux x86-64 queued", "macOS arm64 queued", "Windows x86-64 queued"]),
+      ("first-results", @["running\xE2\x80\xA6", "Linux x86-64: running on reprobuild (pytest)",
+             "macOS arm64: running on ah-executors (pytest)", "Windows x86-64: queued on reprobuild",
+             "Linux x86-64 failed", "macOS arm64 queued", "Windows x86-64 queued"]),
+      ("reused", @["running\xE2\x80\xA6", "Linux x86-64: running on reprobuild (pytest)",
+             "macOS arm64: running on ah-executors (pytest)", "Windows x86-64: running on reprobuild (pytest)",
+             "Linux x86-64 failed", "macOS arm64 queued", "Windows x86-64 queued"]),
+      ("recording", @["running\xE2\x80\xA6", "Linux x86-64: running on reprobuild (pytest)",
+             "macOS arm64: running on ah-executors (pytest)", "Windows x86-64: running on reprobuild (pytest)",
+             "Linux x86-64 failed recording\xE2\x80\xA6", "macOS arm64 queued", "Windows x86-64 queued"]),
+      ("recorded", @["running\xE2\x80\xA6", "Linux x86-64: running on reprobuild (pytest)",
+             "macOS arm64: running on ah-executors (pytest)", "Windows x86-64: running on reprobuild (pytest)",
+             "Linux x86-64 failed open", "macOS arm64 queued", "Windows x86-64 queued"]),
+      ("cancelled", @["running\xE2\x80\xA6", "Linux x86-64: running on reprobuild (pytest)",
+             "macOS arm64: cancelled" & Dot & "6 cancelled",
+             "Windows x86-64: running on reprobuild (pytest)",
+             "Linux x86-64 failed open", "macOS arm64 cancelled", "Windows x86-64 queued"])]
+    createRoot proc(disposeRoot: proc()) =
+      let source = newPlayback("test-run")
+      let vm = newTestRunsVM(source, ReviewScope(sessionId: TestRunsSessionId))
+      vm.load()
+      check vm.state == asReady
+      check source.panelAt(vm) == expected[0][1]
+      for (moment, panel) in expected[1 .. ^1]:
+        source.stepTo(source.scenario.momentMs(moment))
+        checkpoint moment
+        check source.panelAt(vm) == panel
+      # The reused tests on Windows: passed, reused, no duration.
+      var reused = 0
+      for g in vm.groups:
+        for r in g.rows:
+          for c in r.cells:
+            if c.cell.reused:
+              inc reused
+              check c.durationText == ""
+      check reused == 2
+      # Seeking back rebuilds; the panel shows each moment's state again.
+      for (moment, panel) in expected[1 .. ^1]:
+        check source.seekMoment(moment)
+        checkpoint "sought " & moment
+        check source.panelAt(vm) == panel
+      source.rewind()
+      check source.panelAt(vm) == expected[0][1]
+      vm.dispose()
       disposeRoot()

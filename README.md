@@ -90,6 +90,23 @@ composer's kinds of `operator_actions` (`instructManager`, `launchTask`,
 | `agent_harbor/omnibox_composer_vm.nim` | `OmniboxComposerVM`: a COMPOSER SHEET under a one-line field, in one step -- the routing agent's decision shown live while the operator types (a destination among three in a fixed order: the window's session, a manager agent, a UI action; the context it cites, as chips the operator can cite or uncite), Enter sending at once (or as soon as the decision arrives), redirect after sending, the launch and new-initiative forms, Stop, the recent instructions, gaze context. Every delivery to Agent Harbor is an `OperatorAction` through `submitAction`. |
 | `agent_harbor/instruction_router.nim` | `InstructionRouter`: the front-end's own seam -- the routing agent (`route`) and the agent that performs UI actions (`performUiAction`) -- with `ScriptedRouter`, a pending and a failing router for the prototypes. |
 
+A change's tests on Agent Harbor's platforms, and the traces agents link
+to, are one more family. Their domain is `nim-agents`'
+`agent_harbor/test_runs` (platform offers, catalogs, run events, the
+reducer, the Verification join, why Run or Record is unavailable, the open
+control's modes, the words) and `agent_harbor/trace_links` (trace,
+recording and file links, a message split into parts, replay and download
+states); this package does not re-export them, so import them where their
+types are named.
+
+| Module | Pattern |
+| --- | --- |
+| `agent_harbor/test_runs_vm.nim` | `TestRunsVM`: a MATRIX OF TESTS BY PLATFORMS, the Test Results pane in its Agent Harbor mode -- a change's tests grouped by file in the catalog's order, one cell per platform switched on, the platform heads (backend, runner, counts, whether it can record and why not), the headline's arms, Run and Record (every test, a test, a cell), Cancel asking first, the open control's three modes, the filter, the query, folded groups and the keyboard. |
+| `agent_harbor/test_run_feed.nim` | `TestRunFeed`: what every surface over the same tests reads -- platforms, catalogs, the session's runs as their events stream, the Verification join -- and the rules they share (`runAbsence`, `recordAbsence`, `openMode`, a start still being sent disabling every cell it covers) and the requests (`runRequest`, `recordRequest` with `record=all` and `reuse=never`, `cancelRequest`). A host that shows two surfaces passes both the same feed and tracker. |
+| `agent_harbor/trace_opener_vm.nim` | `TraceOpenerVM`: a LOAD-TRACE BUTTON, one per pane -- per trace, connecting, replaying (`Show trace`) or unavailable with the reason (no Retry for a trace that is gone), and its download; a recording on this machine is opened at once with no action sent. |
+| `agent_harbor/trace_placement.nim` | Where a trace opens (a new tab, this tab, the tab it has) and the Test Results pane's sentence that says so. |
+| `agent_harbor/synthetic_test_runs.nim` | Invented platforms, catalogs and runs of the relay change (`testRunsFixture`), trace-link messages (`traceLinkFixture`), and the `test-run` scenario. |
+
 ## The data-source seam
 
 Every Agent Harbor viewmodel reads through an `AgentHarborDataSource`
@@ -123,6 +140,15 @@ base answers that the source does not provide actions, so a source with no
 way to send one shows the press failed, never sent; the prototypes answer it
 with `ScriptedActionSource`.
 
+The test-run family adds `loadTestPlatforms`, `loadTestCatalog` (one
+platform's catalog of a session's change), `loadSessionTestRuns`,
+`loadTestRun`, `subscribeTestRun` (a run's events, and its stream lost and
+resumed, `TestRunUpdate`) and `loadLinkSpans` (the file links of a
+session's messages, by each message's place in the history). Starting,
+cancelling, replaying and downloading are operator actions; the prototypes
+answer them with `ScriptedTestRunSource`, which creates a started run and
+plays the story's events into it.
+
 A viewmodel subscribes on `load`, before it asks for anything, and cancels
 when it is disposed (`agent_harbor/source_feed.nim`, `SourceFeeds`); its
 `feeds` report each subscription, an error naming the gap when the source
@@ -148,12 +174,17 @@ moment. Scenarios are invented data only.
   its counts (`sekProgress`), a
   recording-state change (`sekRecording`), an inbox event (`sekInbox`), or
   one of the operator's presses on the inbox (`sekOperator`: Next,
-  Previous, an answer, auto-switch on or off). Entries at one moment are one
+  Previous, an answer, auto-switch on or off), or an event of a test run
+  (`sekTestRun`). Entries at one moment are one
   moment: they are delivered together, in their order;
 - an entry may carry a named `moment`, unique in its scenario; stories and
   tests seek to moments by name, and captures are taken there;
 - `inbox`, the operator's inbox at the first moment, and `inboxDetails`,
   the page of every item it ever holds;
+- `testPlatforms`, `testCatalogs` and `testRuns`, the platforms offered,
+  their catalogs and the session's test runs at the first moment (a test-run
+  entry must name one of those runs and one of its platforms, and come in an
+  order the reducer accepts);
 - `sessions`, every session the scenario names with its identity, start,
   removal and whole event history (events before the first moment
   included), from which a session's history at any moment is answered.
@@ -187,6 +218,7 @@ every named moment to changing each viewmodel its entries feed.
 | `front-ends` | Sessions from CodeTracer, the CLI, the WebUI, the TUI and Telegram start, ask, are answered, fail, end and are removed, while their initiative's milestones move. | `new-session`, `port-asks`, `bench-asks`, `port-answered`, `migration-fails`, `config-answered`, `milestone-done`, `importer-ends`, `port-completes`, `importer-removed` |
 | `initiative-run` | One initiative's progress events (a milestone blocked for a while, the plan completed) and its recordings loading, turning ready or failing, and being loaded again. | `specification-done`, `trace-loading`, `trace-ready`, `recording-fails`, `milestone-blocked`, `second-trace-ready`, `queue-done`, `recording-reloaded`, `plan-done`, `session-ends` |
 | `inbox-run` | The operator's inbox: a feedback request is waiting from before the run (so no frame is the empty inbox), items arrive (nothing takes the screen), the operator walks them with Next, a boost ends and the server reorders, the operator answers with auto-switch off and then on, goes back with Previous, an item is answered on another front-end, and a last item arrives while the operator reads a page. The presses are replayed through the inbox viewmodel (`inbox_playback.nim`); the source keeps the cursor and confirms every action. | `first-wait`, `four-waiting`, `next`, `boost-ends`, `answered`, `auto-switch`, `prev`, `resolved-elsewhere`, `arrives-while-reading` |
+| `test-run` | The Tests panel (`tests`) over the relay change on three platforms: an earlier run finished and the operator's Run queued at the first frame; two platforms start, results arrive and one fails, the third answers two tests as reused, the failing test is recorded and its trace created, and the operator cancels while macOS still runs. | `started`, `first-results`, `reused`, `recording`, `recorded`, `cancelled` |
 | `session-run` | One agent session's work for the activity timeline (`session-activity`, over that session): an instruction, reads, searches, a command that fails with its trace, a question and its answer, edits, a plan, a repeated hook, a reply and completion, while a second session's events interleave and never show. | `instruction`, `reads-grouped`, `searches-grouped`, `command-running`, `command-fails`, `agent-asks`, `answered`, `edits-grouped`, `hook-repeats`, `agent-replies`, `session-completes` |
 
 **The source.** Its loads answer the state at the playback head: the first

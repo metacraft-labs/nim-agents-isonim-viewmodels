@@ -24,12 +24,26 @@
 ##   change turns approved, a reverted one leaves the record, a staged card
 ##   is applied or discarded, a priority changes.
 ##
+## - `ScriptedTestRunSource`: the scripted source of the Tests panel and the
+##   trace links (additions for test runs). It also serves the platforms the
+##   fleet offers, each platform's catalog, the session's test runs, their
+##   events and the file links of the session's messages, and its confirmed
+##   test-run writes do what a server would: a start creates a run (on the
+##   platforms a backend serves; a platform none serves is refused, named in
+##   the receipt, and a start that no platform can serve is refused as a
+##   whole) and plays the story's event script into it, all at once
+##   (`playOnStart`) or one event per `playNext`; a cancel finishes every
+##   active platform run of the run as cancelled. A replay or a download is
+##   answered per trace (`replayAnswers`, `downloadAnswers`), the script's
+##   rule for its kind otherwise.
+##
 ## **No transport.** Nothing here, and nothing this module imports, opens a
 ## connection: it holds no client and no URL. The live source over
 ## `nim-agent-harbor` will implement the same seam; the viewmodels do not
 ## change when it does.
 
 import std/[strutils, tables]
+import nim_agents/agent_harbor/test_runs
 import ./data_source
 
 type
@@ -301,8 +315,16 @@ proc reviewIndex(source: ScriptedActionSource; taskId: string): int =
     if id == taskId: return i
   -1
 
+method testRunEffects*(source: ScriptedActionSource; action: OperatorAction) {.base.} =
+  ## What a confirmed test-run or trace action does to the source's data:
+  ## nothing here (this source holds no test runs); `ScriptedTestRunSource`
+  ## applies it.
+  discard
+
 proc applyEffects(source: ScriptedActionSource; action: OperatorAction) =
   case action.kind
+  of oaStartTestRun, oaCancelTestRun, oaOpenTraceReplay, oaDownloadTrace:
+    source.testRunEffects(action)
   of oaAnswerQuestion, oaSendInstruction, oaDecidePermission, oaCancelLogin,
      oaRespondFeedback, oaSendDraft:
     if action.itemId.len > 0: source.resolveItem(action.server, action.itemId)
@@ -377,3 +399,229 @@ method submitAction*(source: ScriptedActionSource; action: OperatorAction;
 proc describeRecord*(source: ScriptedActionSource): string =
   ## The record, one action per line.
   source.script.record.join("\n")
+
+# ---------------------------------------------------------------------------
+# Test runs and trace links
+# ---------------------------------------------------------------------------
+
+type
+  ScriptedTestRunSource* = ref object of ScriptedActionSource
+    ## The scripted source of the Tests panel and the trace links: a
+    ## `ScriptedActionSource` that also serves test runs and link spans and
+    ## applies the test-run writes (see the module comment).
+    sessionId*: string
+      ## The session whose runs `runs` are ("" answers them for any session).
+    offers*: seq[PlatformOffer]
+    catalogs*: seq[PlatformCatalog]
+    catalogErrors*: seq[(string, string)]
+      ## A platform key whose catalog read fails, and the error.
+    runs*: seq[TestRunState]
+    testRunsError*: string
+      ## When set, every test-run read (platforms, catalogs, runs) fails with it.
+    linkSpans*: seq[(string, seq[MessageLinkSpans])]
+      ## By session id.
+    startScript*: seq[TestRunEvent]
+      ## The events a confirmed start plays into its new run (their run id is
+      ## the new run's).
+    playOnStart*: bool
+      ## Play `startScript` at once (a static story), else hold it for `playNext`.
+    held*: seq[TestRunEvent]
+    replayAnswers*: seq[(string, ActionRule)]
+      ## By trace id: what an `open-trace-replay` of that trace is answered.
+    downloadAnswers*: seq[(string, ActionRule)]
+      ## By trace id: what a `download-trace` of that trace is answered.
+    nextRun*: int
+      ## The number the next started run takes (`run-<n>`).
+    runSubscribers: seq[(string, Subscribers[TestRunUpdate])]
+
+proc newScriptedTestRunSource*(label = "scripted test runs";
+                               script: ActionScript = nil): ScriptedTestRunSource =
+  ScriptedTestRunSource(label: label, effects: true, nextRun: 1,
+                        script: (if script.isNil: newActionScript() else: script))
+
+proc runAt(source: ScriptedTestRunSource; id: string): int =
+  for i, run in source.runs:
+    if run.id == id: return i
+  -1
+
+proc subscribersOf(source: ScriptedTestRunSource; id: string): int =
+  for i, (runId, _) in source.runSubscribers:
+    if runId == id: return i
+  source.runSubscribers.add (id, Subscribers[TestRunUpdate]())
+  source.runSubscribers.high
+
+proc sendUpdate*(source: ScriptedTestRunSource; update: TestRunUpdate): seq[ProgressDelivery] =
+  ## Applies an event to the run it names (so a later read answers the state
+  ## after it, as a server's would), then sends the update to the run's
+  ## subscribers: an event, a lost stream, a resumed one.
+  if update.kind == truEvent:
+    let i = source.runAt(update.testRunId)
+    if i >= 0: discard source.runs[i].applyTestRunEvent(update.event)
+  let s = source.subscribersOf(update.testRunId)
+  source.runSubscribers[s][1].broadcast(success(update))
+
+proc sendEvent*(source: ScriptedTestRunSource; event: TestRunEvent): seq[ProgressDelivery] =
+  source.sendUpdate(TestRunUpdate(kind: truEvent, testRunId: event.testRunId, event: event))
+
+proc playNext*(source: ScriptedTestRunSource): bool =
+  ## Plays the next held event of a started run; false when none is held.
+  if source.held.len == 0: return false
+  let event = source.held[0]
+  source.held.delete(0)
+  discard source.sendEvent(event)
+  true
+
+proc playAll*(source: ScriptedTestRunSource) =
+  while source.playNext(): discard
+
+proc offerKeys(source: ScriptedTestRunSource): seq[string] =
+  for o in source.offers: result.add platformKey(o.platform)
+
+proc refusals(source: ScriptedTestRunSource; action: OperatorAction): seq[(string, string)] =
+  ## The platforms of a start that no backend serves, with why.
+  for (key, value) in action.params:
+    if key == "platform":
+      let why = runAbsence(source.offers, value.split('+'))
+      if why.len > 0: result.add (platformKey(value.split('+')), why)
+
+method testRunEffects*(source: ScriptedTestRunSource; action: OperatorAction) =
+  case action.kind
+  of oaStartTestRun:
+    var platforms: seq[TestPlatform]
+    var backends: seq[string]
+    let refused = source.refusals(action)
+    for (key, value) in action.params:
+      if key != "platform": continue
+      let k = platformKey(value.split('+'))
+      var skip = false
+      for (r, _) in refused:
+        if r == k: skip = true
+      if skip: continue
+      for o in source.offers:
+        if platformKey(o.platform) == k:
+          platforms.add o.platform
+          backends.add (if o.backends.len > 0: o.backends[0].backend else: "")
+    if platforms.len == 0: return
+    var record = rmNone
+    var reuse = rpCertified
+    for (key, value) in action.params:
+      if key == "record":
+        for m in RecordMode:
+          if $m == value: record = m
+      if key == "reuse" and value == "never": reuse = rpNever
+    while source.runAt("run-" & $source.nextRun) >= 0: inc source.nextRun
+    let id = "run-" & $source.nextRun
+    inc source.nextRun
+    source.runs.add initTestRunState(id, action.choices, platforms, backends, record, reuse)
+    for e in source.startScript:
+      var event = e
+      event.testRunId = id
+      source.held.add event
+    if source.playOnStart: source.playAll()
+  of oaCancelTestRun:
+    var runId = ""
+    for (key, value) in action.params:
+      if key == "test-run": runId = value
+    let i = source.runAt(runId)
+    if i < 0: return
+    let run = source.runs[i]
+    for p in run.platformRuns:
+      if p.isActive:
+        discard source.sendEvent(TestRunEvent(kind: tekRunFinished, testRunId: runId,
+          platform: p.platform.features, backend: p.backend, cancelled: true,
+          reason: "cancelled by the operator"))
+    # What a cancelled run would still have sent is never sent.
+    var kept: seq[TestRunEvent]
+    for e in source.held:
+      if e.testRunId != runId: kept.add e
+    source.held = kept
+  else: discard   # a replay or a download changes nothing a read answers
+
+proc answerFor(list: seq[(string, ActionRule)]; trace: string; fallback: ActionRule): ActionRule =
+  for (id, rule) in list:
+    if id == trace: return rule
+  fallback
+
+method submitAction*(source: ScriptedTestRunSource; action: OperatorAction;
+                     done: ActionCallback) =
+  ## As `ScriptedActionSource`'s, with a replay and a download answered per
+  ## trace, and a start that no offered platform can serve refused, naming
+  ## each platform; a start refused on some of its platforms is confirmed
+  ## for the rest, its receipt naming the refused ones.
+  source.script.record.add $action
+  var rule = source.script.ruleFor(action.kind)
+  var trace = ""
+  for (key, value) in action.params:
+    if key == "trace": trace = value
+  case action.kind
+  of oaOpenTraceReplay: rule = source.replayAnswers.answerFor(trace, rule)
+  of oaDownloadTrace: rule = source.downloadAnswers.answerFor(trace, rule)
+  of oaStartTestRun:
+    if rule.receipt == rrConfirmed:
+      let refused = source.refusals(action)
+      var named = 0
+      for (key, _) in action.params:
+        if key == "platform": inc named
+      var reasons: seq[string]
+      for (_, why) in refused: reasons.add why
+      if named > 0 and refused.len == named:
+        rule = failedWith(reasons.join("; "))
+      elif refused.len > 0:
+        var words: seq[string]
+        for (key, why) in refused:
+          words.add "Not started on " & platformLabel(key.split('+')) & ": " & why
+        rule = confirmedWith(words.join("; "))
+  else: discard
+  if rule.receipt == rrConfirmed and source.effects: source.applyEffects(action)
+  source.script.answer(rule, action, done)
+
+method loadTestPlatforms*(source: ScriptedTestRunSource; done: TestPlatformsCallback) =
+  if source.testRunsError.len > 0:
+    done(failure[seq[PlatformOffer]](source.testRunsError))
+  else: done(success(source.offers))
+
+method loadTestCatalog*(source: ScriptedTestRunSource; change: string;
+                        platform: seq[string]; done: TestCatalogCallback) =
+  let key = platformKey(platform)
+  if source.testRunsError.len > 0:
+    done(failure[PlatformCatalog](source.testRunsError))
+    return
+  for (k, error) in source.catalogErrors:
+    if k == key:
+      done(failure[PlatformCatalog](error))
+      return
+  for c in source.catalogs:
+    if platformKey(c.platform) == key:
+      done(success(c))
+      return
+  done(missingResult[PlatformCatalog]("no catalog for " & platformLabel(platform) &
+                                      " in " & source.label))
+
+method loadSessionTestRuns*(source: ScriptedTestRunSource; sessionId: string;
+                            done: SessionTestRunsCallback) =
+  if source.testRunsError.len > 0:
+    done(failure[seq[TestRunState]](source.testRunsError))
+  elif source.sessionId.len == 0 or source.sessionId == sessionId:
+    done(success(source.runs))
+  else:
+    done(success(newSeq[TestRunState]()))
+
+method loadTestRun*(source: ScriptedTestRunSource; id: string; done: TestRunCallback) =
+  let i = source.runAt(id)
+  if i < 0: done(missingResult[TestRunState]("no test run " & id & " in " & source.label))
+  else: done(success(source.runs[i]))
+
+method subscribeTestRun*(source: ScriptedTestRunSource; id: string;
+                         callback: FeedCallback[TestRunUpdate]): Subscription[TestRunUpdate] =
+  ## Sends what `sendUpdate`, `playNext` and the source's own effects send
+  ## for the run.
+  let s = source.subscribersOf(id)
+  source.runSubscribers[s][1].subscribe(callback)
+
+method loadLinkSpans*(source: ScriptedTestRunSource; sessionId: string;
+                      done: LinkSpansCallback) =
+  for (id, spans) in source.linkSpans:
+    if id == sessionId:
+      done(success(spans))
+      return
+  done(success(newSeq[MessageLinkSpans]()))

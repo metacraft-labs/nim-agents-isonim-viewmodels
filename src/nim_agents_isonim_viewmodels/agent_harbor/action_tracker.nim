@@ -141,3 +141,12 @@ proc forget*(tracker: ActionTracker; target: string) =
   if at >= 0 and tracker.entries[at].status != astSubmitting:
     tracker.entries.delete(at)
     tracker.bump()
+
+proc submitting*(tracker: ActionTracker): seq[TrackedAction] =
+  ## Tracked: every action still submitting, in the order first sent. What
+  ## a surface reads to disable the presses another surface's action still
+  ## covers (a test run's start names several tests and platforms, and its
+  ## target is the whole request, not one cell).
+  discard tracker.revision.val
+  for e in tracker.entries:
+    if e.status == astSubmitting: result.add e

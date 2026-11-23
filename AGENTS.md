@@ -94,6 +94,17 @@ Structure:
   sessions waiting for the operator in inbox order, each with its progress
   pie's words. The status line's gaze mark is `gaze_status_vm.nim`
   `GazeStatusVM` (its words, tooltip and pause key are `instruction_composer`'s).
+  A change's tests on Agent Harbor's platforms are `test_runs_vm.nim`
+  `TestRunsVM` over `test_run_feed.nim` `TestRunFeed` (the reads and the
+  Run / Record / open rules every surface over the same tests calls; never
+  restate one in a viewmodel), over nim-agents' `test_runs`; the trace
+  links' button is `trace_opener_vm.nim` `TraceOpenerVM` (where a trace
+  opens: `trace_placement.nim`), over nim-agents' `trace_links`. Their
+  invented data is
+  `synthetic_test_runs.nim`, and `ScriptedTestRunSource`
+  (`scripted_actions.nim`) answers their writes. This package does not
+  re-export nim-agents' `test_runs` or `trace_links` (their names would
+  shadow a consumer's own): import them where their types are named.
 - **Writes.** An operator's action leaves a viewmodel only through
   `AgentHarborDataSource.submitAction`. The prototypes answer it with
   `scripted_actions.nim` `ScriptedActionSource` (and the playback source's

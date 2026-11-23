@@ -70,10 +70,25 @@
 ## a source that has no way to send an action can never report one sent. The
 ## prototypes' sources answer actions from a script and never reach a server
 ## (`scripted_actions.nim`).
+##
+## **Test runs and links.** A change's tests on Agent Harbor's platforms: the
+## platforms the fleet offers (`loadTestPlatforms`), one platform's catalog of
+## the change's tests (`loadTestCatalog`), a session's test runs
+## (`loadSessionTestRuns`), one run (`loadTestRun`) and its events as they
+## happen (`subscribeTestRun`, which also says when the stream was lost and
+## when it resumed); and the file links of a session's messages
+## (`loadLinkSpans`). Their values are nim-agents' `test_runs` and
+## `trace_links` records; this module does not re-export those modules (their
+## names would shadow a consumer's own), so a caller that names their types
+## imports them. Starting, cancelling, replaying and downloading are operator
+## actions (`submitAction`). The base answers each read that the source does
+## not provide it.
 
 import std/json
 import nim_agents/agent_harbor/[initiatives, fleet_fold, review_record,
                                 change_diff, inbox, operator_actions]
+import nim_agents/agent_harbor/test_runs as domain_test_runs
+import nim_agents/agent_harbor/trace_links as domain_trace_links
 import ./records
 import ./recording_switcher
 
@@ -277,6 +292,35 @@ type
     ## The interface. `label` names the source in a panel's chrome ("fleet
     ## snapshot, 2026-11-03 18:40 UTC", "live: <server>").
     label*: string
+
+type
+  TestRunUpdateKind* = enum
+    truEvent = "event"         ## one event of the run's stream
+    truLost = "lost"           ## the stream broke; the source is reconnecting
+    truResumed = "resumed"     ## reconnected, resuming after the last event
+
+  TestRunUpdate* = object
+    ## What a test run's subscription delivers: an event of the run
+    ## (`GET /api/v1/test-runs/{id}/events`, server-sent events resumable by
+    ## their id), or that the stream was lost or resumed.
+    kind*: TestRunUpdateKind
+    testRunId*: string
+    event*: domain_test_runs.TestRunEvent   ## truEvent
+    reason*: string                         ## truLost: why, as the source says
+
+  MessageLinkSpans* = object
+    ## The file links of one message of a session: the message is the
+    ## session's event at `ordinal` (its 1-based place in the session's
+    ## history), and `spans` are byte ranges of its text with their targets
+    ## (nim-agents' `linkSpansFromJson`).
+    ordinal*: int
+    spans*: seq[domain_trace_links.FileLinkSpan]
+
+  TestPlatformsCallback* = proc(answer: DataResult[seq[domain_test_runs.PlatformOffer]]) {.closure.}
+  TestCatalogCallback* = proc(answer: DataResult[domain_test_runs.PlatformCatalog]) {.closure.}
+  SessionTestRunsCallback* = proc(answer: DataResult[seq[domain_test_runs.TestRunState]]) {.closure.}
+  TestRunCallback* = proc(answer: DataResult[domain_test_runs.TestRunState]) {.closure.}
+  LinkSpansCallback* = proc(answer: DataResult[seq[MessageLinkSpans]]) {.closure.}
 
 proc success*[T](value: T): DataResult[T] =
   DataResult[T](ok: true, value: value)
@@ -548,6 +592,54 @@ method submitAction*(source: AgentHarborDataSource; action: OperatorAction;
   done(failure[ActionReceipt](source.unsupported("operator actions")))
 
 # ---------------------------------------------------------------------------
+# Test runs and links
+# ---------------------------------------------------------------------------
+
+method loadTestPlatforms*(source: AgentHarborDataSource;
+                          done: TestPlatformsCallback) {.base.} =
+  ## The platforms the fleet offers, each with the backends and runners that
+  ## serve it and whether each can record (the proposed
+  ## `GET /api/v1/test-platforms`).
+  done(failure[seq[domain_test_runs.PlatformOffer]](source.unsupported("test platforms")))
+
+method loadTestCatalog*(source: AgentHarborDataSource; change: string;
+                        platform: seq[string]; done: TestCatalogCallback) {.base.} =
+  ## One platform's catalog of the tests of `change` (the session whose
+  ## change is tested; the server resolves its source), or that the
+  ## platform is still discovering them, or why discovery failed (the
+  ## proposed `GET /api/v1/test-catalog?source=…&platform=…`). `platform`
+  ## is the platform's features.
+  done(failure[domain_test_runs.PlatformCatalog](source.unsupported("test catalogs")))
+
+method loadSessionTestRuns*(source: AgentHarborDataSource; sessionId: string;
+                            done: SessionTestRunsCallback) {.base.} =
+  ## The session's test runs, oldest first, each as its state so far (the
+  ## proposed `GET /api/v1/sessions/{id}/test-runs`). A run's `startedMs` is
+  ## on the session's clock (milliseconds since the session started), as its
+  ## events' timestamps are.
+  done(failure[seq[domain_test_runs.TestRunState]](source.unsupported("test runs")))
+
+method loadTestRun*(source: AgentHarborDataSource; id: string;
+                    done: TestRunCallback) {.base.} =
+  ## One run's state (the proposed `GET /api/v1/test-runs/{id}`); `missing`
+  ## for a run the source does not hold.
+  done(failure[domain_test_runs.TestRunState](source.unsupported("test runs")))
+
+method subscribeTestRun*(source: AgentHarborDataSource; id: string;
+                         callback: FeedCallback[TestRunUpdate]): Subscription[TestRunUpdate] {.base.} =
+  ## The run's events as they happen (the proposed
+  ## `GET /api/v1/test-runs/{id}/events`), and the stream's losses and
+  ## resumptions. The base answers once that the source does not provide
+  ## them.
+  endedSubscription[TestRunUpdate](callback, source.unsupported("test-run events"))
+
+method loadLinkSpans*(source: AgentHarborDataSource; sessionId: string;
+                      done: LinkSpansCallback) {.base.} =
+  ## The file links of the session's messages (its link-span events). A
+  ## view without them draws no file links, and says nothing went wrong.
+  done(failure[seq[MessageLinkSpans]](source.unsupported("link spans")))
+
+# ---------------------------------------------------------------------------
 # State sources: the states no capture shows
 # ---------------------------------------------------------------------------
 
@@ -561,6 +653,8 @@ type
     pendingDiffs*: seq[SessionDiffCallback]
     pendingInbox*: seq[InboxCallback]
     pendingActions*: seq[ActionCallback]
+    pendingTestPlatforms*: seq[TestPlatformsCallback]
+    pendingSessionTestRuns*: seq[SessionTestRunsCallback]
     inboxSubscribers*: Subscribers[InboxEvent]
     progressSubscribers*: ProgressSubscribers
       ## Accepted and never sent to: a server whose event stream is open and
@@ -648,6 +742,24 @@ method submitAction*(source: PendingDataSource; action: OperatorAction;
   ## Accepted; never answered: an action that stays `submitting`.
   source.pendingActions.add done
 
+method loadTestPlatforms*(source: PendingDataSource; done: TestPlatformsCallback) =
+  source.pendingTestPlatforms.add done
+
+method loadTestCatalog*(source: PendingDataSource; change: string;
+                        platform: seq[string]; done: TestCatalogCallback) =
+  discard
+
+method loadSessionTestRuns*(source: PendingDataSource; sessionId: string;
+                            done: SessionTestRunsCallback) =
+  source.pendingSessionTestRuns.add done
+
+method loadTestRun*(source: PendingDataSource; id: string; done: TestRunCallback) =
+  discard
+
+method loadLinkSpans*(source: PendingDataSource; sessionId: string;
+                      done: LinkSpansCallback) =
+  discard
+
 proc newFailingDataSource*(error: string;
                            label = "unreachable server"): FailingDataSource =
   FailingDataSource(label: label, error: error)
@@ -720,6 +832,28 @@ method loadInboxItemDetail*(source: FailingDataSource; item: InboxItemRef;
 method submitAction*(source: FailingDataSource; action: OperatorAction;
                      done: ActionCallback) =
   done(failure[ActionReceipt](source.error))
+
+method loadTestPlatforms*(source: FailingDataSource; done: TestPlatformsCallback) =
+  done(failure[seq[domain_test_runs.PlatformOffer]](source.error))
+
+method loadTestCatalog*(source: FailingDataSource; change: string;
+                        platform: seq[string]; done: TestCatalogCallback) =
+  done(failure[domain_test_runs.PlatformCatalog](source.error))
+
+method loadSessionTestRuns*(source: FailingDataSource; sessionId: string;
+                            done: SessionTestRunsCallback) =
+  done(failure[seq[domain_test_runs.TestRunState]](source.error))
+
+method loadTestRun*(source: FailingDataSource; id: string; done: TestRunCallback) =
+  done(failure[domain_test_runs.TestRunState](source.error))
+
+method subscribeTestRun*(source: FailingDataSource; id: string;
+                         callback: FeedCallback[TestRunUpdate]): Subscription[TestRunUpdate] =
+  endedSubscription[TestRunUpdate](callback, source.error)
+
+method loadLinkSpans*(source: FailingDataSource; sessionId: string;
+                      done: LinkSpansCallback) =
+  done(failure[seq[MessageLinkSpans]](source.error))
 
 proc newSnapshotDataSource*(snapshot: FleetSnapshot;
                             label = "synthetic fleet";

@@ -29,6 +29,7 @@ import std/json
 import nim_agents/agent_harbor/initiatives
 import ./playback_scenario
 import ./session_events
+import ./synthetic_test_runs
 
 export playback_scenario
 
@@ -646,7 +647,7 @@ proc inboxRunScenario*(): PlaybackScenario =
 # ---------------------------------------------------------------------------
 
 const PlaybackScenarioNames* = ["front-ends", "initiative-run", "session-run",
-                                "inbox-run"]
+                                "inbox-run", "test-run"]
   ## Every synthetic playback scenario, by name.
 
 proc playbackScenario*(name: string): PlaybackScenario =
@@ -657,4 +658,5 @@ proc playbackScenario*(name: string): PlaybackScenario =
   of "initiative-run": initiativeRunScenario()
   of "session-run": sessionRunScenario()
   of "inbox-run": inboxRunScenario()
+  of "test-run": testRunScenario()
   else: raise newException(ValueError, "no playback scenario named " & name)

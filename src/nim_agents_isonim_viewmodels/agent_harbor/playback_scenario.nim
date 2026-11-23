@@ -61,11 +61,21 @@
 ## keeps the inbox's cursor, so where the operator is follows from the
 ## presses, never from the scenario.
 ##
+## A scenario may also hold **test runs**: the platforms the fleet offers
+## (`testPlatforms`), each platform's catalog (`testCatalogs`) and the
+## session's runs at its first moment (`testRuns`, a queued run being one
+## created before its events); its test-run entries (`sekTestRun`) are the
+## runs' events (nim-agents' `TestRunEvent`), which the Tests panel (the
+## `tests` view) folds. `problemsOf` checks that each names a run the
+## scenario created and a platform of that run, and comes in a legal order
+## (nim-agents' `applyTestRunEvent` accepts it).
+##
 ## Everything a scenario holds is invented; this format carries no captured
 ## data.
 
 import std/[algorithm, json, sets, strutils, tables]
 import nim_agents/agent_harbor/[session_replay, fleet_fold]
+import nim_agents/agent_harbor/test_runs as domain_test_runs
 import ./data_source
 
 export data_source
@@ -80,6 +90,7 @@ type
     sekRecording = "recording"   ## a recording appeared or changed state
     sekInbox = "inbox"           ## an inbox event (item added, updated, resolved)
     sekOperator = "operator"     ## the operator pressed something on the inbox
+    sekTestRun = "test-run"      ## an event of a test run
 
   OperatorPressKind* = enum
     opNext = "next"
@@ -122,6 +133,13 @@ type
       inbox*: InboxEvent
     of sekOperator:
       press*: OperatorPress
+    of sekTestRun:
+      testRun*: domain_test_runs.TestRunEvent
+
+  ScenarioTestRun* = object
+    ## A test run of one of the scenario's sessions, as at the first moment.
+    sessionId*: string
+    state*: domain_test_runs.TestRunState
 
   ScenarioSession* = object
     ## One session a scenario names.
@@ -157,14 +175,21 @@ type
       ## The operator's inbox at the first moment.
     inboxDetails*: seq[InboxItemDetail]
       ## The page of every item the scenario's inbox holds at any moment.
+    testPlatforms*: seq[domain_test_runs.PlatformOffer]
+      ## The platforms the fleet offers for test runs.
+    testCatalogs*: seq[domain_test_runs.PlatformCatalog]
+      ## Each offered platform's catalog of the session's change.
+    testRuns*: seq[ScenarioTestRun]
+      ## The test runs at the first moment.
 
 const PlaybackViews* = ["fleet", "session-tabs", "session-list", "initiatives",
                         "initiative-tabs", "initiative-progress",
-                        "session-activity", "inbox", "control-center"]
+                        "session-activity", "inbox", "control-center", "tests"]
   ## The views a scenario can name: the Agent Harbor front-end's sessions and
   ## initiatives views, one session's activity timeline, the operator's
-  ## inbox, and the control center (the initiatives and the sessions waiting
-  ## for the operator), each over its viewmodel.
+  ## inbox, the control center (the initiatives and the sessions waiting
+  ## for the operator), and the Tests panel (`tests`), each over its
+  ## viewmodel.
 
 const SessionViews* = ["session-activity"]
   ## The views of a single session: a scenario names the session each shows
@@ -212,6 +237,10 @@ proc `$`*(entry: ScenarioEntry): string =
   of sekOperator:
     result.add $entry.press.kind
     if entry.press.kind == opAutoSwitch: result.add(if entry.press.on: " on" else: " off")
+  of sekTestRun:
+    result.add entry.testRun.testRunId & " " & entry.testRun.kindText &
+      (if entry.testRun.testId.len > 0: " " & entry.testRun.testId else: "") & " on " &
+      domain_test_runs.platformKey(entry.testRun.platform)
   if entry.moment.len > 0: result.add " [" & entry.moment & "]"
 
 proc momentNames*(scenario: PlaybackScenario): seq[string] =
@@ -313,6 +342,13 @@ proc inboxEntry*(atMs: int64; event: InboxEvent; moment = ""): ScenarioEntry =
 
 proc pressEntry*(atMs: int64; press: OperatorPress; moment = ""): ScenarioEntry =
   ScenarioEntry(kind: sekOperator, atMs: atMs, moment: moment, press: press)
+
+proc testRunEntry*(atMs: int64; event: domain_test_runs.TestRunEvent;
+                   moment = ""): ScenarioEntry =
+  ## One event of a test run; its `kindText` is set from its kind when empty.
+  var e = event
+  if e.kindText.len == 0: e.kindText = $e.kind
+  ScenarioEntry(kind: sekTestRun, atMs: atMs, moment: moment, testRun: e)
 
 proc buildScenario*(name, title: string; firstMs: int64;
                     sessions: seq[ScenarioSession]; initiatives: seq[Initiative];
@@ -506,8 +542,8 @@ proc problemsOf*(scenario: PlaybackScenario): seq[string] =
         result.add label & "entry " & $i & " (" & $entry & ") names an unknown initiative"
       if entry.recording.entry.id.len == 0:
         result.add label & "entry " & $i & " names a recording without an id"
-    of sekInbox, sekOperator:
-      discard   # checked with the inbox, below
+    of sekInbox, sekOperator, sekTestRun:
+      discard   # checked with the inbox and the test runs, below
   # The plans stay coherent at every moment: a milestone the plan reads as
   # completed has every deliverable done and no test pending or failing, in
   # the first listing and after each progress event (a status moved without
@@ -621,6 +657,32 @@ proc problemsOf*(scenario: PlaybackScenario): seq[string] =
           entry.press.option.len == 0:
         result.add label & "entry " & $i & " (" & $entry & ") answers with nothing"
     else: discard
+  # Test runs: each event names a run the scenario created and a platform of
+  # it, and the reducer accepts it where it comes.
+  var runs: seq[domain_test_runs.TestRunState]
+  for r in scenario.testRuns:
+    if scenario.findSession(r.sessionId) < 0:
+      result.add label & "the test run " & r.state.id & " names the session " &
+        r.sessionId & ", which is not a session of the scenario"
+    runs.add r.state
+  for i, entry in scenario.entries:
+    if entry.kind != sekTestRun: continue
+    let e = entry.testRun
+    var at = -1
+    for j, r in runs:
+      if r.id == e.testRunId: at = j
+    if at < 0:
+      result.add label & "entry " & $i & " (" & $entry & ") names a run the scenario did not create"
+      continue
+    var known = false
+    for p in runs[at].platformRuns:
+      if domain_test_runs.platformKey(p.platform) == domain_test_runs.platformKey(e.platform):
+        known = true
+    if not known:
+      result.add label & "entry " & $i & " (" & $entry & ") names a platform its run did not create"
+      continue
+    if not runs[at].applyTestRunEvent(e):
+      result.add label & "entry " & $i & " (" & $entry & ") is not legal where it comes"
   # Tool calls: a result follows its call, and a trace names the command.
   for s in scenario.sessions:
     var commands = initTable[string, string]()

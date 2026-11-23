@@ -43,6 +43,12 @@
 ## not the script's. A rebuild returns the cursors and the record to the
 ## first frame too.
 ##
+## **Test runs.** `loadTestPlatforms` and `loadTestCatalog` answer the
+## scenario's; `loadSessionTestRuns` and `loadTestRun` the runs at the head
+## (each test-run entry delivered folded into its run); each test-run entry
+## goes to its run's subscribers (`subscribeTestRun`) and to the playback's
+## own `subscribeTestRunEvents`, which hears every run's.
+##
 ## **The clock.** Time comes from an injected IsoNim clock (`ClockBase`,
 ## `isonim/core/clock`): a `TestClock` in tests and captures, which moves
 ## only when the test advances it, and a `RealClock` in a host that plays in
@@ -54,6 +60,7 @@
 import std/json
 import isonim/core/clock
 import nim_agents/agent_harbor/fleet_fold
+import nim_agents/agent_harbor/test_runs as domain_test_runs
 import ./data_source
 import ./playback_scenario
 import ./scripted_actions
@@ -89,6 +96,11 @@ type
       ## Answers every action (confirmed) and records it.
     inboxSubscribers*: Subscribers[InboxEvent]
     pressSubscribers*: Subscribers[OperatorPress]
+    testRuns: seq[ScenarioTestRun]
+      ## The runs at the head.
+    runSubscribers: seq[(string, Subscribers[TestRunUpdate])]
+    testRunSubscribers*: Subscribers[TestRunUpdate]
+      ## Every run's events (`subscribeTestRunEvents`).
 
 proc rebuildState(source: PlaybackDataSource) =
   ## The source's own state at the first frame.
@@ -100,6 +112,7 @@ proc rebuildState(source: PlaybackDataSource) =
   source.inbox = source.scenario.inbox
   source.cursors.clear()
   source.script = newActionScript()
+  source.testRuns = source.scenario.testRuns
 
 proc newPlaybackDataSource*(scenario: PlaybackScenario; clock: ClockBase;
                             label = ""): PlaybackDataSource =
@@ -183,6 +196,14 @@ proc deliver(source: PlaybackDataSource; entry: ScenarioEntry) =
     discard source.inboxSubscribers.broadcast(success(entry.inbox))
   of sekOperator:
     discard source.pressSubscribers.broadcast(success(entry.press))
+  of sekTestRun:
+    let e = entry.testRun
+    for r in source.testRuns.mitems:
+      if r.state.id == e.testRunId: discard r.state.applyTestRunEvent(e)
+    let update = TestRunUpdate(kind: truEvent, testRunId: e.testRunId, event: e)
+    for (id, subscribers) in source.runSubscribers.mitems:
+      if id == e.testRunId: discard subscribers.broadcast(success(update))
+    discard source.testRunSubscribers.broadcast(success(update))
 
 proc deliverThrough(source: PlaybackDataSource; atMs: int64) =
   ## Delivers, in order, every entry not yet delivered whose moment is at or
@@ -392,3 +413,43 @@ method submitAction*(source: PlaybackDataSource; action: OperatorAction;
                      done: ActionCallback) =
   ## Confirms and records the action; what it changes is the scenario's.
   discard source.script.receive(action, done)
+
+method loadTestPlatforms*(source: PlaybackDataSource; done: TestPlatformsCallback) =
+  done(success(source.scenario.testPlatforms))
+
+method loadTestCatalog*(source: PlaybackDataSource; change: string;
+                        platform: seq[string]; done: TestCatalogCallback) =
+  let key = domain_test_runs.platformKey(platform)
+  for c in source.scenario.testCatalogs:
+    if domain_test_runs.platformKey(c.platform) == key:
+      done(success(c))
+      return
+  done(missingResult[domain_test_runs.PlatformCatalog]("no catalog for " & key &
+                                                       " in " & source.label))
+
+method loadSessionTestRuns*(source: PlaybackDataSource; sessionId: string;
+                            done: SessionTestRunsCallback) =
+  ## The session's runs at the head.
+  var runs: seq[domain_test_runs.TestRunState]
+  for r in source.testRuns:
+    if r.sessionId == sessionId: runs.add r.state
+  done(success(runs))
+
+method loadTestRun*(source: PlaybackDataSource; id: string; done: TestRunCallback) =
+  for r in source.testRuns:
+    if r.state.id == id:
+      done(success(r.state))
+      return
+  done(missingResult[domain_test_runs.TestRunState]("no test run " & id & " in " & source.label))
+
+method subscribeTestRun*(source: PlaybackDataSource; id: string;
+                         callback: FeedCallback[TestRunUpdate]): Subscription[TestRunUpdate] =
+  for (runId, subscribers) in source.runSubscribers.mitems:
+    if runId == id: return subscribers.subscribe(callback)
+  source.runSubscribers.add (id, Subscribers[TestRunUpdate]())
+  source.runSubscribers[^1][1].subscribe(callback)
+
+proc subscribeTestRunEvents*(source: PlaybackDataSource;
+                             callback: FeedCallback[TestRunUpdate]): Subscription[TestRunUpdate] =
+  ## Every run's events, each when the head reaches its moment.
+  source.testRunSubscribers.subscribe(callback)
