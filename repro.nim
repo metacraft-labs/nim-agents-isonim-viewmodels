@@ -12,9 +12,9 @@
 ## ``test-builds`` and an EXECUTE edge collected into ``test``.
 ##
 ## **The lists below are the Justfile's, entry for entry.** ``repro test`` and
-## ``just test`` run the same suites, and ``repro build test-builds`` and
-## ``just build`` compile the same modules (codetracer-pm
-## ``spec/Repo-Requirements.md`` §2.8.1):
+## ``just test`` run the same suites, and ``repro build test-builds`` compiles
+## every module ``just build`` does (plus the ``-d:nodejs`` compiles the JS
+## tests run), per codetracer-pm ``spec/Repo-Requirements.md`` §2.8.1:
 ##
 ##   * ``viewmodelTests`` is ``build-native`` / ``test-native``;
 ##   * ``viewmodelJsBuildStems`` is ``build-js``: compiled for the browser
@@ -101,13 +101,16 @@ package nim_agents_isonim_viewmodels:
   library nim_agents_isonim_viewmodels
 
   build:
-    # Inputs every test compile reads besides its own module: the sources,
-    # the Agent Harbor fixtures the fixture source embeds at compile time
-    # (``staticRead`` of ``fixtures/agent-harbor/``), and the two files the
-    # collection guard reads (``staticRead`` of ``Justfile`` / ``repro.nim``,
-    # and the ``tests/`` listing).
-    const testInputs = @["src", "fixtures", "nim_agents_isonim_viewmodels.nimble",
-                         "Justfile", "repro.nim", "tests"]
+    # Inputs every test compile reads besides its own module: the sources
+    # and the Agent Harbor fixtures the fixture source embeds at compile time
+    # (``staticRead`` of ``fixtures/agent-harbor/``).
+    const testInputs = @["src", "fixtures", "nim_agents_isonim_viewmodels.nimble"]
+    # The collection guard alone also reads ``Justfile`` and ``repro.nim``
+    # (``staticRead``) and lists ``tests/`` at compile time. Only its edge
+    # names them, so editing the Justfile, or ``just test`` writing its
+    # binaries into ``tests/``, does not invalidate every other compile.
+    const guardStem = "test_repro_collections_match_justfile"
+    const guardInputs = @["Justfile", "repro.nim", "tests"]
 
     var testBuildActions: seq[BuildActionDef] = @[]
     var testExecuteActions: seq[BuildActionDef] = @[]
@@ -122,7 +125,9 @@ package nim_agents_isonim_viewmodels:
         binary = "build/test-bin/" & stem,
         paths = @["src"],
         actionId = "nim_agents_isonim_viewmodels.test_build." & stem,
-        extraInputs = testInputs)
+        extraInputs =
+          if stem == guardStem: testInputs & guardInputs
+          else: testInputs)
       testBuildActions.add(edge.action)
       testExecuteActions.add(edge.testBinary.run(
         actionId = "nim_agents_isonim_viewmodels.test_execute." & stem,
