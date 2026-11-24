@@ -35,8 +35,18 @@
 ## **Host requests**, published as signals the story records:
 ## `requestedTrace` (a test's trace and where it opens) and `requestedFile`
 ## (a test's location).
+##
+## **Cost of a read.** The panel lists hundreds of tests in many files and
+## draws (and the keyboard moves) between changes, so its rows are built
+## once per change of what they show, not on every read. The rows are
+## memoized on the feed's `generation`, the reader's revision, the filter,
+## the query, Shift, the placement and the shared tracker's revision (every
+## input a cell reads); the keyboard's row and cell and the selection are
+## laid over them in one pass, and `focusables` reads the memoized rows
+## directly, so a key press costs no rebuild. `rowBuilds` counts the
+## builds.
 
-import std/[sets, strutils]
+import std/[sets, strutils, tables]
 import isonim/core/[signals, owner]
 import isonim/viewmodel
 import nim_agents/agent_harbor/[test_runs, trace_links]
@@ -137,6 +147,20 @@ type
   PendingOpen = object
     testId, platform, traceBefore: string
 
+  RowsKey = object
+    ## Every input the built rows read, but the keyboard and the selection.
+    feedGeneration, readerRevision, trackerRevision: int
+    filter: TestFilter
+    query: string
+    shiftHeld: bool
+    placement: PlacementContext
+
+  MarksKey = object
+    ## The memoized rows' build and what is laid over them.
+    rowBuild: int
+    selected, focusRow: string
+    focusCell: int
+
   TestRunsVM* = ref object of ViewModel
     feed: TestRunFeed
     ownsFeed: bool
@@ -147,6 +171,11 @@ type
     openRows: HashSet[string]
     foldedGroups: HashSet[string]
     pendingOpens: seq[PendingOpen]
+    rowsBuilt: int              ## how many times the rows were built
+    rowsKey: RowsKey            ## valid once `rowsBuilt > 0`
+    rows: seq[TestGroupView]    ## no row or cell selected or focused
+    marksKey: MarksKey
+    marked: seq[TestGroupView]  ## `rows` with the selection and the keyboard
     readerRevision*: Signal[int]
     recordMode*: Signal[RecordMode]
     reuse*: Signal[bool]
@@ -315,50 +344,80 @@ proc milestoneTags(vm: TestRunsVM): seq[(string, string)] =
   for j in vm.feed.joined:
     if j.testId.len > 0: result.add (j.testId, j.entry.milestoneId)
 
-proc buildGroups(vm: TestRunsVM; applyFilters: bool): seq[TestGroupView] =
+proc currentRowsKey(vm: TestRunsVM): RowsKey =
+  ## Tracked: reads every signal the built rows depend on.
+  RowsKey(feedGeneration: vm.feed.generation,
+          readerRevision: vm.readerRevision.val,
+          trackerRevision: vm.tracker.revision.val,
+          filter: vm.filter.val, query: vm.query.val,
+          shiftHeld: vm.shiftHeld.val, placement: vm.placement.val)
+
+proc buildRows(vm: TestRunsVM): seq[TestGroupView] =
+  ## The listed tests by file after the filter and the query, with no row
+  ## selected or focused.
   let enabled = vm.enabledPlatforms
-  let tags = vm.milestoneTags
+  var tags = initTable[string, seq[string]]()
+  for (id, m) in vm.milestoneTags:
+    tags.mgetOrPut(id, @[]).add m
   let query = vm.query.val.toLowerAscii
   let filter = vm.filter.val
-  let focused = vm.focusRow.val
-  let focusCell = vm.focusCell.val
+  var groupOf = initTable[string, int]()
   for test in vm.feed.tests:
     var cells: seq[TestCell]
     for c in vm.feed.cellsFor(test.id):
       if c.platform in enabled: cells.add c
     let status = rollup(cells)
-    if applyFilters:
-      if not status.matchesFilter(filter): continue
-      if query.len > 0 and query notin test.name.toLowerAscii and
-          query notin test.file.toLowerAscii and query notin test.id.toLowerAscii:
-        continue
+    if not status.matchesFilter(filter): continue
+    if query.len > 0 and query notin test.name.toLowerAscii and
+        query notin test.file.toLowerAscii and query notin test.id.toLowerAscii:
+      continue
     var row = TestRowView(testId: test.id, name: test.name, file: test.file,
                           runner: test.runner, line: test.line, status: status,
                           statusWord: statusWord(status),
-                          open: test.id in vm.openRows,
-                          selected: test.id == vm.selected.val,
-                          focused: test.id == focused)
-    for (id, m) in tags:
-      if id == test.id and m notin row.milestones: row.milestones.add m
-    for i, c in cells:
-      var v = vm.cellView(c)
-      v.focused = row.focused and i == focusCell
-      row.cells.add v
-    var at = -1
-    for i, g in result:
-      if g.file == test.file: at = i
+                          open: test.id in vm.openRows)
+    for m in tags.getOrDefault(test.id):
+      if m notin row.milestones: row.milestones.add m
+    for c in cells: row.cells.add vm.cellView(c)
+    var at = groupOf.getOrDefault(test.file, -1)
     if at < 0:
       result.add TestGroupView(file: test.file, folded: test.file in vm.foldedGroups)
       at = result.high
+      groupOf[test.file] = at
     inc result[at].count
     result[at].rows.add row
+
+proc refreshRows(vm: TestRunsVM) =
+  ## Tracked: brings the memoized `vm.rows` up to date, building them again
+  ## only when an input changed.
+  let key = vm.currentRowsKey
+  if vm.rowsBuilt == 0 or key != vm.rowsKey:
+    vm.rows = vm.buildRows()
+    vm.rowsKey = key
+    inc vm.rowsBuilt
+
+proc rowBuilds*(vm: TestRunsVM): int =
+  ## How many times the rows were built: once per change of what they
+  ## show; a read between two changes, or a key press, builds none.
+  vm.rowsBuilt
 
 proc groups*(vm: TestRunsVM): seq[TestGroupView] =
   ## Tracked: the listed tests by file, in the catalog's order, after the
   ## filter and the query; a folded group keeps its rows (a host draws only
   ## its head).
-  discard vm.readerRevision.val
-  vm.buildGroups(applyFilters = true)
+  vm.refreshRows()
+  let marks = MarksKey(rowBuild: vm.rowsBuilt, selected: vm.selected.val,
+                       focusRow: vm.focusRow.val, focusCell: vm.focusCell.val)
+  if marks != vm.marksKey:
+    vm.marked = vm.rows
+    if marks.selected.len > 0 or marks.focusRow.len > 0:
+      for g in vm.marked.mitems:
+        for r in g.rows.mitems:
+          r.selected = r.testId == marks.selected
+          r.focused = r.testId == marks.focusRow
+          if r.focused:
+            for i, c in r.cells.mpairs: c.focused = i == marks.focusCell
+    vm.marksKey = marks
+  vm.marked
 
 proc testCount*(vm: TestRunsVM): int =
   ## Tracked: every test the catalogs hold.
@@ -733,8 +792,10 @@ proc select*(vm: TestRunsVM; testId: string) =
 
 proc focusables*(vm: TestRunsVM): seq[string] =
   ## Tracked: the rows the keyboard moves over, in the order drawn (a folded
-  ## group's rows are not drawn).
-  for g in vm.groups:
+  ## group's rows are not drawn). It reads the memoized rows, so a key
+  ## press rebuilds none.
+  vm.refreshRows()
+  for g in vm.rows:
     if g.folded: continue
     for r in g.rows: result.add r.testId
 

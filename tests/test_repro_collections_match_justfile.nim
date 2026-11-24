@@ -67,7 +67,8 @@ proc recipeModules(justfile, recipe: string): seq[string] =
 
 proc constStrings(reproNim, name: string): seq[string] =
   ## The string literals of `const <name> = @[ ... ]` in `repro.nim`, in
-  ## order.  Empty when the constant is absent.
+  ## order.  Empty when the constant is absent.  A `#` comment runs to the
+  ## end of its line, so a commented-out entry is not counted as declared.
   let start = reproNim.find("const " & name & " = @[")
   if start < 0:
     return
@@ -76,7 +77,10 @@ proc constStrings(reproNim, name: string): seq[string] =
     return
   var i = reproNim.find("@[", start) + 2
   while i < close:
-    if reproNim[i] == '"':
+    if reproNim[i] == '#':
+      let eol = reproNim.find('\n', i)
+      i = (if eol < 0: close else: eol + 1)
+    elif reproNim[i] == '"':
       let stop = reproNim.find('"', i + 1)
       result.add(reproNim[i + 1 ..< stop])
       i = stop + 1

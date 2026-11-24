@@ -50,8 +50,15 @@
 ##
 ## The feed holds no presentation state: what the reader sets (the
 ## platforms switched on, filters, open rows) is each surface's.
+##
+## **Cost of a read.** A panel lists hundreds of tests on several platforms
+## and asks these rules once per cell, so a read between two changes of the
+## data must not redo the catalog's merge. The merged catalog (`tests`), its
+## test-id index (`testOf`) and each platform's set of test ids (the `not
+## discovered` rule) are built once per `generation` and reused until the
+## data changes again.
 
-import std/[sets, strutils]
+import std/[sets, strutils, tables]
 import isonim/core/signals
 import isonim/viewmodel
 import nim_agents/agent_harbor/[operator_actions, review_record]
@@ -96,6 +103,15 @@ type
       ## Moves whenever the data changes.
     state*: Signal[AsyncState]
     error*: Signal[string]
+    generation: int
+      ## Moves with every change of the data, including the clearing a
+      ## `load` does before any answer (which does not move `revision`):
+      ## what the memoized reads below are keyed on.
+    memoGeneration: int           ## the generation the memo was built at; -1: none
+    memoTests: seq[CatalogTest]   ## `mergeCatalogs` of the held catalogs
+    memoIndex: Table[string, int] ## test id -> its index in `memoTests`
+    memoListed: Table[string, HashSet[string]]
+      ## platform key -> the test ids its discovered catalog holds
 
 proc newTestRunFeed*(source: AgentHarborDataSource; scope: ReviewScope;
                      tracker: ActionTracker = nil): TestRunFeed =
@@ -105,7 +121,7 @@ proc newTestRunFeed*(source: AgentHarborDataSource; scope: ReviewScope;
   TestRunFeed(source: source, scope: scope,
               tracker: (if tracker.isNil: newActionTracker() else: tracker),
               revision: createSignal(0), state: createSignal(asIdle),
-              error: createSignal(""))
+              error: createSignal(""), memoGeneration: -1)
 
 proc tracker*(feed: TestRunFeed): ActionTracker = feed.tracker
 proc source*(feed: TestRunFeed): AgentHarborDataSource = feed.source
@@ -124,6 +140,7 @@ proc unlisten*(feed: TestRunFeed; id: int) =
   feed.listeners = kept
 
 proc changed(feed: TestRunFeed) =
+  inc feed.generation
   feed.revision.val = feed.revision.val + 1
   let listeners = feed.listeners
   for (_, l) in listeners: l()
@@ -226,6 +243,8 @@ proc load*(feed: TestRunFeed) =
   feed.runs = @[]
   feed.verifications = @[]
   feed.lost = @[]
+  # The data was just cleared: nothing memoized before this may be read.
+  inc feed.generation
   feed.error.val = ""
   feed.state.val = asLoading
   let f = feed
@@ -285,6 +304,34 @@ proc refreshRuns*(feed: TestRunFeed) =
 # Reading
 # ---------------------------------------------------------------------------
 
+proc generation*(feed: TestRunFeed): int =
+  ## Tracked: a number that moves with every change of the feed's data and
+  ## only then; a surface keys what it builds from the feed on it.
+  discard feed.revision.val
+  feed.generation
+
+proc memoize(feed: TestRunFeed) =
+  ## Builds the merged catalog, its index and each platform's listed ids,
+  ## unless they were already built at this generation.
+  if feed.memoGeneration == feed.generation: return
+  var held: seq[PlatformCatalog]
+  var seen = initHashSet[string]()
+  feed.memoListed = initTable[string, HashSet[string]]()
+  for c in feed.catalogs:
+    let usable = c.loaded and c.error.len == 0
+    if usable: held.add c.catalog
+    # A platform's rule reads its first catalog, as `catalogOf` does.
+    let key = platformKey(c.platform)
+    if seen.containsOrIncl(key): continue
+    if usable and c.catalog.state == csDiscovered:
+      var ids = initHashSet[string]()
+      for t in c.catalog.tests: ids.incl t.id
+      feed.memoListed[key] = ids
+  feed.memoTests = mergeCatalogs(held)
+  feed.memoIndex = initTable[string, int]()
+  for i, t in feed.memoTests: feed.memoIndex[t.id] = i
+  feed.memoGeneration = feed.generation
+
 proc offers*(feed: TestRunFeed): seq[PlatformOffer] =
   ## Tracked: the platforms the fleet offers, in its order.
   discard feed.revision.val
@@ -327,16 +374,18 @@ proc tests*(feed: TestRunFeed): seq[CatalogTest] =
   ## Tracked: every test any platform's catalog holds, once, in the order
   ## first seen (the offer's order, then each catalog's), with the platforms
   ## that hold it.
+  ## Built once per generation.
   discard feed.revision.val
-  var held: seq[PlatformCatalog]
-  for c in feed.catalogs:
-    if c.loaded and c.error.len == 0: held.add c.catalog
-  mergeCatalogs(held)
+  feed.memoize()
+  feed.memoTests
 
 proc testOf*(feed: TestRunFeed; testId: string): CatalogTest =
-  for t in feed.tests:
-    if t.id == testId: return t
-  CatalogTest(id: testId, runner: runnerOf(testId))
+  ## Tracked: the merged catalog's test `testId` (one with only its id and
+  ## runner when no catalog holds it); a lookup.
+  discard feed.revision.val
+  feed.memoize()
+  let i = feed.memoIndex.getOrDefault(testId, -1)
+  if i >= 0: feed.memoTests[i] else: CatalogTest(id: testId, runner: runnerOf(testId))
 
 proc joined*(feed: TestRunFeed): seq[JoinedVerification] =
   ## Tracked: the plan's Verification entries, each with the catalog test it
@@ -422,12 +471,11 @@ proc lostReason*(feed: TestRunFeed): string =
   if feed.lost.len > 0: feed.lost[0][1] else: ""
 
 proc catalogAbsence(feed: TestRunFeed; testId, platform: string): string =
-  let read = feed.catalogOf(platform)
-  if not read.loaded or read.error.len > 0 or read.catalog.state != csDiscovered:
-    return NotDiscoveredText
-  for t in read.catalog.tests:
-    if t.id == testId: return ""
-  NotDiscoveredText
+  ## `not discovered` unless the platform's catalog was read, discovered,
+  ## and holds the test.
+  feed.memoize()
+  if platform in feed.memoListed and testId in feed.memoListed[platform]: ""
+  else: NotDiscoveredText
 
 proc runAbsence*(feed: TestRunFeed; testId, platform: string): string =
   ## Tracked: why Run cannot be pressed for `testId` on `platform`; "" when
