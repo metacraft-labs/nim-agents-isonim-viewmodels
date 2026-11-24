@@ -23,6 +23,7 @@ build-native:
     nim c {{paths}} tests/test_control_center_vm.nim
     nim c {{paths}} tests/test_nimcache_is_worktree_local.nim
     nim c {{paths}} tests/test_fixture_set_rebuilds_on_switch.nim
+    nim c {{paths}} tests/test_repro_collections_match_justfile.nim
 
 build-js:
     nim js {{paths}} tests/test_activity_vm.nim
@@ -61,6 +62,7 @@ test-native:
     nim c -r {{paths}} tests/test_control_center_vm.nim
     nim c -r {{paths}} tests/test_nimcache_is_worktree_local.nim
     nim c -r {{paths}} tests/test_fixture_set_rebuilds_on_switch.nim
+    nim c -r {{paths}} tests/test_repro_collections_match_justfile.nim
 
 test-js:
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_activity_vm.nim
@@ -99,6 +101,7 @@ lint-nim:
     nim check {{paths}} tests/test_trace_opener_vm.nim
     nim check {{paths}} tests/test_nimcache_is_worktree_local.nim
     nim check {{paths}} tests/test_fixture_set_rebuilds_on_switch.nim
+    nim check {{paths}} tests/test_repro_collections_match_justfile.nim
 
 lint-nix:
     nixfmt --check flake.nix

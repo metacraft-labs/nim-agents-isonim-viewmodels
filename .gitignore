@@ -11,3 +11,7 @@ result
 
 # Repro development environment cache
 .repro/
+
+# repro.nim test outputs (`build/test-bin/<stem>`, `build/js/`, `build/js-test/`),
+# written by `repro build` / `repro test`.
+/build/
