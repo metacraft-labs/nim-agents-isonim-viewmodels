@@ -16,12 +16,16 @@
 ##   seam's base: a source with no way to send an action, which must never
 ##   show a press as sent.
 ## - `PendingDataSource` and `FailingDataSource` are the seam's state sources.
+## - `HeldReload` serves the scripted source's first load and holds the
+##   answers of every later one, as a slow server would: the only way to
+##   observe the feed between a `load` clearing its data and the first
+##   answer, which a synchronous source never leaves room for.
 ##
 ## Expected values are written out by hand from the invented runs
 ## (`synthetic_test_runs.nim`), never computed through the reducer.
 
-import std/[json, os, strutils, unittest]
-import isonim/core/[owner, signals]
+import std/[json, monotimes, os, strutils, times, unittest]
+import isonim/core/[computation, owner, signals]
 import nim_agents/agent_harbor/[test_runs, trace_links]
 import nim_agents_isonim_viewmodels
 
@@ -38,6 +42,20 @@ method loadTestCatalog(source: NoActions; change: string; platform: seq[string];
 method loadSessionTestRuns(source: NoActions; sessionId: string;
                            done: SessionTestRunsCallback) =
   source.inner.loadSessionTestRuns(sessionId, done)
+
+type HeldReload = ref object of AgentHarborDataSource
+  inner: ScriptedTestRunSource
+  loads: int
+
+method loadTestPlatforms(source: HeldReload; done: TestPlatformsCallback) =
+  inc source.loads
+  if source.loads == 1: source.inner.loadTestPlatforms(done)
+method loadTestCatalog(source: HeldReload; change: string; platform: seq[string];
+                       done: TestCatalogCallback) =
+  source.inner.loadTestCatalog(change, platform, done)
+method loadSessionTestRuns(source: HeldReload; sessionId: string;
+                           done: SessionTestRunsCallback) =
+  if source.loads <= 1: source.inner.loadSessionTestRuns(sessionId, done)
 
 let LinuxKey = platformKey(LinuxX86)
 let LinuxArmKey = platformKey(LinuxArm)
@@ -752,6 +770,177 @@ suite "the reader's state and the keyboard":
                 "cancelled", "reused", NotDiscoveredText, "reprobuild", "ah-executors"]:
         check t in terms
       for e in vm.legend: check e.meaning.len > 0
+      vm.dispose()
+      disposeRoot()
+
+suite "a long catalog: a read between two changes builds no row":
+  # codetracer-pm issues/2026-11-23-the-tests-viewmodel-rebuilds-every-row-
+  # on-each-read-so-a-long-catalog-cannot-render.md: every read of `groups`
+  # (and every key press, through `focusables`) rebuilt the whole matrix and
+  # merged every platform's catalog once per cell.
+
+  test "reads and key presses over the long catalog build the rows once":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = testsOver("long")
+      let rows = vm.focusables
+      check rows.len == 320
+      let built = vm.rowBuilds
+      check built == 1
+      for _ in 0 ..< 5:
+        discard vm.groups
+        discard vm.notice
+        discard vm.focusables
+      for _ in 0 ..< 140: vm.focusNext()
+      check vm.focusRow.val == rows[139]
+      check vm.rowBuilds == built
+      # The keyboard's row is drawn focused, and only it.
+      var focused: seq[string]
+      for g in vm.groups:
+        for r in g.rows:
+          if r.focused: focused.add r.testId
+      check focused == @[rows[139]]
+      vm.stepCell(1)
+      check vm.rowOf(rows[139]).cells[0].focused
+      check not vm.rowOf(rows[139]).cells[1].focused
+      vm.focusPrevious()
+      check not vm.rowOf(rows[139]).focused
+      check vm.rowOf(rows[138]).focused
+      check vm.rowBuilds == built
+      vm.dispose()
+      disposeRoot()
+
+  test "140 key presses cost less than rebuilding the rows ten times":
+    # The StoryBook's `TestsLongKeyboard` pressed `tests.focus-next` 140
+    # times and did not finish. Measured against this host's own cost of one
+    # build, so a slow or busy host moves both sides; the floor keeps a
+    # scheduling stall from failing it. The loop stops at the budget, so the
+    # unfixed code fails in seconds rather than after 140 rebuilds.
+    createRoot proc(disposeRoot: proc()) =
+      let vm = testsOver("long")
+      let t0 = getMonoTime()
+      discard vm.groups
+      let oneBuild = getMonoTime() - t0
+      let budget = max(oneBuild * 10, initDuration(seconds = 2))
+      let start = getMonoTime()
+      var presses = 0
+      while presses < 140 and getMonoTime() - start < budget:
+        vm.focusNext()
+        discard vm.groups
+        inc presses
+      check presses == 140
+      vm.dispose()
+      disposeRoot()
+
+  test "each input of the rows builds them again, once, and shows the change":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = testsOver("recorded")
+      check vm.cellOf(depth, LinuxKey).open.kind == omOpenExisting
+      var n = vm.rowBuilds
+      template rebuiltOnce() =
+        discard vm.groups
+        discard vm.groups
+        check vm.rowBuilds == n + 1
+        n = vm.rowBuilds
+      vm.shiftHeld.val = true
+      rebuiltOnce()
+      check vm.cellOf(depth, LinuxKey).open.kind == omRefreshAndOpen
+      vm.shiftHeld.val = false
+      rebuiltOnce()
+      vm.placement.val = PlacementContext(policy: tdCurrentTab)
+      rebuiltOnce()
+      check vm.cellOf(depth, LinuxKey).openTitle ==
+        "Open the recorded trace. " & vm.placement.val.placementSentence(false)
+      check vm.cellOf(depth, LinuxKey).openTitle !=
+        "Open the recorded trace. Opens in a new tab; Ctrl+click opens it in this tab."
+      vm.setFilter(tfFailing)
+      rebuiltOnce()
+      vm.setFilter(tfAll)
+      rebuiltOnce()
+      vm.setQuery("bound")
+      rebuiltOnce()
+      check vm.groups.len == 1
+      vm.setQuery("")
+      rebuiltOnce()
+      vm.toggleRow(depth)
+      rebuiltOnce()
+      check vm.rowOf(depth).open
+      let platforms = vm.rowOf(depth).cells.len
+      n = vm.rowBuilds
+      vm.setPlatform(vm.rowOf(depth).cells[^1].platform, false)
+      rebuiltOnce()
+      check vm.rowOf(depth).cells.len == platforms - 1
+      # The shared tracker: a start being sent disables the cell.
+      vm.scripted.script.setRule(oaStartTestRun, neverAnswered())
+      check vm.run(RunScope(kind: scCell, testId: bound, platform: LinuxKey))
+      discard vm.groups
+      check vm.rowBuilds > n
+      n = vm.rowBuilds
+      check vm.cellOf(bound, LinuxKey).runAbsence == SendingText
+      discard vm.groups
+      check vm.rowBuilds == n
+      vm.dispose()
+      disposeRoot()
+
+  test "a run's event reaches the memoized rows":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = testsOver("recorded")
+      let source = vm.scripted
+      source.startScript = @[
+        runStartedEvent("", LinuxX86, "reprobuild", "pytest"),
+        testStartedEvent("", LinuxX86, bound),
+        testFinishedEvent("", LinuxX86, bound, "failed", 20),
+        runFinishedEvent("", LinuxX86)]
+      check vm.run(RunScope(kind: scCell, testId: bound, platform: LinuxKey))
+      check source.playNext() and source.playNext()
+      check vm.cellOf(bound, LinuxKey).cell.status == tsRunning
+      let n = vm.rowBuilds
+      discard vm.groups
+      check vm.rowBuilds == n
+      check source.playNext()
+      check vm.cellOf(bound, LinuxKey).cell.status == tsFailed
+      check vm.rowBuilds == n + 1
+      vm.dispose()
+      disposeRoot()
+
+  test "an effect over the rows runs again when an input changes, and only then":
+    createRoot proc(disposeRoot: proc()) =
+      let vm = testsOver("long")
+      var runs = 0
+      var focusedRow = ""
+      createEffect proc() =
+        inc runs
+        focusedRow = ""
+        for g in vm.groups:
+          for r in g.rows:
+            if r.focused: focusedRow = r.testId
+      let first = runs
+      let rows = vm.focusables
+      check runs == first
+      vm.focusNext()
+      check runs > first
+      check focusedRow == rows[0]
+      let afterPress = runs
+      vm.setQuery("frame_1_")
+      check runs > afterPress
+      vm.dispose()
+      disposeRoot()
+
+  test "a load clears the rows before its first answer":
+    createRoot proc(disposeRoot: proc()) =
+      let source = HeldReload(inner: ScriptedTestRunSource(testRunsFixture("long")))
+      let vm = newTestRunsVM(source, testRunsScope())
+      vm.load()
+      check vm.state == asReady
+      check vm.testCount == 320
+      let rows = vm.focusables
+      check rows.len == 320
+      check vm.feed.testOf(rows[0]).name.len > 0
+      vm.load()   # held: no answer yet
+      check vm.state == asLoading
+      check vm.testCount == 0
+      check vm.groups.len == 0
+      check vm.focusables.len == 0
+      check vm.feed.testOf(rows[0]).name == ""
       vm.dispose()
       disposeRoot()
 
