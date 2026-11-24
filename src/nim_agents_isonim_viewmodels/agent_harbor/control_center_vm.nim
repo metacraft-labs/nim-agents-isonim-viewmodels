@@ -24,6 +24,11 @@
 ## answer through the action source it hands the composer
 ## (`LaunchAnswers`, which passes every action through unchanged).
 ##
+## **While a launch waits for Agent Harbor** (`launching`), the form is
+## locked: what it launches is fixed (the composer ignores its edits and
+## mode presses once sent), and `chooseInitiative` is refused, so the
+## launch goes through the manager shown and the form says where it went.
+##
 ## Narrow (`layoutFor`): one column, launching first.
 ##
 ## The waiting sessions follow the source as the Initiatives panel does: the
@@ -69,6 +74,8 @@ type
     ## The composer's action source: every action goes to `inner`, and
     ## `answered` hears each answer after the composer applied it.
     inner: AgentHarborDataSource
+    sent: proc()
+      ## Hears each action as the composer sends it, before the answer.
     answered: proc()
 
   WaitingRow* = object
@@ -111,9 +118,12 @@ type
 method submitAction*(source: LaunchAnswers; action: OperatorAction;
                      done: ActionCallback) =
   let after = source.answered
+  if source.sent != nil: source.sent()
   source.inner.submitAction(action, proc(answer: DataResult[ActionReceipt]) =
     done(answer)
     if after != nil: after())
+
+proc launching*(vm: ControlCenterVM): bool
 
 proc launchTargets(title, manager: string): seq[RouteTarget] =
   ## What a launch from the control center can reach: the manager it goes
@@ -149,6 +159,11 @@ proc newControlCenterVM*(source: AgentHarborDataSource; router: InstructionRoute
     vm.composer = newOmniboxComposerVM(router, answers, launchTargets("", ""),
                                        planDate = planDate)
     let target = vm
+    answers.sent = proc() =
+      # A launch on its way: its form stays open, locked, so the operator
+      # sees what is being launched until Agent Harbor answers (the
+      # composer folds a sent form; the control center keeps it).
+      if target.launching: target.composer.optionsOpen.val = true
     answers.answered = proc() =
       # The launch answered: keep the answer under the form and make the
       # form ready for the next one (the instruction kept on a failure).
@@ -296,6 +311,13 @@ proc launchNotice*(vm: ControlCenterVM): tuple[line: string, failed, pending: bo
   let last = vm.lastNotice.val
   (last.line, last.failed, false)
 
+proc launching*(vm: ControlCenterVM): bool =
+  ## Tracked: a launch (a task or a new initiative) was sent and Agent
+  ## Harbor has not answered it yet. The form is locked meanwhile, and
+  ## `launchNotice` says `Launching…`.
+  let d = vm.composer.draft
+  d.phase == cpSending and d.sentIntent != riInstruct
+
 proc recent*(vm: ControlCenterVM): seq[RecentLaunch] =
   ## Tracked: the recent launches, newest first.
   recentLaunches(vm.composer.draft.recent)
@@ -315,8 +337,10 @@ proc newInitiative*(vm: ControlCenterVM) =
 proc chooseInitiative*(vm: ControlCenterVM; id: string) =
   ## The initiative the next launch is for ("" for none): its manager
   ## becomes the launch's destination. An id the panel does not hold is
-  ## refused rather than launching through no manager under its name.
-  if id == vm.launchFor.val: return
+  ## refused rather than launching through no manager under its name, and
+  ## so is any choice while a launch waits for its answer (the form is
+  ## locked: the launch in flight keeps the manager it went to).
+  if id == vm.launchFor.val or vm.launching: return
   var title, manager = ""
   if id.len > 0:
     let initiative = vm.initiatives.initiative(id)

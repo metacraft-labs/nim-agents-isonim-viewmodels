@@ -204,6 +204,37 @@ suite "launching":
     check vm.composer.chosenIntent == riLaunchTask  # the mode stands
     vm.dispose()
 
+  test "a launch in flight locks the form until Agent Harbor answers":
+    let vm = center(fleet())
+    vm.chooseInitiative("reliability")
+    actions.script.setRule(oaLaunchTask, neverAnswered())
+    check not vm.launching
+    vm.fill("Add a 429 retry test")
+    vm.composer.submit()
+    check vm.launching
+    check vm.launchNotice == ("Launching\xE2\x80\xA6", false, true)
+    check not vm.composer.canSend                   # Launch is busy
+    check vm.composer.optionsOpen.val               # the form stays drawn
+    # Locked: the initiative, the mode, the text and the options stay.
+    vm.chooseInitiative("throughput")
+    check vm.launchFor.val == "reliability"
+    check vm.launchForTitle == "Upload reliability"
+    vm.newInitiative()
+    check vm.mode == lmTask
+    vm.composer.setText("something else")
+    check vm.composer.text == "Add a 429 retry test"
+    vm.composer.updateLaunch(LaunchOptions(repository: "elsewhere"))
+    check vm.composer.launch.repository == "upload-service"
+    # Answered (a failure): unlocked, the instruction back in the field.
+    actions.script.settle(0, false, "Agent Harbor answered 503")
+    check not vm.launching
+    check vm.launchNotice == ("Could not launch: Agent Harbor answered 503", true, false)
+    check vm.composer.text == "Add a 429 retry test"
+    check vm.composer.canSend
+    vm.chooseInitiative("throughput")
+    check vm.launchFor.val == "throughput"
+    vm.dispose()
+
 suite "states":
   test "loading and error come from the source":
     let loading = center(newPendingDataSource("waiting"))
