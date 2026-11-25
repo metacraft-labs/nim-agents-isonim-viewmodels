@@ -18,6 +18,7 @@
 ## client's retry work).
 
 import std/[strutils, unittest]
+import isonim/core/owner
 import nim_agents_isonim_viewmodels
 
 const Discovery = """{"commands": [
@@ -281,6 +282,24 @@ suite "Agent Harbor's commands":
     f.harbor.unreachable = "gone"
     f.vm.refreshCommands()
     check f.vm.revision.val == before
+
+  test "a search's rows after the owner is disposed change nothing":
+    # Disposed with the root it was made under, never by `vm.dispose()`:
+    # the held provider's rows are ignored because the ViewModel base marks
+    # the sheet disposed when that root goes.
+    var f: ref Fixture
+    var before: int
+    createRoot proc(disposeRoot: proc()) =
+      f = fixture()
+      f.symbols.hold = true
+      f.vm.setInput("/s retry")
+      before = f.vm.revision.val
+      disposeRoot()
+    check f.vm.isDisposed
+    f.symbols.release()
+    check f.vm.revision.val == before
+    check f.vm.groups[1].group.state == psSearching
+    check f.vm.groups[1].rows.len == 0
 
 suite "rich rows":
   test "a box where HTML is on, its text form where it is off":

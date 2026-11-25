@@ -161,6 +161,24 @@ suite "one step":
     check vm.revision.val == revision
     check vm.route == rsRouting
 
+  test "an answer after the owner is disposed changes nothing":
+    # Disposed with the root it was made under, never by `vm.dispose()`:
+    # the late answer is ignored because the ViewModel base marks the
+    # composer disposed when that root goes.
+    let router = scripted()
+    router.hold = true
+    var vm: OmniboxComposerVM
+    var revision: int
+    createRoot proc(disposeRoot: proc()) =
+      vm = composer(router)
+      vm.setText("Also retry on a 503")
+      revision = vm.revision.val
+      disposeRoot()
+    check vm.isDisposed
+    router.release()
+    check vm.revision.val == revision
+    check vm.route == rsRouting
+
   test "the draft survives closing":
     let vm = composer(scripted())
     vm.open()

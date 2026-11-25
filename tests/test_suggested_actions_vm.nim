@@ -193,3 +193,21 @@ suite "disposal":
     check vm.decision.outcomes.len == 0
     check performer.performed.len == 1     # the next action is never asked for
     check actions.record.len == 0
+
+  test "an answer after the owner is disposed changes nothing":
+    # Disposed with the root it was made under, never by `vm.dispose()`:
+    # the late answer is ignored because the ViewModel base marks the block
+    # disposed when that root goes.
+    let performer = newScriptedActionPerformer()
+    performer.hold = true
+    var vm: SuggestedActionsVM
+    createRoot proc(disposeRoot: proc()) =
+      vm = suggestionBlock(performer)
+      vm.approve()
+      disposeRoot()
+    check vm.isDisposed
+    performer.release()
+    check vm.phase == spApproving
+    check vm.decision.outcomes.len == 0
+    check performer.performed.len == 1     # the next action is never asked for
+    check actions.record.len == 0

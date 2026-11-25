@@ -71,7 +71,6 @@ type
     openedRow: string
     openedTarget: OpenTarget
     openedText: string
-    disposed: bool
     revision*: Signal[int]
       ## Moves whenever what the sheet shows changes.
     selected*: Signal[int]
@@ -118,7 +117,6 @@ proc newResultCommandsVM*(providers: openArray[SearchProvider];
       discovery: dsLoading, revision: createSignal(0), selected: createSignal(0),
       alone: createSignal(""), htmlEnabled: createSignal(true),
       maxSheetWidth: 640, sheetInset: 8, narrowBelow: 480)
-    onCleanup proc() = vm.disposed = true
     vm
   vm.refreshCommands()
   vm
@@ -390,7 +388,7 @@ proc refreshCommands*(vm: ResultCommandsVM) =
   vm.discovery = dsLoading
   let target = vm
   vm.commands.discover(vm.surface, proc(answer: DataResult[seq[InputCommand]]) =
-    if target.disposed or token != target.discoveryToken: return
+    if target.isDisposed or token != target.discoveryToken: return
     if answer.ok:
       target.discovered = answer.value
       target.discovery = dsReady
@@ -411,10 +409,10 @@ proc sinkFor(vm: ResultCommandsVM; generation: int; provider: string): ResultSin
   let target = vm
   ResultSink(
     rows: proc(rows: seq[ResultRow]; final: bool) =
-      if target.disposed: return
+      if target.isDisposed: return
       if target.search.applyRows(generation, provider, rows, final): target.bump(),
     failed: proc(error: string) =
-      if target.disposed: return
+      if target.isDisposed: return
       if target.search.applyFailure(generation, provider, error): target.bump())
 
 proc run(vm: ResultCommandsVM) =

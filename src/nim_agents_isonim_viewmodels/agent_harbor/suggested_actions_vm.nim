@@ -52,7 +52,6 @@ type
     source: AgentHarborDataSource
     dec: SuggestionDecision
       ## The decision; readings go through `decision`, which tracks it.
-    disposed: bool
     replySent: bool
     revision*: Signal[int]
       ## Moves whenever the decision changes.
@@ -85,7 +84,7 @@ proc sendReply(vm: SuggestedActionsVM) =
   if vm.source.isNil: return
   let target = vm
   vm.source.submitAction(action, proc(answer: DataResult[ActionReceipt]) =
-    if target.disposed: return
+    if target.isDisposed: return
     if not answer.ok:
       target.dec.applyReplyFailure(answer.error)
       target.bump())
@@ -111,7 +110,7 @@ proc performApproved(vm: SuggestedActionsVM) =
     return
   vm.performer.performUiAction(UiActionRequest(text: action.description, action: id),
     proc(answer: DataResult[Receipt]) =
-      if target.disposed: return
+      if target.isDisposed: return
       if answer.ok: target.dec.applyOutcome(id, answer.value)
       else: target.dec.applyPerformFailure(id, answer.error)
       target.bump()
@@ -129,7 +128,6 @@ proc newSuggestedActionsVM*(suggestion: ActionSuggestion;
   withViewModel proc(dispose: proc()): SuggestedActionsVM =
     let vm = SuggestedActionsVM(performer: performer, source: source, dec: decision,
                                 revision: createSignal(0))
-    onCleanup proc() = vm.disposed = true
     if autoApproved: vm.performApproved()
     vm
 

@@ -67,7 +67,6 @@ type
     source: AgentHarborDataSource
     draft: ComposerDraft
     routeToken: int
-    disposed: bool
     revision*: Signal[int]
       ## Moves whenever the draft changes.
     isOpen*: Signal[bool]
@@ -109,7 +108,6 @@ proc newOmniboxComposerVM*(router: InstructionRouter;
       addContextOpen: createSignal(false), gaze: createSignal(gsOff),
       stopState: createSignal(ssNone), stopMessage: createSignal(""),
       planDate: planDate, maxSheetWidth: 640, sheetInset: 8, narrowBelow: 480)
-    onCleanup proc() = vm.disposed = true
     vm
 
 proc routerLabel*(vm: OmniboxComposerVM): string =
@@ -381,7 +379,7 @@ proc deliverTo(vm: OmniboxComposerVM; kind: TargetKind) =
   vm.optionsOpen.val = false
   vm.scheduleOpen.val = false
   let settle = proc(answer: DataResult[Receipt]) =
-    if target.disposed: return
+    if target.isDisposed: return
     let changed = if answer.ok: target.draft.applyReceipt(kind, answer.value)
                   else: target.draft.applyDeliveryFailure(kind, answer.error)
     if changed: target.bump()
@@ -402,7 +400,7 @@ proc startRouting(vm: OmniboxComposerVM) =
   vm.bump()
   let target = vm
   vm.router.route(vm.routeRequest, proc(answer: DataResult[RoutingDecision]) =
-    if target.disposed or token != target.routeToken: return
+    if target.isDisposed or token != target.routeToken: return
     let changed = if answer.ok: target.draft.applyDecision(answer.value)
                   else: target.draft.applyRouteFailure(answer.error)
     if not changed: return
@@ -479,7 +477,7 @@ proc stop*(vm: OmniboxComposerVM) =
   vm.stopMessage.val = ""
   let target = vm
   vm.source.submitAction(stopSession(session.id), proc(answer: DataResult[ActionReceipt]) =
-    if target.disposed: return
+    if target.isDisposed: return
     if answer.ok:
       target.stopState.val = ssStopped
       target.stopMessage.val = if answer.value.message.len > 0: answer.value.message
