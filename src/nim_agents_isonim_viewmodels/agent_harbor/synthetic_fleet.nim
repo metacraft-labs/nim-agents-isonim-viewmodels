@@ -12,9 +12,17 @@
 ## say the same last thing: each one's last activity line follows from its own
 ## task and its state. An initiative's executive summary is prose that agrees
 ## with its milestones.
+##
+## Most sessions report a plan, as an agent that keeps a to-do list does: the
+## last `plan` event it sent, with steps completed, one in progress and the
+## rest pending (`syntheticPlanEvent`). Its progress is read with the rule
+## that reads a real history's plan (`activity_words.planStepsOf`), so a
+## front-end's pie shows a known share for these sessions: none done, some
+## done or all done. One session in three, and every queued one, reports no
+## plan, so unknown progress shows beside them.
 
-import std/strutils
-import nim_agents/agent_harbor/initiatives
+import std/[json, strutils]
+import nim_agents/agent_harbor/[activity_words, initiatives]
 import ./records
 
 type
@@ -419,6 +427,33 @@ proc launchedFor(i, initiativeCount: int): int =
 proc lowerFirst(text: string): string =
   if text.len == 0: text else: text[0].toLowerAscii & text[1 .. ^1]
 
+proc syntheticPlanEvent*(i: int; status: FleetStatus; awaiting: bool): JsonNode =
+  ## The last `plan` event invented session `i` reported, in the shape Agent
+  ## Harbor's event history carries (`entries`, each with a `status`), or nil
+  ## for a session that reported none: one in three, and a queued session,
+  ## which has run nothing yet. The plan has 4 to 7 steps; how many are done
+  ## follows the session's state: all of them once it has completed, about
+  ## half when it failed or waits on the operator, and for a running session
+  ## none, some or all, in turn, so a set shows every share a pie can draw.
+  if status == fsQueued or i mod 3 == 2: return nil
+  let total = 4 + i mod 4
+  let done =
+    if status == fsCompleted: total
+    elif status == fsFailed or awaiting: 1 + i mod (total - 1)
+    else:
+      case (i div 2) mod 3
+      of 0: 0
+      of 1: total div 2
+      else: total
+  var entries = newJArray()
+  for k in 0 ..< total:
+    let state =
+      if k < done: "completed"
+      elif k == done and status != fsCompleted: "in_progress"
+      else: "pending"
+    entries.add %*{"content": "Step " & $(k + 1), "status": state}
+  %*{"type": "plan", "entries": entries}
+
 proc syntheticSession(i, initiativeCount, titleIndex: int; nowMs: int64;
                       longNames: bool): FleetSession =
   let n = $(i + 1)
@@ -465,6 +500,14 @@ proc syntheticSession(i, initiativeCount, titleIndex: int; nowMs: int64;
     result.initiative = SyntheticPlans[plan][1]
   if status == fsFailed:
     result.failureReason = "[exit] status=1"
+  # Its plan's progress, read from its last plan event as a front-end reads
+  # one from a history (`session_replay.foldEvent`). The event is not one of
+  # the recent lines below, which say what it last did.
+  let planEvent = syntheticPlanEvent(i, status, awaiting)
+  if not planEvent.isNil:
+    let steps = planStepsOf(planEvent)
+    result.planDone = steps.done
+    result.planTotal = steps.total
   # What it last did follows from its own task and its state: a question only
   # this task would raise, the test it is running, the failure it hit, what
   # it delivered. No two sessions of a set say the same last thing.

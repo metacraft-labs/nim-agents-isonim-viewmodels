@@ -31,6 +31,7 @@
 import std/[algorithm, json, sequtils, sets, strutils, tables, unittest]
 import isonim/core/[computation, owner, signals]
 import nim_agents_isonim_viewmodels
+from nim_agents/agent_harbor/activity_words import planStepsOf
 
 const Now = 1_800_000_000_000'i64
 
@@ -239,6 +240,64 @@ suite "the invented working sets are coherent":
     for session in snapshot.sessions:
       if session.planId.len == 0: inc loose
     check loose > 0
+
+suite "the invented working sets report plans":
+  # The share every session's pie shows, from the plan it last reported:
+  # each set holds sessions with none, some and all of their steps done,
+  # and sessions with no plan, whose progress stays unknown.
+  proc shares(sessions, initiatives: int): (int, int, int, int) =
+    ## (none done, some done, all done, unknown), over the set's items.
+    for session in syntheticWorkingSet(sessions, initiatives, Now).snapshot.sessions:
+      let pie = sessionItemOf(session, Now, tabStripSessionPolicy()).pie
+      if not pie.known: inc result[3]
+      elif pie.done == 0: inc result[0]
+      elif pie.done == pie.total: inc result[2]
+      else: inc result[1]
+
+  test "the default set and the forty-session set show every share":
+    for (sessions, initiatives) in [(DefaultSessions, DefaultInitiatives), (40, 5)]:
+      let (none, some, all, unknown) = shares(sessions, initiatives)
+      check none > 0
+      check some > 0
+      check all > 0
+      check unknown > 0
+      check none + some + all + unknown == sessions
+
+  test "a queued session, and one in three, report no plan":
+    for i, session in syntheticWorkingSet(40, 5, Now).snapshot.sessions:
+      if session.status == fsQueued or i mod 3 == 2:
+        check session.planTotal == 0
+        check session.planDone == 0
+      else:
+        check session.planTotal in 4 .. 7
+        check session.planDone in 0 .. session.planTotal
+
+  test "a completed session has done every step":
+    for session in syntheticWorkingSet(40, 5, Now).snapshot.sessions:
+      if session.status == fsCompleted and session.planTotal > 0:
+        check session.planDone == session.planTotal
+
+  test "the plan event is read as a history's plan is":
+    # Session 4 waiting on the operator: four steps, two completed, one in
+    # progress, one pending, written out by hand rather than through
+    # `syntheticPlanEvent`'s own rule.
+    let event = syntheticPlanEvent(4, fsRunning, awaiting = true)
+    check event{"type"}.getStr == "plan"
+    var statuses: seq[string]
+    for entry in event{"entries"}.getElems: statuses.add entry{"status"}.getStr
+    check statuses == @["completed", "completed", "in_progress", "pending"]
+    let steps = planStepsOf(event)
+    check (steps.done, steps.total, steps.active) == (2, 4, 1)
+    check syntheticPlanEvent(2, fsRunning, awaiting = false).isNil
+    check syntheticPlanEvent(0, fsQueued, awaiting = false).isNil
+
+  test "a pie's words say the plan's share":
+    for session in defaultWorkingSet(Now).snapshot.sessions:
+      let pie = sessionItemOf(session, Now, tabStripSessionPolicy()).pie
+      if pie.known:
+        check (" of " & $pie.total & " steps, " & $pie.percent & "%") in pie.label
+      else:
+        check "progress unknown" in pie.label
 
 suite "the tab strip":
   test "tabs come in launch order, keep it, and the first becomes active":
