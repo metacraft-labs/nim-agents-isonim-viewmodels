@@ -409,20 +409,27 @@ suite "no write reaches anything but the seam":
                      "synthetic_inbox.nim", "data_source.nim", "fixture_source.nim"]:
       check required in names
     check modules.len >= 28
-    # The live data source (`live_source.nim`, CTF-M3) is the one deliberate
-    # transport user: the network side of the seam every other module here
-    # reads through, and native only. It is exempt by name, and checked to be
-    # what the exemption says, so the exemption cannot hide a new transport
-    # user or outlive the module it names.
-    const TransportUsers = ["live_source.nim"]
-    for user in TransportUsers:
+    # The live data sources are the deliberate transport users: the network
+    # side of the seam every other module here reads through. `live_source.nim`
+    # (CTF-M3) is native only; `node_follower.nim` (D92, a desktop app's main
+    # process) is JavaScript on Node only. Each is exempt by name, and checked
+    # to be what the exemption says (it imports a transport and refuses the
+    # other backend), so the exemption cannot hide a new transport user or
+    # outlive the module it names. The window's half, `host_fed_source.nim`,
+    # is not exempt: it imports no transport.
+    const TransportUsers = [("live_source.nim", "when defined(js):"),
+                            ("node_follower.nim", "when not defined(js):")]
+    for (user, _) in TransportUsers:
       check user in names
     for (name, text) in modules:
       checkpoint name
       check text.len > 0
-      if name in TransportUsers:
+      var refusal = ""
+      for (user, guard) in TransportUsers:
+        if user == name: refusal = guard
+      if refusal.len > 0:
         check transportImports(text).len > 0
-        check "when defined(js):" in text and "{.error:" in text
+        check refusal in text and "{.error:" in text
       else:
         check transportImports(text).len == 0
 

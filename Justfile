@@ -9,6 +9,8 @@ build-native:
     nim c {{paths}} tests/test_activity_vm.nim
     nim c {{paths}} tests/test_agent_harbor_fleet_vm.nim
     nim c {{paths}} tests/test_live_source.nim
+    nim c {{paths}} tests/test_host_fed_source.nim
+    nim c {{paths}} tests/test_node_follower.nim
     nim c {{paths}} tests/test_agent_harbor_sessions_vm.nim
     nim c {{paths}} tests/test_session_tabs_opened.nim
     nim c {{paths}} tests/test_progress_pie.nim
@@ -32,6 +34,7 @@ build-native:
 build-js:
     nim js {{paths}} tests/test_activity_vm.nim
     nim js {{paths}} tests/test_agent_harbor_fleet_vm.nim
+    nim js {{paths}} tests/test_host_fed_source.nim
     nim js {{paths}} tests/test_agent_harbor_sessions_vm.nim
     nim js {{paths}} tests/test_session_tabs_opened.nim
     nim js {{paths}} tests/test_progress_pie.nim
@@ -55,6 +58,8 @@ test-native:
     nim c -r {{paths}} tests/test_activity_vm.nim
     nim c -r {{paths}} tests/test_agent_harbor_fleet_vm.nim
     nim c -r {{paths}} tests/test_live_source.nim
+    nim c -r {{paths}} tests/test_host_fed_source.nim
+    nim c -r {{paths}} tests/test_node_follower.nim
     nim c -r {{paths}} tests/test_agent_harbor_sessions_vm.nim
     nim c -r {{paths}} tests/test_session_tabs_opened.nim
     nim c -r {{paths}} tests/test_progress_pie.nim
@@ -78,6 +83,7 @@ test-native:
 test-js:
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_activity_vm.nim
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_agent_harbor_fleet_vm.nim
+    bash tools/nim-js-test-gate.sh {{paths}} tests/test_host_fed_source.nim
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_agent_harbor_sessions_vm.nim
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_session_tabs_opened.nim
     bash tools/nim-js-test-gate.sh {{paths}} tests/test_progress_pie.nim
@@ -102,6 +108,8 @@ lint-nim:
     nim check {{paths}} tests/test_activity_vm.nim
     nim check {{paths}} tests/test_agent_harbor_fleet_vm.nim
     nim check {{paths}} tests/test_live_source.nim
+    nim check {{paths}} tests/test_host_fed_source.nim
+    nim check {{paths}} tests/test_node_follower.nim
     nim check {{paths}} tests/test_agent_harbor_sessions_vm.nim
     nim check {{paths}} tests/test_session_tabs_opened.nim
     nim check {{paths}} tests/test_progress_pie.nim

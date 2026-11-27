@@ -70,6 +70,16 @@ Structure:
   scenarios; README.md documents both) on an IsoNim clock, with play, pause,
   step and seek; `tests/test_playback.nim` tests it. A live source over
   `nim-agent-harbor` implements the same seam later.
+  It does: `live_source.nim` `LiveDataSource` (native: worker threads and a
+  blocking feed). A desktop app whose main process follows the server for
+  its windows (D92) uses two halves instead: `node_follower.nim`
+  `NodeHarborFollower` in the main process (JavaScript on Node, `fetch`),
+  which posts `host_messages.nim` `HostMessage`s, and `host_fed_source.nim`
+  `HostFedDataSource` in each window (pure), which asks the host for the
+  fleet and delivers the messages it is handed. Tests:
+  `tests/test_host_fed_source.nim` (native and JS) and
+  `tests/test_node_follower.nim` (a real server, the follower run under
+  Node by `tests/probes/node_follower_probe.nim`).
   A change's review is `changes_vm.nim` `ChangesVM`; the operator's inbox
   `inbox_vm.nim` `InboxVM`, one item's page `inbox_item_vm.nim`
   `InboxItemVM`, and the actions they send `action_tracker.nim`
