@@ -58,6 +58,8 @@ const viewmodelTests = @[
   "tests/test_test_runs_vm.nim",
   "tests/test_trace_opener_vm.nim",
   "tests/test_control_center_vm.nim",
+  "tests/test_agent_workspace_vm.nim",
+  "tests/test_agent_activity_vm.nim",
   "tests/test_nimcache_is_worktree_local.nim",
   "tests/test_fixture_set_rebuilds_on_switch.nim",
   "tests/test_repro_collections_match_justfile.nim",
@@ -71,6 +73,7 @@ const viewmodelJsBuildStems = @[
   "test_inbox_item_vm", "test_omnibox_composer_vm",
   "test_result_commands_vm", "test_suggested_actions_vm",
   "test_test_runs_vm", "test_trace_opener_vm", "test_control_center_vm",
+  "test_agent_workspace_vm", "test_agent_activity_vm",
 ]
 
 const viewmodelJsTestStems = @[
@@ -81,6 +84,7 @@ const viewmodelJsTestStems = @[
   "test_inbox_item_vm", "test_omnibox_composer_vm",
   "test_result_commands_vm", "test_suggested_actions_vm",
   "test_test_runs_vm", "test_trace_opener_vm", "test_control_center_vm",
+  "test_agent_workspace_vm", "test_agent_activity_vm",
 ]
 
 package nim_agents_isonim_viewmodels:

@@ -1,0 +1,673 @@
+## nim_agents_isonim_viewmodels/agent_panels/agent_activity_vm.nim
+##
+## AgentActivityVM — the Agent Activity panel: one agent session's
+## conversation as a feed (messages, `ct test` run cards, evidence cards,
+## terminals), with the prompt beneath it (input, attachments, model, branch,
+## session settings). UI pattern: a chat-style feed with a composer.
+##
+## Moved from CodeTracer's `viewmodels/agent_activity_vm.nim` (CTF-M1, D87
+## (a)). The panel's signal-free rules are nim-agents' (`activity_model`,
+## `evidence_call`, `prompt_context`, `test_run_model`, `trace_open`,
+## `review_open`); this module keeps the signals, the memos and the
+## presentation state that needs reactivity.
+##
+## What the host provides:
+##   * `store` — the host store the viewmodel was created with. It reads
+##     nothing from it: that is the whole store interface, a field typed as
+##     IsoNim's `ViewModel`, which CodeTracer's `ReplayDataStore` is. A reader
+##     added later widens the interface by exactly what it reads.
+##   * `testRunProjector` — which messages of the conversation are `ct test`
+##     runs (D90). Nil means none are, which is what a host with no `ct test`
+##     correctly shows. CodeTracer installs its runner-event recogniser.
+##   * `traceOpen`, `reviewOpen` — how a run card opens a recording and an
+##     evidence card reads or opens a review dataset. Nil in a headless test.
+##
+## CodeTracer's own views of a live session (`AgentServiceSessionEntry`, a
+## store type) as this feed stay in CodeTracer's module of the same name.
+
+import std/options
+
+import isonim/core/[signals, computation, owner]
+import isonim/viewmodel
+
+import nim_agents/[activity_model, evidence_call, review_open, test_run_model,
+                  trace_open]
+from nim_agents/prompt_context import withContextPath
+
+export evidence_call, review_open, test_run_model, trace_open
+
+type
+  AgentTestRunEntry* = object
+    ## AA-2 — a `ct test` execution the session feed renders as a summary
+    ## card *in place of* the raw runner output.
+    ##
+    ## The message it replaces stays in `messages`: it is the feed's ordering
+    ## spine, and anchoring the card to its id keeps a run in the position the
+    ## agent produced it in without the message list having to know what a test
+    ## run is.  The message model (nim-agents' `activity_model`) knows
+    ## nothing of the runner, so the runner's vocabulary is deliberately kept
+    ## out of `AgentActivityMessageEntry` and carried alongside it instead.
+    anchorId*: string
+    summary*: TestRunSummary
+
+  EvidenceDatasetEntry* = object
+    ## AA-3 — one answer from the host about one dataset path.
+    datasetPath*: string
+    dataset*: EvidenceDataset
+
+  TestRunProjector* = proc(messages: openArray[AgentActivityMessageEntry]):
+      seq[AgentTestRunEntry] {.closure.}
+    ## Finds the `ct test` executions in a conversation (D90). A message
+    ## becomes a run only when its content actually carries runner events, so
+    ## a message that merely mentions `ct test` never turns into a summary
+    ## card claiming a run happened. The host owns the runner's wire format.
+
+  AgentActivityVM* = ref object of ViewModel
+    store*: ViewModel
+      ## The host store this viewmodel was created with; never read here.
+
+    testRunProjector*: TestRunProjector
+      ## How `setMessages` finds the conversation's test runs. Nil: none.
+
+    traceOpen*: TraceOpenService
+      ## AA-2 — how this panel opens the recording of a test.  The *existing*
+      ## trace-opening path (`trace_open.nim`), wired by the host to the same
+      ## IPC the welcome screen and the tab model already use.  Nil in a
+      ## headless test, and `openTestRecording` reports honestly when it is.
+
+    reviewOpen*: ReviewOpenService
+      ## AA-3 — how this panel reads the review dataset an evidence tool call
+      ## produced.  The *ordinary* review path (`review_open.nim`), wired by
+      ## the host to the same read `ct review <PATH>` performs.  Nil in a
+      ## headless test, in which case no dataset is ever inspected, every
+      ## evidence card stays at `edsUnknown`, and none offers an affordance —
+      ## the honest answer for a panel with no host that can read files.
+
+    messages*: Signal[seq[AgentActivityMessageEntry]]
+    testRuns*: Signal[seq[AgentTestRunEntry]]
+      ## Derived from `messages` on every `setMessages`, so a live session, a
+      ## replayed review session and the legacy Karax mirror all get the same
+      ## rendering from the same projection with no third path to keep in
+      ## step.
+    expandedTestRuns*: Signal[seq[string]]
+      ## Anchor ids of runs the reviewer has expanded.  §2.1.2: "The summary
+      ## is **drillable**".  Collapsed is the default: a run summary that
+      ## opened to fifty rows would bury the conversation it sits in.
+    expandedTests*: Signal[seq[string]]
+      ## `expansionKey(anchorId, testId)` for each expanded test row.
+    toggledThoughts*: Signal[seq[string]]
+      ## Ids of the agent turns the reader flipped from their default
+      ## (`agent_activity_text.startsCollapsed`): a finished turn opened, or
+      ## an open one closed.  Recorded as a flip rather than as "open" so a
+      ## turn that finishes while the reader watches collapses the way the
+      ## desktop's does.  The desktop view flips DOM classes for the same
+      ## gesture; the native front-ends, which repaint from values, read this.
+    expandedToolHistories*: Signal[seq[string]]
+      ## `toolHistoryKey(messageId, group)` for each tool-call group whose
+      ## earlier calls the reader opened ("N tools used").
+    evidenceCalls*: Signal[seq[EvidenceCall]]
+      ## AA-3 — the session's evidence handoffs, re-derived from `messages` on
+      ## every `setMessages` for the same reason `testRuns` is: one projection,
+      ## no opt-in, and no third path for the legacy carrier to drift down.
+      ##
+      ## The `dataset` field of each entry is **not** filled in here — a
+      ## projection cannot read a file.  `evidenceCallFor` merges
+      ## `evidenceDatasets` in on the way out.
+    evidenceDatasets*: Signal[seq[EvidenceDatasetEntry]]
+      ## What the host found out about each dataset *path*.
+      ##
+      ## Keyed by path rather than by anchor because it is a fact about the
+      ## file: a session that collected once and handed over once names the
+      ## same dataset twice, and reading it twice to tell the reviewer the
+      ## same thing would be work done for no answer.  It survives
+      ## `setMessages` — a re-synced conversation must not throw away what has
+      ## already been read and start the cards blank again.
+    terminals*: Signal[seq[AgentActivityTerminalEntry]]
+    inputValue*: Signal[string]
+    isLoading*: Signal[bool]
+    reRecordInProgress*: Signal[bool]
+    wantsPassword*: Signal[bool]
+    wantsPermission*: Signal[bool]
+    permissionInfo*: Signal[string]
+    sessionKey*: Signal[string]
+    sessionNotice*: Signal[string]
+      ## RV-6 — an explicit statement about *why* this panel is showing the
+      ## conversation it is showing, or "" when the conversation speaks for
+      ## itself.
+      ##
+      ## It exists because the panel previously had no state between "here
+      ## are the messages" and nothing at all: a review whose session had
+      ## been pruned, or whose agent cannot replay sessions, rendered an
+      ## empty `.agent-com` that reads as "the agent did nothing".
+      ## DeepReview-GUI.md §2.1 names that a defect — "it must not silently
+      ## render an empty session".  A loaded session that genuinely carries
+      ## nothing also sets it, for the same reason.
+    selectedModel*: Signal[string]
+      ## The model name currently active in this agent session, shown in the
+      ## toolbar model button.  "" until the host sets it via setSelectedModel.
+    currentBranch*: Signal[string]
+      ## The branch the agent session is working on.  Shown in the branch button.
+    branches*: Signal[seq[string]]
+      ## Available branches for checkout.
+    branchDropdownOpen*: Signal[bool]
+      ## Whether the branch selector dropdown is open.
+    modelDropdownOpen*: Signal[bool]
+      ## Whether the model selector dropdown is open.
+    addContextDropdownOpen*: Signal[bool]
+      ## Whether the + context dropdown menu is open.
+    pastedImages*: Signal[seq[string]]
+      ## Base64 data URLs of images pasted by the user.  Each entry is either
+      ## "loading" (FileReader not yet done) or a data: URL.  Cleared after
+      ## submission.  Tracked here so the host can read them on submit.
+    contextPaths*: Signal[seq[string]]
+      ## File/folder paths added via the + dropdown (Upload attachment, Files &
+      ## folders, etc.).  Cleared after submission along with pastedImages.
+    settingsOpen*: Signal[bool]
+    settingsRuntime*: Signal[string]
+    settingsExtraRuntimes*: Signal[seq[string]]
+      ## Runtimes the host offers beyond the built-in list, after it:
+      ## "Agent Harbor worktree" when a Harbor server is configured
+      ## (Agentic-Coding-Integration.md §6.8).
+    settingsCpu*: Signal[string]
+    settingsMemory*: Signal[string]
+    settingsNetworkAccess*: Signal[bool]
+    settingsDeliveryMode*: Signal[string]
+    settingsDeliveryBranch*: Signal[string]
+    settingsPermissions*: Signal[string]
+    settingsActiveDropdown*: Signal[string]
+
+    messageCount*: Memo[int]
+    terminalCount*: Memo[int]
+    hasMessages*: Memo[bool]
+    hasSessionNotice*: Memo[bool]
+    testRunCount*: Memo[int]
+    evidenceCallCount*: Memo[int]
+
+proc `==`*(a, b: AgentTestRunEntry): bool {.noSideEffect.} =
+  a.anchorId == b.anchorId and a.summary == b.summary
+
+proc `==`*(a, b: EvidenceDatasetEntry): bool {.noSideEffect.} =
+  a.datasetPath == b.datasetPath and a.dataset == b.dataset
+
+proc expansionKey*(anchorId, testId: string): string {.noSideEffect.} =
+  ## The identity of one expandable test row.
+  ##
+  ## Two runs in one session can execute the same test, so neither half alone
+  ## identifies a row; the separator is a character no catalog id can contain
+  ## (`normalizeIdComponent` collapses whitespace and never emits control
+  ## characters), so the pair cannot alias.
+  anchorId & "\x1f" & testId
+
+proc toggleIn(list: var seq[string]; key: string) =
+  let index = list.find(key)
+  if index >= 0: list.delete(index) else: list.add key
+
+proc isThoughtToggled*(vm: AgentActivityVM; messageId: string): bool =
+  messageId in vm.toggledThoughts.val
+
+proc toggleThought*(vm: AgentActivityVM; messageId: string) =
+  ## Flip one agent turn between collapsed and open.
+  var toggled = vm.toggledThoughts.val
+  toggled.toggleIn messageId
+  vm.toggledThoughts.val = toggled
+
+proc toolHistoryKey*(messageId: string; group: int): string {.noSideEffect.} =
+  messageId & "\x1f" & $group
+
+proc isToolHistoryExpanded*(vm: AgentActivityVM; messageId: string;
+                            group: int): bool =
+  toolHistoryKey(messageId, group) in vm.expandedToolHistories.val
+
+proc toggleToolHistory*(vm: AgentActivityVM; messageId: string; group: int) =
+  var expanded = vm.expandedToolHistories.val
+  expanded.toggleIn toolHistoryKey(messageId, group)
+  vm.expandedToolHistories.val = expanded
+
+proc datasetIndex(vm: AgentActivityVM; datasetPath: string): int =
+  for i, entry in vm.evidenceDatasets.val:
+    if entry.datasetPath == datasetPath:
+      return i
+  -1
+
+proc requestEvidenceInspections(vm: AgentActivityVM) =
+  ## Ask the host for the shape of every dataset an evidence call names and
+  ## nothing has looked at yet.
+  ##
+  ## §2.1.1 wants the card to name "enough of its shape (file count, the
+  ## reviewed commit) to be recognisable without opening it", which is a fact
+  ## that can only come from the file, so it is fetched as soon as a card
+  ## exists rather than on the click that needs it.
+  ##
+  ## Only a **completed** call is inspected: a collect that has not reported
+  ## may not have written its output yet, and reporting "missing" about a file
+  ## that is merely not finished would be a wrong statement rather than a
+  ## missing one.
+  ##
+  ## A placeholder entry is recorded *before* the request goes out, so a
+  ## conversation re-synced on every render (which the legacy carrier does)
+  ## asks once per path rather than once per render.
+  for call in vm.evidenceCalls.val:
+    if call.state != ecsCompleted or call.datasetPath.len == 0:
+      continue
+    if vm.datasetIndex(call.datasetPath) >= 0:
+      continue
+    var entries = vm.evidenceDatasets.val
+    entries.add EvidenceDatasetEntry(
+      datasetPath: call.datasetPath,
+      dataset: EvidenceDataset(state: edsUnknown))
+    vm.evidenceDatasets.val = entries
+    vm.reviewOpen.requestDataset ReviewDatasetRequest(
+      anchorId: call.anchorId,
+      datasetPath: call.datasetPath,
+      kind: rdrInspect)
+
+proc retryPendingEvidenceInspections*(vm: AgentActivityVM) =
+  ## Re-issue the requests that were recorded while there was no host to
+  ## answer them.
+  ##
+  ## `requestEvidenceInspections` is deliberately a one-shot per path, so a
+  ## conversation re-synced on every render asks once.  That leaves one hole:
+  ## a panel whose VM is built *before* the host installs the service records
+  ## its placeholders, sends nothing, and its cards would sit at "Reading …"
+  ## for the life of the window.  The installer calls this after back-filling,
+  ## which is the only moment at which the answer can change.
+  ##
+  ## Only entries still at `edsUnknown` are retried; a path already answered —
+  ## readable or not — is not read again.
+  for entry in vm.evidenceDatasets.val:
+    if entry.dataset.state != edsUnknown:
+      continue
+    for call in vm.evidenceCalls.val:
+      if call.datasetPath != entry.datasetPath or call.state != ecsCompleted:
+        continue
+      vm.reviewOpen.requestDataset ReviewDatasetRequest(
+        anchorId: call.anchorId,
+        datasetPath: call.datasetPath,
+        kind: rdrInspect)
+      break
+
+proc setMessages*(vm: AgentActivityVM;
+                  messages: openArray[AgentActivityMessageEntry]) =
+  vm.messages.val = @messages
+  # Re-derived here rather than by a Memo so that *every* producer of the
+  # conversation gets the AA-2 rendering without opting in, and so that a
+  # caller reading `testRuns` immediately after `setMessages` sees the run
+  # (a Memo would be lazy).
+  vm.testRuns.val =
+    if vm.testRunProjector.isNil: @[]
+    else: vm.testRunProjector(messages)
+  # AA-3, and for the same three reasons.
+  vm.evidenceCalls.val = projectEvidenceCalls(messages)
+  vm.requestEvidenceInspections()
+
+proc testRunIndex*(vm: AgentActivityVM; anchorId: string): int =
+  ## The index of the run anchored at `anchorId`, or -1.
+  ##
+  ## Returned as an index rather than an `Option` because the view uses it to
+  ## decide *between* two renderings of the same feed position, and an index
+  ## is what it needs for both.
+  for i, entry in vm.testRuns.val:
+    if entry.anchorId == anchorId:
+      return i
+  -1
+
+proc testRunFor*(vm: AgentActivityVM; anchorId: string):
+    Option[TestRunSummary] =
+  let index = vm.testRunIndex(anchorId)
+  if index < 0: none(TestRunSummary) else: some(vm.testRuns.val[index].summary)
+
+proc isTestRunExpanded*(vm: AgentActivityVM; anchorId: string): bool =
+  anchorId in vm.expandedTestRuns.val
+
+proc toggleTestRun*(vm: AgentActivityVM; anchorId: string) =
+  var expanded = vm.expandedTestRuns.val
+  let index = expanded.find(anchorId)
+  if index >= 0:
+    expanded.delete(index)
+  else:
+    expanded.add anchorId
+  vm.expandedTestRuns.val = expanded
+
+proc isTestExpanded*(vm: AgentActivityVM; anchorId, testId: string): bool =
+  expansionKey(anchorId, testId) in vm.expandedTests.val
+
+proc toggleTest*(vm: AgentActivityVM; anchorId, testId: string) =
+  var expanded = vm.expandedTests.val
+  let key = expansionKey(anchorId, testId)
+  let index = expanded.find(key)
+  if index >= 0:
+    expanded.delete(index)
+  else:
+    expanded.add key
+  vm.expandedTests.val = expanded
+
+proc openTestRecording*(vm: AgentActivityVM; anchorId, testId: string;
+                        policy = topCurrentTab): bool =
+  ## Open the recording of one test through the existing trace-opening path.
+  ##
+  ## Returns whether anything was opened, and **opens nothing** for a test
+  ## that has no recording.  Both halves are §2.1.2's rule: a test with no
+  ## recording gets no drill-down affordance rather than one that fails when
+  ## used, and a recording that failed before producing a trace must not
+  ## become a broken trace tab.  The view gates the affordance on
+  ## `hasRecording`; this gates the action on the same fact, so a stale
+  ## rendering cannot open a trace that is not there.
+  let index = vm.testRunIndex(anchorId)
+  if index < 0:
+    return false
+  let row = vm.testRuns.val[index].summary.rowFor(testId)
+  if row.isNone or not row.get.hasRecording:
+    return false
+  let value = row.get
+  vm.traceOpen.openTrace TraceOpenRequest(
+    tracePath: value.tracePath,
+    traceId: value.traceId,
+    recordingId: value.recordingId,
+    testId: value.testId,
+    policy: policy)
+  true
+
+# ---------------------------------------------------------------------------
+# AA-3 — the session's evidence handoffs
+# ---------------------------------------------------------------------------
+
+proc datasetFor*(vm: AgentActivityVM; datasetPath: string): EvidenceDataset =
+  ## What is known about `datasetPath`.  `edsUnknown` when nothing is, which
+  ## is a state the rendering distinguishes from "missing" rather than
+  ## collapsing into it.
+  let index = vm.datasetIndex(datasetPath)
+  if index < 0:
+    EvidenceDataset(state: edsUnknown)
+  else:
+    vm.evidenceDatasets.val[index].dataset
+
+proc evidenceIndex*(vm: AgentActivityVM; anchorId: string): int =
+  ## The index of the evidence call anchored at `anchorId`, or -1.  An index
+  ## rather than an `Option` for the reason `testRunIndex` is one: the view
+  ## uses it to decide *between* two renderings of the same feed position.
+  for i, call in vm.evidenceCalls.val:
+    if call.anchorId == anchorId:
+      return i
+  -1
+
+proc evidenceCallFor*(vm: AgentActivityVM; anchorId: string):
+    Option[EvidenceCall] =
+  ## The evidence call at `anchorId`, with what the host has learned about its
+  ## dataset merged in.
+  ##
+  ## The merge happens here rather than being written into `evidenceCalls`
+  ## because the projection is re-run on every `setMessages` and would
+  ## otherwise erase the host's answers each time.  Reading both signals also
+  ## makes the view re-render when either changes, which is how a card turns
+  ## from "Reading …" into a shape and an affordance.
+  let index = vm.evidenceIndex(anchorId)
+  if index < 0:
+    return none(EvidenceCall)
+  var call = vm.evidenceCalls.val[index]
+  call.dataset = vm.datasetFor(call.datasetPath)
+  some(call)
+
+proc applyEvidenceDataset*(vm: AgentActivityVM; datasetPath: string;
+                           dataset: EvidenceDataset) =
+  ## Record the host's answer about one dataset path.
+  ##
+  ## Idempotent, and safe for a path no card names any more: the entry is
+  ## simply kept, and the next conversation that names it starts with the
+  ## answer already in hand.
+  if datasetPath.len == 0:
+    return
+  var entries = vm.evidenceDatasets.val
+  let index = vm.datasetIndex(datasetPath)
+  if index < 0:
+    entries.add EvidenceDatasetEntry(
+      datasetPath: datasetPath, dataset: dataset)
+  else:
+    entries[index].dataset = dataset
+  vm.evidenceDatasets.val = entries
+
+proc openEvidence*(vm: AgentActivityVM; anchorId: string): bool =
+  ## Enter a review over the dataset the evidence call at `anchorId` names.
+  ##
+  ## Returns whether a request was issued, and **issues none** for a call with
+  ## nothing to open.  Both halves are §2.1.1's rule as AA-2 read it for the
+  ## test drill-down: the view gates the affordance on `canOpenEvidence`, and
+  ## this gates the action on the same fact, so a rendering that is a moment
+  ## stale cannot ask for a dataset that has just been reported missing.
+  ##
+  ## Opening **replaces** the review the window is showing, rather than adding
+  ## one beside it.  That is what `ct review <PATH>` does — one window, one
+  ## review, routed into the panels the layout already has (DeepReview-GUI.md
+  ## §2, "DeepReview has no workspace of its own and no panel of its own") —
+  ## and a second concurrent review would need a second VCS panel, a second
+  ## changed-files selection and a second answer to "which review is this
+  ## editor tab from".
+  let call = vm.evidenceCallFor(anchorId)
+  if call.isNone or not call.get.canOpenEvidence():
+    return false
+  vm.reviewOpen.requestDataset ReviewDatasetRequest(
+    anchorId: anchorId,
+    datasetPath: call.get.datasetPath,
+    kind: rdrOpen)
+  true
+
+proc setTerminals*(vm: AgentActivityVM;
+                   terminals: openArray[AgentActivityTerminalEntry]) =
+  vm.terminals.val = @terminals
+
+proc setInputValue*(vm: AgentActivityVM; value: string) =
+  vm.inputValue.val = value
+
+proc setLoading*(vm: AgentActivityVM; isLoading: bool) =
+  vm.isLoading.val = isLoading
+
+proc setReRecordInProgress*(vm: AgentActivityVM; inProgress: bool) =
+  vm.reRecordInProgress.val = inProgress
+
+proc setPromptFlags*(vm: AgentActivityVM; wantsPassword, wantsPermission: bool) =
+  vm.wantsPassword.val = wantsPassword
+  vm.wantsPermission.val = wantsPermission
+
+proc setPermissionInfo*(vm: AgentActivityVM; info: string) =
+  vm.permissionInfo.val = info
+
+proc setSessionKey*(vm: AgentActivityVM; sessionKey: string) =
+  vm.sessionKey.val = sessionKey
+
+proc setSessionNotice*(vm: AgentActivityVM; notice: string) =
+  ## Publish (or, with "", withdraw) the panel's explanatory notice.
+  ## Idempotent so subscribers do not refire on a re-entered review.
+  if vm.sessionNotice.val == notice:
+    return
+  vm.sessionNotice.val = notice
+
+proc addPastedImageLoading*(vm: AgentActivityVM): int =
+  var images = vm.pastedImages.val
+  result = images.len
+  images.add("loading")
+  vm.pastedImages.val = images
+
+proc updatePastedImage*(vm: AgentActivityVM; idx: int; dataUrl: string) =
+  var images = vm.pastedImages.val
+  if idx >= 0 and idx < images.len:
+    images[idx] = dataUrl
+    vm.pastedImages.val = images
+
+proc removePastedImage*(vm: AgentActivityVM; idx: int) =
+  var images = vm.pastedImages.val
+  if idx >= 0 and idx < images.len:
+    images.delete(idx)
+    vm.pastedImages.val = images
+
+proc clearPastedImages*(vm: AgentActivityVM) =
+  vm.pastedImages.val = @[]
+
+proc getPastedImages*(vm: AgentActivityVM): seq[string] =
+  vm.pastedImages.val
+
+proc addContextPath*(vm: AgentActivityVM; path: string) =
+  ## Attach `path` to the next prompt. A path already attached is not
+  ## attached twice (`agent_prompt_context.withContextPath`, the native
+  ## hosts' rule too).
+  vm.contextPaths.val = withContextPath(vm.contextPaths.val, path)
+
+proc removeContextPath*(vm: AgentActivityVM; idx: int) =
+  var paths = vm.contextPaths.val
+  if idx >= 0 and idx < paths.len:
+    paths.delete(idx)
+    vm.contextPaths.val = paths
+
+proc clearContextPaths*(vm: AgentActivityVM) =
+  vm.contextPaths.val = @[]
+
+proc getContextPaths*(vm: AgentActivityVM): seq[string] =
+  vm.contextPaths.val
+
+proc setSelectedModel*(vm: AgentActivityVM; model: string) =
+  vm.selectedModel.val = model
+
+proc setBranchState*(vm: AgentActivityVM; current: string;
+                     branches: openArray[string]) =
+  vm.currentBranch.val = current
+  vm.branches.val = @branches
+
+proc toggleBranchDropdown*(vm: AgentActivityVM) =
+  vm.branchDropdownOpen.val = not vm.branchDropdownOpen.val
+
+proc toggleSettingsOpen*(vm: AgentActivityVM) =
+  vm.settingsActiveDropdown.val = ""
+  vm.settingsOpen.val = not vm.settingsOpen.val
+
+proc resetSettingsToDefaults*(vm: AgentActivityVM) =
+  vm.settingsRuntime.val = "devcontainer"
+  vm.settingsCpu.val = "2 cores"
+  vm.settingsMemory.val = "4 GB"
+  vm.settingsNetworkAccess.val = false
+  vm.settingsDeliveryMode.val = "New branch"
+  vm.settingsDeliveryBranch.val = ""
+  vm.settingsPermissions.val = "Ask before commands"
+  vm.settingsActiveDropdown.val = ""
+
+proc clearConversation*(vm: AgentActivityVM) =
+  vm.messages.val = @[]
+  vm.testRuns.val = @[]
+  vm.expandedTestRuns.val = @[]
+  vm.expandedTests.val = @[]
+  vm.toggledThoughts.val = @[]
+  vm.expandedToolHistories.val = @[]
+  vm.evidenceCalls.val = @[]
+  # The dataset answers go too: they belong to the conversation that named
+  # them, and a file read for the previous session may since have changed.
+  vm.evidenceDatasets.val = @[]
+  vm.terminals.val = @[]
+  vm.inputValue.val = ""
+  vm.isLoading.val = false
+  vm.reRecordInProgress.val = false
+  vm.wantsPassword.val = false
+  vm.wantsPermission.val = false
+  vm.permissionInfo.val = ""
+  vm.sessionNotice.val = ""
+  vm.pastedImages.val = @[]
+  vm.contextPaths.val = @[]
+
+proc newAgentActivityVM*(store: ViewModel = nil;
+                         testRunProjector: TestRunProjector = nil):
+    AgentActivityVM =
+  ## An empty panel: no conversation, the prompt clear, the settings at their
+  ## defaults. CodeTracer creates it through its `createAgentActivityVM`,
+  ## which passes its `ReplayDataStore` and its `ct test` recogniser.
+  withViewModel proc(dispose: proc()): AgentActivityVM =
+    let messages = createSignal(newSeq[AgentActivityMessageEntry]())
+    let testRuns = createSignal(newSeq[AgentTestRunEntry]())
+    let expandedTestRuns = createSignal(newSeq[string]())
+    let expandedTests = createSignal(newSeq[string]())
+    let toggledThoughts = createSignal(newSeq[string]())
+    let expandedToolHistories = createSignal(newSeq[string]())
+    let evidenceCalls = createSignal(newSeq[EvidenceCall]())
+    let evidenceDatasets = createSignal(newSeq[EvidenceDatasetEntry]())
+    let terminals = createSignal(newSeq[AgentActivityTerminalEntry]())
+    let inputValue = createSignal("")
+    let isLoading = createSignal(false)
+    let reRecordInProgress = createSignal(false)
+    let wantsPassword = createSignal(false)
+    let wantsPermission = createSignal(false)
+    let permissionInfo = createSignal("")
+    let sessionKey = createSignal("")
+    let sessionNotice = createSignal("")
+    let selectedModel = createSignal("")
+    let currentBranch = createSignal("")
+    let branches = createSignal(newSeq[string]())
+    let branchDropdownOpen = createSignal(false)
+    let modelDropdownOpen = createSignal(false)
+    let addContextDropdownOpen = createSignal(false)
+    let pastedImages = createSignal(newSeq[string]())
+    let contextPaths = createSignal(newSeq[string]())
+    let settingsOpen = createSignal(false)
+    let settingsRuntime = createSignal("devcontainer")
+    let settingsExtraRuntimes = createSignal(newSeq[string]())
+    let settingsCpu = createSignal("2 cores")
+    let settingsMemory = createSignal("4 GB")
+    let settingsNetworkAccess = createSignal(false)
+    let settingsDeliveryMode = createSignal("New branch")
+    let settingsDeliveryBranch = createSignal("")
+    let settingsPermissions = createSignal("Ask before commands")
+    let settingsActiveDropdown = createSignal("")
+
+    let messageCount = createMemo[int] proc(): int =
+      messages.val.len
+    let terminalCount = createMemo[int] proc(): int =
+      terminals.val.len
+    let hasMessages = createMemo[bool] proc(): bool =
+      messages.val.len > 0
+    let hasSessionNotice = createMemo[bool] proc(): bool =
+      sessionNotice.val.len > 0
+    let testRunCount = createMemo[int] proc(): int =
+      testRuns.val.len
+    let evidenceCallCount = createMemo[int] proc(): int =
+      evidenceCalls.val.len
+
+    AgentActivityVM(
+      store: store,
+      testRunProjector: testRunProjector,
+      messages: messages,
+      testRuns: testRuns,
+      expandedTestRuns: expandedTestRuns,
+      expandedTests: expandedTests,
+      toggledThoughts: toggledThoughts,
+      expandedToolHistories: expandedToolHistories,
+      evidenceCalls: evidenceCalls,
+      evidenceDatasets: evidenceDatasets,
+      terminals: terminals,
+      inputValue: inputValue,
+      isLoading: isLoading,
+      reRecordInProgress: reRecordInProgress,
+      wantsPassword: wantsPassword,
+      wantsPermission: wantsPermission,
+      permissionInfo: permissionInfo,
+      sessionKey: sessionKey,
+      sessionNotice: sessionNotice,
+      selectedModel: selectedModel,
+      currentBranch: currentBranch,
+      branches: branches,
+      branchDropdownOpen: branchDropdownOpen,
+      modelDropdownOpen: modelDropdownOpen,
+      addContextDropdownOpen: addContextDropdownOpen,
+      pastedImages: pastedImages,
+      contextPaths: contextPaths,
+      settingsOpen: settingsOpen,
+      settingsRuntime: settingsRuntime,
+      settingsExtraRuntimes: settingsExtraRuntimes,
+      settingsCpu: settingsCpu,
+      settingsMemory: settingsMemory,
+      settingsNetworkAccess: settingsNetworkAccess,
+      settingsDeliveryMode: settingsDeliveryMode,
+      settingsDeliveryBranch: settingsDeliveryBranch,
+      settingsPermissions: settingsPermissions,
+      settingsActiveDropdown: settingsActiveDropdown,
+      messageCount: messageCount,
+      terminalCount: terminalCount,
+      hasMessages: hasMessages,
+      hasSessionNotice: hasSessionNotice,
+      testRunCount: testRunCount,
+      evidenceCallCount: evidenceCallCount,
+      disposeProc: dispose,
+    )

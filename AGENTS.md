@@ -34,6 +34,14 @@ Siblings are expected next to this checkout (`../nim-agents`, `../isonim`, …);
 
 Structure:
 - `src/nim_agents_isonim_viewmodels/activity_vm.nim`: reactive view over `ActivityTimeline`.
+- `src/nim_agents_isonim_viewmodels/agent_panels/`: the agent panels that moved
+  here from CodeTracer (CTF-M1, D87 (a)): `agent_activity_vm.nim`
+  `AgentActivityVM` (the Agent Activity feed and its composer) and
+  `agent_workspace_vm.nim` `AgentWorkspaceVM` (the Agent Workspace sidebar).
+  The host gives each its store as a plain `ViewModel` that the viewmodel
+  keeps and never reads, and gives the activity panel its `ct test` run
+  recogniser (`testRunProjector`, D90) and its `traceOpen` / `reviewOpen`
+  services. Neither is in the umbrella module; import them by path.
 - `src/nim_agents_isonim_viewmodels/agent_harbor/`: the Agent Harbor front-end
   prototypes' viewmodels (`fleet_vm.nim` `FleetSnapshotVM`, the fleet list;
   `session_tabs_vm.nim` `SessionTabStripVM`, sessions as tabs, over the
