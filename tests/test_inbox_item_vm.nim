@@ -409,10 +409,22 @@ suite "no write reaches anything but the seam":
                      "synthetic_inbox.nim", "data_source.nim", "fixture_source.nim"]:
       check required in names
     check modules.len >= 28
+    # The live data source (`live_source.nim`, CTF-M3) is the one deliberate
+    # transport user: the network side of the seam every other module here
+    # reads through, and native only. It is exempt by name, and checked to be
+    # what the exemption says, so the exemption cannot hide a new transport
+    # user or outlive the module it names.
+    const TransportUsers = ["live_source.nim"]
+    for user in TransportUsers:
+      check user in names
     for (name, text) in modules:
       checkpoint name
       check text.len > 0
-      check transportImports(text).len == 0
+      if name in TransportUsers:
+        check transportImports(text).len > 0
+        check "when defined(js):" in text and "{.error:" in text
+      else:
+        check transportImports(text).len == 0
 
 suite "the viewing heartbeat":
   test "sent while the page is visible, every twenty seconds, and never after it is left":
