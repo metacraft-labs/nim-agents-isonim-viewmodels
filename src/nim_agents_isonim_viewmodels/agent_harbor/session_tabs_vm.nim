@@ -92,6 +92,11 @@ type
     tabsRule*: TabsRule
     opened: seq[string]
       ## `tsOpenedOnly`: the opened sessions' ids, in the order opened.
+    serverTotal: int
+      ## How many sessions the server had when the strip loaded (the
+      ## listing's `total`), and how many the listing held: a source may
+      ## read only the newest page of a large fleet.
+    loadedCount: int
     revision*: Signal[int]
     state*: Signal[AsyncState]
     error*: Signal[string]
@@ -217,6 +222,8 @@ proc load*(vm: SessionTabStripVM) =
     if answer.ok:
       target.nowMs = answer.value.capturedAtMs
       target.directory.replaceAll(answer.value.sessions)
+      target.loadedCount = target.directory.len
+      target.serverTotal = max(answer.value.total, target.loadedCount)
       target.keepActiveATab()
       target.bump()
       target.state.val = asReady
@@ -272,6 +279,8 @@ proc restart*(vm: SessionTabStripVM) =
   ## groups, widths) are the reader's and stay, and so are the tabs the
   ## operator opened (`tsOpenedOnly`). Then the strip loads again.
   vm.directory = initSessionDirectory()
+  vm.serverTotal = 0
+  vm.loadedCount = 0
   vm.nowMs = 0
   vm.activeId.val = ""
   vm.focusedPlan.val = ""
@@ -308,6 +317,16 @@ proc listedSessions*(vm: SessionTabStripVM): seq[SessionItem] =
   for i in orderedIndexes(vm.directory.sessions, vm.policy):
     if vm.directory.sessions[i].id notin vm.opened:
       result.add vm.itemAt(i, "")
+
+proc partialListingNote*(vm: SessionTabStripVM): string =
+  ## Tracked: `showing newest N of M` while the strip holds only the newest
+  ## part of the server's sessions, "" when it holds them all. M is the
+  ## server's total at the load, moved by the sessions the feed has added or
+  ## removed since.
+  discard vm.revision.val
+  let shown = vm.directory.len
+  let total = vm.serverTotal + (shown - vm.loadedCount)
+  if total > shown: "showing newest " & $shown & " of " & $total else: ""
 
 proc openSession*(vm: SessionTabStripVM; id: string): bool =
   ## Opens a listed session as a tab, at the end of the strip, and makes it

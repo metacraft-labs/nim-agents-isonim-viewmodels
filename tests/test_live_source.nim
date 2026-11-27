@@ -184,6 +184,35 @@ suite "LiveDataSource":
       check listedAfter.len == 0
       check tabsAfter == @[sessionId]
 
+  test "a fleet larger than a page loads its newest page and says so":
+    needsServer:
+      let server = startServer(binary, apiKey)
+      defer: server.stop()
+      var ids: seq[string]
+      for i in 0 ..< 3:
+        ids.add server.createSession()
+        sleep(50)
+      let source = newLiveDataSource(server.baseUrl, apiKeyAuth(apiKey),
+        fleetPageSize = 2)
+      defer: source.close()
+      var listed: seq[string]
+      var note = ""
+      var state = asIdle
+      createRoot proc(disposeRoot: proc()) =
+        let strip = newSessionTabStripVM(source, tabs = tsOpenedOnly)
+        strip.load()
+        discard source.pumpUntil(proc(): bool = strip.state.val != asLoading)
+        state = strip.state.val
+        listed = strip.listedSessions.mapIt(it.id)
+        note = strip.partialListingNote
+        strip.dispose()
+        disposeRoot()
+      check state == asReady
+      check listed.len == 2
+      check ids[0] notin listed            # the oldest is the one left out
+      check ids[1] in listed and ids[2] in listed
+      check note == "showing newest 2 of 3"
+
   test "a cursor from another epoch produces exactly one reset":
     needsServer:
       let server = startServer(binary, apiKey)

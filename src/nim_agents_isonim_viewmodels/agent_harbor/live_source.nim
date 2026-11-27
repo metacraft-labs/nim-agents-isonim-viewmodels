@@ -4,8 +4,13 @@
 ## It serves the fleet and its lifecycle, which is what the session strip
 ## and the fleet panels read:
 ##
-## - `loadFleet` answers from `GET /api/v1/sessions`, every page. A refused
-##   or unreadable listing answers an error, never an empty fleet.
+## - `loadFleet` answers from `GET /api/v1/sessions`: its first page, the
+##   newest `fleetPageSize` sessions (200), with the server's `total`, so a
+##   view can say it shows the newest N of M. A fleet can hold tens of
+##   thousands of ended sessions, and reading every page takes minutes; the
+##   sessions that are not ended will be added through the list's `status`
+##   filter once the server answers it promptly. A refused or unreadable
+##   listing answers an error, never an empty fleet.
 ## - `subscribeFleetFrames` delivers each frame of
 ##   `GET /api/v1/session-lifecycle/events` as a lifecycle `FleetFrame`.
 ## - `subscribeResets` delivers a `StreamReset` whenever the feed answers
@@ -17,8 +22,8 @@
 ##
 ## **Threads.** Viewmodels are single-threaded and the feed blocks, so the
 ## network runs on worker threads and the host delivers on its own thread:
-## one worker follows the feed for the source's life, and each `loadFleet`
-## runs on a short-lived worker. Workers only read the network and post
+## one stream worker per followed stream for the source's life, and each
+## `loadFleet` on a short-lived worker. Workers only read the network and post
 ## plain messages to a channel; nothing they hold is shared. The host calls
 ## `pump()` from its UI loop, which drains the channel and calls the
 ## subscribers and the load callbacks on the host's thread. No callback is
@@ -37,6 +42,12 @@
 ## `readTimeoutMs`, a load's control deadline); the source keeps it, and its
 ## channel, until it has, and joins it then.
 ##
+## **Streams.** Each followed stream is a `StreamKind` with its own worker,
+## connection state and cursor; its messages carry the kind, and `pump()`
+## dispatches on it. The lifecycle feed is the only kind today; another
+## stream (the inbox's) is one more kind, one more branch in `followStream`
+## and in `pump()`, and the subscriptions it serves.
+##
 ## Native only: the JavaScript front-end is fed by its host.
 
 when defined(js):
@@ -48,6 +59,10 @@ import nim_agents/agent_harbor/[fleet_records, fleet_fold]
 import ./data_source
 
 type
+  StreamKind* = enum
+    ## A stream the source follows, each on its own worker.
+    skLifecycle = "lifecycle"  ## `GET /api/v1/session-lifecycle/events`
+
   MessageKind = enum
     mkConnecting   ## the feed worker opens a connection
     mkConnected    ## that connection delivered its first frame
@@ -58,6 +73,7 @@ type
 
   Message = object
     kind: MessageKind
+    stream: StreamKind     ## which stream posted it (stream messages)
     event, data, id: string
     ok: bool
     text: string
@@ -74,7 +90,8 @@ type
     authKind: AuthKind
     token: string
 
-  FeedArgs = object
+  StreamArgs = object
+    kind: StreamKind
     conn: Connection
     shared: ptr Shared
     after: string
@@ -84,26 +101,31 @@ type
     conn: Connection
     shared: ptr Shared
     loadId: int
+    pageSize: int
+
+  StreamState = object
+    connected: bool
+    error: string
+    connections: int
+    cursor: string
 
   LiveDataSource* = ref object of AgentHarborDataSource
     conn: Connection
     shared: ptr Shared
-    feed: ref Thread[FeedArgs]
+    streams: seq[ref Thread[StreamArgs]]
+    states: array[StreamKind, StreamState]
     loads: seq[ref Thread[LoadArgs]]
     pendingLoads: Table[int, FleetCallback]
     nextLoad: int
+    pageSize: int
     frameSubscribers: Subscribers[FleetFrame]
     resetSubscribers: Subscribers[StreamReset]
-    lastCursor: string
-    isConnected: bool
-    error: string
-    connectionCount: int
     closed: bool
 
   Retired = object
     ## A closed source's workers that had not finished, and their channel.
     shared: ptr Shared
-    feed: ref Thread[FeedArgs]
+    streams: seq[ref Thread[StreamArgs]]
     loads: seq[ref Thread[LoadArgs]]
 
 var retired {.threadvar.}: seq[Retired]
@@ -129,51 +151,61 @@ proc waitOrStop(shared: ptr Shared; ms: int) =
     sleep(min(left, 20))
     left -= 20
 
-proc followFeed(args: FeedArgs) {.thread.} =
-  ## The feed worker: follow the lifecycle feed until told to stop,
-  ## reconnecting from the last cursor read.
-  {.cast(gcsafe).}:
+proc followLifecycle(args: StreamArgs) =
+  ## Follows the lifecycle feed until told to stop, reconnecting from the
+  ## last cursor read.
+  block:
     var client = clientOf(args.conn)
     client.frameStreamTransport = nativeHarborFrameStream(args.readTimeoutMs)
     let shared = args.shared
     var cursor = args.after
     var wait = args.minBackoffMs
     while not shared.stopping:
-      shared.post Message(kind: mkConnecting)
+      shared.post Message(kind: mkConnecting, stream: args.kind)
       var delivered = false
       try:
         client.followSessionLifecycle(proc(frame: SseFrame): bool =
           if shared.stopping: return false
           if not delivered:
             delivered = true
-            shared.post Message(kind: mkConnected)
+            shared.post Message(kind: mkConnected, stream: args.kind)
           # The cursor to resume from: a lifecycle frame's id, or the
           # cursor in a resync or caught_up frame's data.
           let decoded = lifecycleFrameOf(frame.event, frame.data, frame.id)
           if decoded.cursor.len > 0: cursor = decoded.cursor
-          shared.post Message(kind: mkFrame, event: frame.event,
+          shared.post Message(kind: mkFrame, stream: args.kind, event: frame.event,
             data: frame.data, id: frame.id)
           true, after = cursor)
         if not shared.stopping:
-          shared.post Message(kind: mkDisconnected, text: "the feed ended")
+          shared.post Message(kind: mkDisconnected, stream: args.kind,
+            text: "the feed ended")
       except CatchableError as error:
         if not shared.stopping:
-          shared.post Message(kind: mkDisconnected, text: error.msg)
+          shared.post Message(kind: mkDisconnected, stream: args.kind,
+            text: error.msg)
       if delivered: wait = args.minBackoffMs
       shared.waitOrStop(wait)
       if not delivered: wait = min(wait * 2, args.maxBackoffMs)
 
+proc followStream(args: StreamArgs) {.thread.} =
+  ## A stream worker: follows the stream its kind names.
+  {.cast(gcsafe).}:
+    case args.kind
+    of skLifecycle: followLifecycle(args)
+
 proc loadOnce(args: LoadArgs) {.thread.} =
-  ## A listing worker: read every page and post the result as JSON text.
+  ## A listing worker: read the newest page and post it as JSON text, with
+  ## the server's total.
   {.cast(gcsafe).}:
     var message = Message(kind: mkFleet, loadId: args.loadId)
     try:
-      let items = clientOf(args.conn).listAllSessions()
+      let page = clientOf(args.conn).listSessions(
+        SessionListQuery(page: 1, perPage: args.pageSize))
       var node = newJObject()
       var list = newJArray()
-      for item in items: list.add item
+      for item in page.items: list.add item
       node["items"] = list
-      node["total"] = %items.len
+      node["total"] = %page.total
       message.ok = true
       message.text = $node
     except CatchableError as error:
@@ -197,10 +229,11 @@ proc reapRetired() =
     for load in entry.loads:
       if load.finished: joinThread(load[]) else: loads.add load
     entry.loads = loads
-    if not entry.feed.isNil and entry.feed.finished:
-      joinThread(entry.feed[])
-      entry.feed = nil
-    if entry.feed.isNil and entry.loads.len == 0:
+    var streams: seq[ref Thread[StreamArgs]]
+    for stream in entry.streams:
+      if stream.finished: joinThread(stream[]) else: streams.add stream
+    entry.streams = streams
+    if entry.streams.len == 0 and entry.loads.len == 0:
       entry.shared.channel.close()
       deallocShared(entry.shared)
     else:
@@ -213,53 +246,63 @@ proc reapRetired() =
 
 proc newLiveDataSource*(baseUrl: string; auth = HarborAuth(kind: akNone);
                         after = ""; readTimeoutMs = 30_000;
-                        minBackoffMs = 250; maxBackoffMs = 30_000): LiveDataSource =
-  ## A source over the server at `baseUrl`, starting its feed worker now.
-  ## `after` resumes the feed from a cursor a previous source applied ("" for
-  ## none). `readTimeoutMs` is how long the feed may stay silent before the
-  ## worker reconnects; a quiet fleet costs one reconnect per period.
+                        minBackoffMs = 250; maxBackoffMs = 30_000;
+                        fleetPageSize = 200): LiveDataSource =
+  ## A source over the server at `baseUrl`, starting its stream workers now.
+  ## `after` resumes the lifecycle feed from a cursor a previous source
+  ## applied ("" for none). `readTimeoutMs` is how long a stream may stay
+  ## silent before its worker reconnects; a quiet fleet costs one reconnect
+  ## per period. `fleetPageSize` is how many of the newest sessions
+  ## `loadFleet` reads (the server's maximum page is 200).
   reapRetired()
   let shared = cast[ptr Shared](allocShared0(sizeof(Shared)))
   shared.channel.open()
   let conn = Connection(baseUrl: baseUrl, authKind: auth.kind, token: auth.token)
   result = LiveDataSource(label: "live: " & baseUrl, conn: conn,
     shared: shared, pendingLoads: initTable[int, FleetCallback](),
-    lastCursor: after)
-  new result.feed
-  createThread(result.feed[], followFeed, FeedArgs(conn: conn, shared: shared,
-    after: after, readTimeoutMs: readTimeoutMs,
-    minBackoffMs: max(1, minBackoffMs),
-    maxBackoffMs: max(minBackoffMs, maxBackoffMs)))
+    pageSize: clamp(fleetPageSize, 1, 200))
+  result.states[skLifecycle].cursor = after
+  for kind in StreamKind:
+    var thread: ref Thread[StreamArgs]
+    new thread
+    createThread(thread[], followStream, StreamArgs(kind: kind, conn: conn,
+      shared: shared, after: (if kind == skLifecycle: after else: ""),
+      readTimeoutMs: readTimeoutMs, minBackoffMs: max(1, minBackoffMs),
+      maxBackoffMs: max(minBackoffMs, maxBackoffMs)))
+    result.streams.add thread
 
-proc connected*(source: LiveDataSource): bool =
-  ## True while the feed's current connection has delivered a frame.
-  source.isConnected
+proc connected*(source: LiveDataSource; stream = skLifecycle): bool =
+  ## True while the stream's current connection has delivered a frame.
+  source.states[stream].connected
 
-proc lastError*(source: LiveDataSource): string =
-  ## Why the feed's last connection ended ("" while connected).
-  source.error
+proc lastError*(source: LiveDataSource; stream = skLifecycle): string =
+  ## Why the stream's last connection ended ("" while connected).
+  source.states[stream].error
 
-proc connections*(source: LiveDataSource): int =
-  ## The feed connections opened so far, pumped.
-  source.connectionCount
+proc connections*(source: LiveDataSource; stream = skLifecycle): int =
+  ## The stream's connections opened so far, pumped.
+  source.states[stream].connections
 
-proc cursor*(source: LiveDataSource): string =
-  ## The cursor of the last frame delivered: what a later source passes as
-  ## `after` to resume where this one stopped.
-  source.lastCursor
+proc cursor*(source: LiveDataSource; stream = skLifecycle): string =
+  ## The cursor of the stream's last frame delivered: for the lifecycle
+  ## feed, what a later source passes as `after` to resume where this one
+  ## stopped.
+  source.states[stream].cursor
 
 proc pending*(source: LiveDataSource): int =
   ## Messages the workers posted that `pump()` has not delivered yet.
   if source.closed: 0 else: source.shared.channel.peek()
 
 proc stopped*(source: LiveDataSource): bool =
-  ## True once the feed worker has finished (after `close`, at its read
+  ## True once every stream worker has finished (after `close`, at its read
   ## deadline).
-  source.feed.finished
+  for stream in source.streams:
+    if not stream.finished: return false
+  true
 
-proc deliverFrame(source: LiveDataSource; message: Message) =
+proc deliverLifecycleFrame(source: LiveDataSource; message: Message) =
   let frame = lifecycleFrameOf(message.event, message.data, message.id)
-  if frame.cursor.len > 0: source.lastCursor = frame.cursor
+  if frame.cursor.len > 0: source.states[skLifecycle].cursor = frame.cursor
   let at = nowMs()
   discard source.frameSubscribers.broadcast(
     success(lifecycleFrame(frame, if frame.atMs > 0: frame.atMs else: at)))
@@ -283,15 +326,16 @@ proc pump*(source: LiveDataSource): int =
     inc result
     case message.kind
     of mkConnecting:
-      inc source.connectionCount
+      inc source.states[message.stream].connections
     of mkConnected:
-      source.isConnected = true
-      source.error = ""
+      source.states[message.stream].connected = true
+      source.states[message.stream].error = ""
     of mkDisconnected:
-      source.isConnected = false
-      source.error = message.text
+      source.states[message.stream].connected = false
+      source.states[message.stream].error = message.text
     of mkFrame:
-      source.deliverFrame(message)
+      case message.stream
+      of skLifecycle: source.deliverLifecycleFrame(message)
     of mkFleet:
       var done: FleetCallback
       if source.pendingLoads.pop(message.loadId, done):
@@ -313,7 +357,7 @@ proc close*(source: LiveDataSource) =
   source.pendingLoads.clear()
   source.frameSubscribers = Subscribers[FleetFrame]()
   source.resetSubscribers = Subscribers[StreamReset]()
-  retired.add Retired(shared: source.shared, feed: source.feed,
+  retired.add Retired(shared: source.shared, streams: source.streams,
     loads: source.loads)
   source.loads = @[]
   reapRetired()
@@ -329,7 +373,7 @@ method loadFleet*(source: LiveDataSource; done: FleetCallback) =
   var thread: ref Thread[LoadArgs]
   new thread
   createThread(thread[], loadOnce, LoadArgs(conn: source.conn,
-    shared: source.shared, loadId: id))
+    shared: source.shared, loadId: id, pageSize: source.pageSize))
   source.loads.add thread
 
 method subscribeFleetFrames*(source: LiveDataSource;

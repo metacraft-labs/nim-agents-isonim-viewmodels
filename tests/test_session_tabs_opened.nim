@@ -142,6 +142,33 @@ suite "opened-only session strip":
     check log[1].tabs == @["b"]
     check log[1].listed == @["a"]
 
+  test "the list says when it holds only the newest part of the fleet":
+    var notes: seq[string]
+    var fleetOf3 = fleet("a", "b", "c")
+    fleetOf3.total = 10                    # the server has 10; 3 were read
+    createRoot proc(disposeRoot: proc()) =
+      let vm = newSessionTabStripVM(newSnapshotDataSource(fleetOf3),
+        tabs = tsOpenedOnly)
+      vm.load()
+      notes.add vm.partialListingNote
+      discard vm.applyFleetFrame(created("n"))      # one more on the server
+      notes.add vm.partialListingNote
+      discard vm.applyFleetFrame(removed("a"))
+      notes.add vm.partialListingNote
+      vm.dispose()
+      disposeRoot()
+    var whole: string
+    createRoot proc(disposeRoot: proc()) =
+      let vm = newSessionTabStripVM(newSnapshotDataSource(fleet("a", "b")),
+        tabs = tsOpenedOnly)
+      vm.load()
+      whole = vm.partialListingNote
+      vm.dispose()
+      disposeRoot()
+    check notes == @["showing newest 3 of 10", "showing newest 4 of 11",
+                     "showing newest 3 of 10"]
+    check whole == ""
+
   test "the default mode still shows every listed session as a tab":
     var tabs, listed: seq[string]
     createRoot proc(disposeRoot: proc()) =
