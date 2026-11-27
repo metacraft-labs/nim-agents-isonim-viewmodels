@@ -45,6 +45,7 @@ const viewmodelTests = @[
   "tests/test_agent_harbor_fleet_vm.nim",
   "tests/test_live_source.nim",
   "tests/test_agent_harbor_sessions_vm.nim",
+  "tests/test_session_tabs_opened.nim",
   "tests/test_progress_pie.nim",
   "tests/test_playback.nim",
   "tests/test_session_timeline_vm.nim",
@@ -64,7 +65,8 @@ const viewmodelTests = @[
 
 const viewmodelJsBuildStems = @[
   "test_activity_vm", "test_agent_harbor_fleet_vm",
-  "test_agent_harbor_sessions_vm", "test_progress_pie", "test_playback",
+  "test_agent_harbor_sessions_vm", "test_session_tabs_opened",
+  "test_progress_pie", "test_playback",
   "test_session_timeline_vm", "test_changes_vm", "test_inbox_vm",
   "test_inbox_item_vm", "test_omnibox_composer_vm",
   "test_result_commands_vm", "test_suggested_actions_vm",
@@ -73,7 +75,8 @@ const viewmodelJsBuildStems = @[
 
 const viewmodelJsTestStems = @[
   "test_activity_vm", "test_agent_harbor_fleet_vm",
-  "test_agent_harbor_sessions_vm", "test_progress_pie", "test_playback",
+  "test_agent_harbor_sessions_vm", "test_session_tabs_opened",
+  "test_progress_pie", "test_playback",
   "test_session_timeline_vm", "test_changes_vm", "test_inbox_vm",
   "test_inbox_item_vm", "test_omnibox_composer_vm",
   "test_result_commands_vm", "test_suggested_actions_vm",

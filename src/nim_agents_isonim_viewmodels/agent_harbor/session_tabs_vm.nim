@@ -31,8 +31,19 @@
 ## (`subscribeResets`: the source started over, and so does the strip,
 ## `restart`). A source that only answers loads leaves the strip as loaded;
 ## `feeds` reports each subscription.
+##
+## **Which sessions are tabs** (`TabsRule`). In `tsEveryListed`, the
+## prototypes' rule, every listed session is a tab. In `tsOpenedOnly`, the
+## product's rule (operator decision, 2026-11-26: "only sessions the
+## operator opens get a tab"), a session is a tab only once the operator
+## opens it (`openSession`), and the tabs keep the order they were opened
+## in; every other listed session is in the session list
+## (`listedSessions`), the switcher they are opened from. Both read the one
+## directory, so a session is a tab or listed, never both. Closing a tab
+## returns its session to the list and stops nothing; a removed session
+## leaves whichever it was in; a reset keeps the opened tabs.
 
-import std/[algorithm, strutils, tables]
+import std/[algorithm, sequtils, strutils, tables]
 import isonim/core/[signals, computation, owner]
 import isonim/viewmodel
 import ./data_source
@@ -49,6 +60,11 @@ type
     tsmMultiLine = "multi-line"
     tsmSidebar = "sidebar"
     tsmDocked = "docked"
+
+  TabsRule* = enum
+    ## Which listed sessions are tabs (see the module comment).
+    tsEveryListed = "every-listed"
+    tsOpenedOnly = "opened-only"
 
   SessionTabGroup* = object
     ## One initiative's tabs (`planId` "" for sessions launched for none):
@@ -73,6 +89,9 @@ type
     initiativeProgress: Table[string, MilestoneFileProgress]
     collapsedPlans: seq[string]
     policy*: SessionPolicy
+    tabsRule*: TabsRule
+    opened: seq[string]
+      ## `tsOpenedOnly`: the opened sessions' ids, in the order opened.
     revision*: Signal[int]
     state*: Signal[AsyncState]
     error*: Signal[string]
@@ -106,15 +125,17 @@ type
 
 proc newSessionTabStripVM*(source: AgentHarborDataSource;
                            mode = tsmSingleLine;
-                           policy = tabStripSessionPolicy()): SessionTabStripVM =
-  ## Nothing is loaded until `load`.
+                           policy = tabStripSessionPolicy();
+                           tabs = tsEveryListed): SessionTabStripVM =
+  ## Nothing is loaded until `load`. `tabs` says which listed sessions are
+  ## tabs; the product passes `tsOpenedOnly`.
   withViewModel proc(dispose: proc()): SessionTabStripVM =
     let feeds = newSourceFeeds()
     # Disposing the viewmodel's root unsubscribes it from its source.
     onCleanup proc() = feeds.close()
     SessionTabStripVM(
       source: source, directory: initSessionDirectory(), policy: policy,
-      feeds: feeds,
+      tabsRule: tabs, feeds: feeds,
       initiativeTitles: initTable[string, string](),
       revision: createSignal(0), state: createSignal(asIdle),
       error: createSignal(""), mode: createSignal(mode),
@@ -137,6 +158,28 @@ proc feeds*(vm: SessionTabStripVM): SourceFeeds =
   vm.feeds
 
 proc applyFleetFrame*(vm: SessionTabStripVM; frame: FleetFrame): bool
+proc tabs*(vm: SessionTabStripVM): seq[SessionItem]
+proc activate*(vm: SessionTabStripVM; id: string): bool
+
+proc isTab(vm: SessionTabStripVM; id: string): bool =
+  vm.directory.find(id) >= 0 and
+    (vm.tabsRule == tsEveryListed or id in vm.opened)
+
+proc keepActiveATab(vm: SessionTabStripVM) =
+  ## When the active session is no tab any more, the first tab becomes
+  ## active (in `tsEveryListed`, the first listed session, as before).
+  if vm.isTab(vm.activeId.val): return
+  case vm.tabsRule
+  of tsEveryListed:
+    vm.activeId.val =
+      if vm.directory.len > 0: vm.directory.sessions[0].id else: ""
+  of tsOpenedOnly:
+    vm.activeId.val = ""
+    for id in vm.opened:
+      if vm.directory.find(id) >= 0:
+        vm.activeId.val = id
+        break
+
 proc resume*(vm: SessionTabStripVM; event: ResumeEvent): bool
 proc applyProgress*(vm: SessionTabStripVM; event: ProgressEvent): bool
 proc restart*(vm: SessionTabStripVM)
@@ -174,9 +217,7 @@ proc load*(vm: SessionTabStripVM) =
     if answer.ok:
       target.nowMs = answer.value.capturedAtMs
       target.directory.replaceAll(answer.value.sessions)
-      if target.directory.find(target.activeId.val) < 0:
-        target.activeId.val =
-          if target.directory.len > 0: target.directory.sessions[0].id else: ""
+      target.keepActiveATab()
       target.bump()
       target.state.val = asReady
     else:
@@ -190,9 +231,11 @@ proc applyFleetFrame*(vm: SessionTabStripVM; frame: FleetFrame): bool =
   ## one of a session's events (it starts or stops waiting on a question).
   ## True when the strip changed.
   if not vm.directory.followFrame(vm.nowMs, frame): return false
-  if vm.directory.find(vm.activeId.val) < 0:
-    vm.activeId.val =
-      if vm.directory.len > 0: vm.directory.sessions[0].id else: ""
+  if vm.tabsRule == tsOpenedOnly:
+    # A removed session's tab goes with it; were it listed again, it would
+    # be listed, not opened.
+    vm.opened.keepItIf(vm.directory.find(it) >= 0)
+  vm.keepActiveATab()
   vm.bump()
   true
 
@@ -226,7 +269,8 @@ proc restart*(vm: SessionTabStripVM) =
   ## Starts over, as after a source's reset: the tabs, their order and the
   ## active tab are dropped with the data they came from, as are the focus
   ## and an open overflow menu; the layout settings (mode, grouping, folded
-  ## groups, widths) are the reader's and stay. Then the strip loads again.
+  ## groups, widths) are the reader's and stay, and so are the tabs the
+  ## operator opened (`tsOpenedOnly`). Then the strip loads again.
   vm.directory = initSessionDirectory()
   vm.nowMs = 0
   vm.activeId.val = ""
@@ -235,16 +279,49 @@ proc restart*(vm: SessionTabStripVM) =
   vm.bump()
   vm.load()
 
+proc itemAt(vm: SessionTabStripVM; i: int; active: string): SessionItem =
+  result = sessionItemOf(vm.directory.sessions[i], vm.nowMs, vm.policy,
+                         vm.directory.sessions[i].id == active)
+  if result.initiativeTitle.len == 0 and result.planId in vm.initiativeTitles:
+    result.initiativeTitle = vm.initiativeTitles[result.planId]
+
 proc tabs*(vm: SessionTabStripVM): seq[SessionItem] =
-  ## Tracked: every tab, in strip order, the active one marked.
+  ## Tracked: every tab, in strip order, the active one marked. In
+  ## `tsOpenedOnly` the strip order is the order the tabs were opened in.
   discard vm.revision.val
   let active = vm.activeId.val
+  case vm.tabsRule
+  of tsEveryListed:
+    for i in orderedIndexes(vm.directory.sessions, vm.policy):
+      result.add vm.itemAt(i, active)
+  of tsOpenedOnly:
+    for id in vm.opened:
+      let i = vm.directory.find(id)
+      if i >= 0: result.add vm.itemAt(i, active)
+
+proc listedSessions*(vm: SessionTabStripVM): seq[SessionItem] =
+  ## Tracked: the session list, the switcher tabs are opened from: every
+  ## listed session that is not a tab, in launch order. Always empty in
+  ## `tsEveryListed`, where every listed session is a tab.
+  discard vm.revision.val
+  if vm.tabsRule == tsEveryListed: return
   for i in orderedIndexes(vm.directory.sessions, vm.policy):
-    var item = sessionItemOf(vm.directory.sessions[i], vm.nowMs, vm.policy,
-                             vm.directory.sessions[i].id == active)
-    if item.initiativeTitle.len == 0 and item.planId in vm.initiativeTitles:
-      item.initiativeTitle = vm.initiativeTitles[item.planId]
-    result.add item
+    if vm.directory.sessions[i].id notin vm.opened:
+      result.add vm.itemAt(i, "")
+
+proc openSession*(vm: SessionTabStripVM; id: string): bool =
+  ## Opens a listed session as a tab, at the end of the strip, and makes it
+  ## active. True when a tab was opened; false for a session that is not
+  ## listed, or one already a tab (which is made active).
+  if vm.directory.find(id) < 0: return false
+  if vm.isTab(id):
+    discard vm.activate(id)
+    return false
+  vm.opened.add id
+  vm.activeId.val = id
+  vm.overflowOpen.val = false
+  vm.bump()
+  true
 
 proc activeIndex*(vm: SessionTabStripVM): int =
   for i, tab in vm.tabs:
@@ -325,7 +402,7 @@ proc counts*(vm: SessionTabStripVM): array[SessionAttention, int] =
 
 proc activate*(vm: SessionTabStripVM; id: string): bool =
   ## Makes the tab active; false for an unknown or already active tab.
-  if vm.directory.find(id) < 0 or vm.activeId.val == id: return false
+  if not vm.isTab(id) or vm.activeId.val == id: return false
   vm.activeId.val = id
   vm.overflowOpen.val = false
   true
@@ -340,8 +417,8 @@ proc step*(vm: SessionTabStripVM; delta: int): bool =
 proc close*(vm: SessionTabStripVM; id: string): bool =
   ## Closes a tab (the session goes on; closing only stops showing it). The
   ## next tab, else the previous, becomes active when the active one closes.
-  let at = vm.directory.find(id)
-  if at < 0: return false
+  ## In `tsOpenedOnly` the session goes back to the session list.
+  if not vm.isTab(id): return false
   let tabs = vm.tabs
   var position = -1
   for i, tab in tabs:
@@ -351,14 +428,25 @@ proc close*(vm: SessionTabStripVM; id: string): bool =
       if tabs.len == 1: ""
       elif position + 1 < tabs.len: tabs[position + 1].id
       else: tabs[position - 1].id
-  discard vm.directory.applyFrame(LifecycleFrame(event: "lifecycle",
-    kind: "session_removed", sessionId: id))
+  case vm.tabsRule
+  of tsEveryListed:
+    discard vm.directory.applyFrame(LifecycleFrame(event: "lifecycle",
+      kind: "session_removed", sessionId: id))
+  of tsOpenedOnly:
+    vm.opened.delete(vm.opened.find(id))
   vm.bump()
   true
 
 proc move*(vm: SessionTabStripVM; id: string; toIndex: int): bool =
   ## Moves a tab to `toIndex` in the strip (the launch order is kept
   ## otherwise).
+  if vm.tabsRule == tsOpenedOnly:
+    let at = vm.opened.find(id)
+    if at < 0 or toIndex < 0 or toIndex >= vm.opened.len: return false
+    vm.opened.delete(at)
+    vm.opened.insert(id, toIndex)
+    vm.bump()
+    return true
   if not vm.directory.moveSession(id, toIndex): return false
   vm.bump()
   true

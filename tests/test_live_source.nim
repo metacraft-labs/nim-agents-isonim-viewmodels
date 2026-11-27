@@ -154,6 +154,36 @@ suite "LiveDataSource":
       check completed
       check finalTabs == @[sessionId]
 
+  test "opened-only: a new live session is listed, and gets a tab when opened":
+    needsServer:
+      let server = startServer(binary, apiKey)
+      defer: server.stop()
+      let source = newLiveDataSource(server.baseUrl, apiKeyAuth(apiKey))
+      defer: source.close()
+      var sessionId = ""
+      var listedBefore, tabsBefore, listedAfter, tabsAfter: seq[string]
+      var opened = false
+      createRoot proc(disposeRoot: proc()) =
+        let strip = newSessionTabStripVM(source, tabs = tsOpenedOnly)
+        strip.load()
+        doAssert source.pumpUntil(proc(): bool =
+          strip.state.val == asReady and source.connected)
+        sessionId = server.createSession()
+        discard source.pumpUntil(proc(): bool =
+          strip.listedSessions.anyIt(it.id == sessionId))
+        listedBefore = strip.listedSessions.mapIt(it.id)
+        tabsBefore = strip.tabs.mapIt(it.id)
+        opened = strip.openSession(sessionId)
+        listedAfter = strip.listedSessions.mapIt(it.id)
+        tabsAfter = strip.tabs.mapIt(it.id)
+        strip.dispose()
+        disposeRoot()
+      check listedBefore == @[sessionId]
+      check tabsBefore.len == 0
+      check opened
+      check listedAfter.len == 0
+      check tabsAfter == @[sessionId]
+
   test "a cursor from another epoch produces exactly one reset":
     needsServer:
       let server = startServer(binary, apiKey)
