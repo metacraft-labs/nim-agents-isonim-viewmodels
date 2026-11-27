@@ -8,6 +8,7 @@ build: build-native build-js
 build-native:
     nim c {{paths}} tests/test_activity_vm.nim
     nim c {{paths}} tests/test_agent_harbor_fleet_vm.nim
+    nim c {{paths}} tests/test_live_source.nim
     nim c {{paths}} tests/test_agent_harbor_sessions_vm.nim
     nim c {{paths}} tests/test_progress_pie.nim
     nim c {{paths}} tests/test_playback.nim
@@ -47,6 +48,7 @@ test: test-native test-js
 test-native:
     nim c -r {{paths}} tests/test_activity_vm.nim
     nim c -r {{paths}} tests/test_agent_harbor_fleet_vm.nim
+    nim c -r {{paths}} tests/test_live_source.nim
     nim c -r {{paths}} tests/test_agent_harbor_sessions_vm.nim
     nim c -r {{paths}} tests/test_progress_pie.nim
     nim c -r {{paths}} tests/test_playback.nim
@@ -87,6 +89,7 @@ lint-nim:
     nim check {{paths}} src/nim_agents_isonim_viewmodels.nim
     nim check {{paths}} tests/test_activity_vm.nim
     nim check {{paths}} tests/test_agent_harbor_fleet_vm.nim
+    nim check {{paths}} tests/test_live_source.nim
     nim check {{paths}} tests/test_agent_harbor_sessions_vm.nim
     nim check {{paths}} tests/test_progress_pie.nim
     nim check {{paths}} tests/test_playback.nim

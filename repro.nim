@@ -43,6 +43,7 @@ import ct_test_nim_unittest
 const viewmodelTests = @[
   "tests/test_activity_vm.nim",
   "tests/test_agent_harbor_fleet_vm.nim",
+  "tests/test_live_source.nim",
   "tests/test_agent_harbor_sessions_vm.nim",
   "tests/test_progress_pie.nim",
   "tests/test_playback.nim",
