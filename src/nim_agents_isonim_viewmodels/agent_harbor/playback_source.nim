@@ -36,8 +36,9 @@
 ## ends in the state a fresh playback stepped to the same moment shows.
 ##
 ## **The inbox.** `loadInbox` answers the inbox at the head; the source keeps
-## the inbox cursors as a server keeps them (`loadInboxCursor`,
-## `moveInboxCursor`, the same `CursorBook` the scripted source keeps), and
+## the inbox cursors as a server keeps them (`loadInboxRead`,
+## `postInboxCursor`, `subscribeInboxNotices`: the same `CursorBook` the
+## scripted source keeps), and
 ## answers every action from an `ActionScript` that confirms it and records
 ## it. What an answer does to the inbox is the scenario's next inbox entry,
 ## not the script's. A rebuild returns the cursors and the record to the
@@ -95,6 +96,7 @@ type
     script*: ActionScript
       ## Answers every action (confirmed) and records it.
     inboxSubscribers*: Subscribers[InboxEvent]
+    noticeSubscribers*: Subscribers[InboxNotice]
     pressSubscribers*: Subscribers[OperatorPress]
     testRuns: seq[ScenarioTestRun]
       ## The runs at the head.
@@ -393,13 +395,24 @@ proc subscribePresses*(source: PlaybackDataSource;
   ## The operator's presses, each when the head reaches its moment.
   source.pressSubscribers.subscribe(callback)
 
-method loadInboxCursor*(source: PlaybackDataSource; name: string;
-                        done: CursorCallback) =
-  done(success(source.cursors.positionOf(name)))
+method loadInboxRead*(source: PlaybackDataSource; cursorName: string;
+                      done: InboxReadCallback) =
+  ## The inbox at the head, with the cursor `cursorName` and its targets.
+  done(success(source.cursors.readOf(cursorName, source.inbox)))
 
-method moveInboxCursor*(source: PlaybackDataSource; name: string;
-                        direction: CursorDirection; done: CursorCallback) =
-  done(success(source.cursors.move(name, source.inbox.orderOf, direction)))
+method postInboxCursor*(source: PlaybackDataSource; name: string;
+                        post: CursorPost; done: CursorAnswerCallback) =
+  ## Moves the cursor, answers the press, then tells every viewmodel on the
+  ## notice stream, as a server tells every device.
+  let answer = source.cursors.move(name, source.inbox, post)
+  done(success(answer))
+  discard source.noticeSubscribers.broadcast(
+    success(source.cursors.noticeOf(name, source.inbox)))
+
+method subscribeInboxNotices*(source: PlaybackDataSource;
+    callback: FeedCallback[InboxNotice]): Subscription[InboxNotice] =
+  ## The cursor moves `postInboxCursor` makes.
+  source.noticeSubscribers.subscribe(callback)
 
 method loadInboxItemDetail*(source: PlaybackDataSource; item: InboxItemRef;
                             done: ItemDetailCallback) =

@@ -9,19 +9,25 @@
 ##
 ## - `ScriptedActionSource` is the prototypes' production source for the
 ##   inbox: it holds an invented inbox, keeps the cursor with the server's
-##   rule (nim-agents' `cursorNext` / `cursorPrev`) and answers actions from
-##   a script. A real server's inbox cursors are not served yet, and the
+##   rules (nim-agents' `walkNext` / `walkPrev`, with the targets of the next
+##   presses from `aheadOf`) and answers actions from a script. A real server's inbox cursors are not served yet, and the
 ##   prototypes may not write to a server, so no live source exists to test
 ##   against; this source is the one every story uses.
 ## - `PendingDataSource` and `FailingDataSource` are the seam's state
 ##   sources: a server that does not answer, and one that fails.
+## - `HeldPostSource` is that source with its cursor answers held back until
+##   the test releases them: a server that has not answered yet, which is
+##   the only way to show that a press does not wait for its answer.
+##   `RefusingPostSource` refuses every cursor post, as a server that is down
+##   would. `HeldReadSource` holds its reads of the inbox the same way, the
+##   only way to put a stream's resync before the first read's answer.
 ## - IsoNim's `TestClock` dates the loading line.
 ##
 ## Expected values are written out by hand from the invented inboxes'
 ## documented order (`synthetic_inbox.nim`), never computed through the
 ## reducer or the cursor rule.
 
-import std/unittest
+import std/[strutils, unittest]
 import isonim/core/[owner, signals, clock]
 import nim_agents_isonim_viewmodels
 
@@ -38,6 +44,55 @@ proc firstItems(n: int): InboxSnapshot =
 
 proc populated(): ScriptedActionSource =
   ScriptedActionSource(inboxFixture("populated"))
+
+type
+  HeldPost = object
+    name: string
+    post: CursorPost
+    done: CursorAnswerCallback
+
+  HeldPostSource = ref object of ScriptedActionSource
+    held: seq[HeldPost]
+
+  RefusingPostSource = ref object of ScriptedActionSource
+
+  HeldReadSource = ref object of ScriptedActionSource
+    reads: seq[(string, InboxReadCallback)]
+
+method postInboxCursor(source: HeldPostSource; name: string; post: CursorPost;
+                       done: CursorAnswerCallback) =
+  source.held.add HeldPost(name: name, post: post, done: done)
+
+proc release(source: HeldPostSource) =
+  ## Answers the held posts in the order they were sent, as the server would.
+  let held = source.held
+  source.held = @[]
+  for h in held:
+    procCall postInboxCursor(ScriptedActionSource(source), h.name, h.post, h.done)
+
+method postInboxCursor(source: RefusingPostSource; name: string; post: CursorPost;
+                       done: CursorAnswerCallback) =
+  done(failure[CursorAnswer]("POST /api/v1/inbox/cursors/" & name & " answered 503"))
+
+method loadInboxRead(source: HeldReadSource; cursorName: string;
+                     done: InboxReadCallback) =
+  source.reads.add((cursorName, done))
+
+proc answerRead(source: HeldReadSource; at: int) =
+  ## Answers the read at `at` with the cursor as the source holds it now.
+  let (name, done) = source.reads[at]
+  procCall loadInboxRead(ScriptedActionSource(source), name, done)
+
+proc resync(source: ScriptedActionSource) =
+  ## The stream's first frame after it connects, as every server sends it.
+  discard source.noticeSubscribers.broadcast(
+    success(InboxNotice(kind: inResync)))
+
+proc threeItemSource[T: ScriptedActionSource](kind: typedesc[T]): T =
+  let base = ScriptedActionSource(inboxSource(firstItems(3), inboxDetails(),
+                                              "three items"))
+  result = T(label: base.label, effects: true, script: newActionScript(),
+             inbox: base.inbox, details: base.details)
 
 const
   P = PermissionItem
@@ -169,7 +224,7 @@ suite "Previous and Next over a fixture cursor":
       let vm = newInboxVM(source)
       vm.load()
       check vm.canNext
-      check not vm.canPrev
+      check vm.canPrev                  # Previous wraps to the last item
       check vm.next()
       check vm.current.val.id == P
       check vm.positionText == "1 of 3"
@@ -189,10 +244,12 @@ suite "Previous and Next over a fixture cursor":
       check vm.requestedSession.val == sessionIdOf(1)
       check vm.prev()
       check vm.current.val.id == P
-      check not vm.canPrev
-      check not vm.prev()
-      check vm.current.val.id == P
-      check vm.requests.val == 5
+      # Nothing left on the stack: Previous wraps to the last item.
+      check vm.canPrev
+      check vm.prev()
+      check vm.current.val.id == E
+      check vm.positionText == "3 of 3"
+      check vm.requests.val == 6
       vm.dispose()
       disposeRoot()
 
@@ -214,7 +271,7 @@ suite "Previous and Next over a fixture cursor":
       let other = newInboxVM(source, cursorName = "triage")
       other.load()
       check other.current.val.isNone
-      check not other.canPrev
+      check other.canPrev               # Previous wraps; its walk is its own
       first.dispose()
       second.dispose()
       other.dispose()
@@ -269,6 +326,111 @@ suite "Previous and Next over a fixture cursor":
       check empty.countText == ""
       check empty.controlTitle == "No input required"
       empty.dispose()
+      disposeRoot()
+
+suite "a resync before the first read answers":
+  test "the inbox is read again once the load lands, and the targets wait for that read":
+    createRoot proc(disposeRoot: proc()) =
+      let source = threeItemSource(HeldReadSource)
+      let vm = newInboxVM(source)
+      vm.load()
+      check vm.state.val == asLoading
+      check source.reads.len == 1
+      source.resync()              # the stream connected before the read answered
+      check source.reads.len == 1  # nothing is read while loading
+      source.answerRead(0)
+      check vm.state.val == asReady
+      check source.reads.len == 2  # the read the resync asked for
+      check not vm.heldAhead.known # a press now waits for it
+      source.answerRead(1)
+      check vm.heldAhead.known
+      check vm.heldAhead.next.len == 3
+      vm.dispose()
+      disposeRoot()
+
+  test "without a resync, the load's read is the only one":
+    createRoot proc(disposeRoot: proc()) =
+      let source = threeItemSource(HeldReadSource)
+      let vm = newInboxVM(source)
+      vm.load()
+      source.answerRead(0)
+      check vm.state.val == asReady
+      check source.reads.len == 1
+      check vm.heldAhead.known
+      vm.dispose()
+      disposeRoot()
+
+suite "a press never waits on the server":
+  test "Next and Prev switch before the source answers; a press past the targets held waits":
+    createRoot proc(disposeRoot: proc()) =
+      let source = threeItemSource(HeldPostSource)
+      let vm = newInboxVM(source)
+      vm.load()
+      # Three presses switch at once, with nothing answered.
+      check vm.next()
+      check vm.current.val.id == P
+      check vm.requestedSession.val == sessionIdOf(3)
+      check vm.next()
+      check vm.current.val.id == Q
+      check vm.next()
+      check vm.current.val.id == P
+      check not vm.cursorPending.val
+      check vm.inFlight == 3
+      check source.held.len == 3
+      # The fourth goes beyond the three targets the read held: it waits.
+      check vm.next()
+      check vm.cursorPending.val
+      check vm.current.val.id == P
+      check vm.inFlight == 4
+      # The posts went out in the order pressed, each with the item switched
+      # to, and the waiting one with none.
+      check source.held[0].post.landedOn == P
+      check source.held[1].post.landedOn == Q
+      check source.held[2].post.landedOn == P
+      check source.held[3].post.landedOn == ""
+      check source.held[0].post.direction == pdNext
+      # The server answers: the waiting press lands where the server put it
+      # (from P, the top excluding P is Q).
+      source.release()
+      check not vm.cursorPending.val
+      check vm.inFlight == 0
+      check vm.current.val.id == Q
+      check vm.moveCount == 4
+      vm.dispose()
+      disposeRoot()
+
+  test "a second viewmodel on the same cursor follows a step made in the first":
+    createRoot proc(disposeRoot: proc()) =
+      let source = populated()
+      let first = newInboxVM(source)
+      let second = newInboxVM(source)
+      first.load()
+      second.load()
+      check first.next()
+      check first.current.val.id == P
+      check second.current.val.id == P
+      check second.requestedSession.val == first.requestedSession.val
+      check second.moveCount == 0
+      # The other device goes back: nothing was visited before P, so Previous
+      # wraps to the last item, and the first follows.
+      check second.prev()
+      check second.current.val.id == F
+      check first.current.val.id == F
+      first.dispose()
+      second.dispose()
+      disposeRoot()
+
+  test "a refused post releases the press, says why, and leaves the screen where it went":
+    createRoot proc(disposeRoot: proc()) =
+      let source = threeItemSource(RefusingPostSource)
+      let vm = newInboxVM(source)
+      vm.load()
+      check vm.next()
+      check vm.current.val.id == P
+      check "503" in vm.cursorError.val
+      check not vm.cursorPending.val
+      check vm.inFlight == 0
+      vm.dispose()
       disposeRoot()
 
 suite "auto-switch":

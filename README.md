@@ -71,7 +71,7 @@ order, the cursor rule, the item pages, the answer form's rules) and
 | Module | Pattern |
 | --- | --- |
 | `agent_harbor/changes_vm.nim` | `ChangesVM`: one change in four tabs in the reviewer's order -- Spec Changes (requirements and governance files read from the diff, then the record's entries, each with its approval state), Tests (by milestone, failing first), Implementation Details, Code (key source files first, committed and uncommitted marks, a filter, a search, a base, one file's hunks loaded when opened). It opens on the first tab with content and keeps the reader's tab, cards and filter across restarts. Undo / Revert asks first: the card waits for the reader's confirmation and nothing is sent until it is confirmed. |
-| `agent_harbor/inbox_vm.nim` | `InboxVM`: the operator's inbox in the server's order, never re-sorted; Previous and Next ask the source to move a cursor it keeps (the viewmodel keeps no order and no stack), a step asks the host for the item's session tab, and auto-switch moves on only after the operator's own answer, never while they type. A feedback request's row reads its session's pending count here (`Needs Follow-up`, `N pending`). |
+| `agent_harbor/inbox_vm.nim` | `InboxVM`: the operator's inbox in the server's order, never re-sorted; Previous and Next walk a cursor the source keeps without waiting for it: a press switches at once to the targets the last read or answer handed out, posts the move behind it, and waits (`cursorPending`) only beyond them; Previous wraps to the last item; a second viewmodel on the same cursor follows a step made in another (the viewmodel keeps no order and no stack), a step asks the host for the item's session tab, and auto-switch moves on only after the operator's own answer, never while they type. A feedback request's row reads its session's pending count here (`Needs Follow-up`, `N pending`). |
 | `agent_harbor/inbox_item_vm.nim` | `InboxItemVM`: one item's page -- a question and its form, an ended turn, a permission gate, sudo and network approvals, a login request (pending, a carry error, cancelling, completed with Continue, failed, or none), a feedback request, a draft -- with validation, the answer states, and the viewing heartbeat while it is shown. |
 | `agent_harbor/action_tracker.nim` | `ActionTracker`: the operator's submitted actions and their states (submitting, confirmed, failed), shared by the three viewmodels above; one action in flight per target. |
 | `agent_harbor/scripted_actions.nim` | `ScriptedActionSource`: the prototypes' source for both families. It answers every action from a script (`ActionScript`), records it (a password as `secret supplied`), and applies what a server would do; it holds no network client. |
@@ -138,8 +138,9 @@ loaded rather than that the server failed. `TimelineDataSource` serves given
 session events and sends the frames a story or test hands it (`sendFrame`).
 
 The Changes and inbox families add their loads -- `loadReviewRecord`,
-`loadChangeDiff`, `loadFileDiff`, `loadInbox`, `loadInboxCursor`,
-`loadInboxItemDetail` -- the cursor move `moveInboxCursor`, and
+`loadChangeDiff`, `loadFileDiff`, `loadInbox`, the inbox with its cursor
+`loadInboxRead`, `loadInboxItemDetail` -- the cursor post `postInboxCursor`,
+the inbox stream's notices `subscribeInboxNotices`, and
 `submitAction`, the one way an operator's action leaves a viewmodel. Its
 base answers that the source does not provide actions, so a source with no
 way to send one shows the press failed, never sent; the prototypes answer it

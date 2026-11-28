@@ -17,7 +17,9 @@
 ## - `ScriptedActionSource`: the data source of the Changes and Inbox
 ##   prototypes. It serves given review records, change diffs, an inbox and
 ##   its item pages, keeps the inbox cursors per cursor name as a server
-##   would (nim-agents' `cursorNext` / `cursorPrev`), and answers every
+##   would (nim-agents' `walkNext` / `walkPrev`, with a version and the
+##   targets of the next presses, and a notice to every subscriber when one
+##   moves), and answers every
 ##   action from its script. When the script confirms an action, the source
 ##   first applies what a server would do (`effects`): an answered inbox item
 ##   leaves the inbox (sent as an `item.resolved` event), an approved spec
@@ -131,34 +133,65 @@ proc settle*(script: ActionScript; index: int; ok: bool; reason = "") =
 type
   CursorBook* = object
     ## The inbox cursors a source keeps, one per cursor name, as a server
-    ## keeps them per user.
+    ## keeps them per user: where each is, its visited stack and its version,
+    ## which every move advances.
     cursors: Table[string, InboxCursor]
+    versions: Table[string, int64]
 
 proc cursorOf*(book: CursorBook; name: string): InboxCursor =
   book.cursors.getOrDefault(name)
 
+proc versionOf*(book: CursorBook; name: string): int64 =
+  book.versions.getOrDefault(name)
+
 proc place*(book: var CursorBook; name: string; cursor: InboxCursor) =
+  ## Puts the cursor `name` somewhere (a scenario's start), as a move would.
   book.cursors[name] = cursor
+  book.versions[name] = book.versionOf(name) + 1
 
 proc clear*(book: var CursorBook) =
   book.cursors.clear()
+  book.versions.clear()
 
-proc positionOf*(book: CursorBook; name: string; moved = false): CursorPosition =
+proc readOf*(book: CursorBook; name: string; snapshot: InboxSnapshot): InboxRead =
+  ## The inbox read with `?cursor=name`: the items, where the cursor is, and
+  ## the targets of its next presses.
   let cursor = book.cursorOf(name)
-  CursorPosition(moved: moved, current: cursor.current, canPrev: cursor.canPrev)
+  let version = book.versionOf(name)
+  InboxRead(snapshot: snapshot,
+    cursor: CursorState(known: true, name: name, item: cursor.current,
+                        visitedDepth: cursor.visited.len, cursorVersion: version),
+    ahead: aheadOf(snapshot.orderOf, cursor, AheadDepth, version))
 
-proc move*(book: var CursorBook; name: string; order: openArray[InboxItemRef];
-           direction: CursorDirection): CursorPosition =
-  ## Moves the cursor `name` by the server's rule (nim-agents' `cursorNext`
-  ## and `cursorPrev`): Next to the top of `order` excluding the item on
-  ## screen, Previous back along the visited stack.
+proc move*(book: var CursorBook; name: string; snapshot: InboxSnapshot;
+           post: CursorPost): CursorAnswer =
+  ## Moves the cursor `name` by the server's rules (nim-agents' `walkNext`
+  ## and `walkPrev`: Next to the top of the order excluding the item on
+  ## screen; Previous back along the items visited that still wait, wrapping
+  ## to the last) and answers where it landed, with the targets of the next
+  ## presses. Like the server, it moves by its own state: what the front-end
+  ## switched to (`post.landedOn`) is not consulted.
+  let order = snapshot.orderOf
   var cursor = book.cursorOf(name)
   let moved =
-    case direction
-    of cdNext: cursorNext(order, cursor).moved
-    of cdPrev: cursorPrev(cursor).moved
+    case post.direction
+    of pdNext: walkNext(order, cursor).moved
+    of pdPrev: walkPrev(order, cursor).moved
   book.cursors[name] = cursor
-  book.positionOf(name, moved)
+  if moved: book.versions[name] = book.versionOf(name) + 1
+  let version = book.versionOf(name)
+  let at = snapshot.indexOf(cursor.current)
+  result = CursorAnswer(hasItem: at >= 0, visitedDepth: cursor.visited.len,
+    cursorVersion: version, ahead: aheadOf(order, cursor, AheadDepth, version))
+  if at >= 0: result.item = snapshot.items[at]
+
+proc noticeOf*(book: CursorBook; name: string; snapshot: InboxSnapshot): InboxNotice =
+  ## The `changed` notice a server sends when the cursor `name` moved.
+  let cursor = book.cursorOf(name)
+  let version = book.versionOf(name)
+  InboxNotice(kind: inChanged, reasons: @["cursor"],
+    cursors: @[CursorNotice(name: name, item: cursor.current, cursorVersion: version,
+                            ahead: aheadOf(snapshot.orderOf, cursor, AheadDepth, version))])
 
 # ---------------------------------------------------------------------------
 # The source
@@ -178,6 +211,7 @@ type
       ## Whether a confirmed action changes the source's data as a server
       ## would (on by default).
     inboxSubscribers*: Subscribers[InboxEvent]
+    noticeSubscribers*: Subscribers[InboxNotice]
     resetSubscribers*: Subscribers[StreamReset]
 
 proc newScriptedActionSource*(label = "scripted actions";
@@ -276,13 +310,23 @@ proc sendInbox*(source: ScriptedActionSource;
   discard source.inbox.applyInboxEvent(event)
   source.inboxSubscribers.broadcast(success(event))
 
-method loadInboxCursor*(source: ScriptedActionSource; name: string;
-                        done: CursorCallback) =
-  done(success(source.cursors.positionOf(name)))
+method loadInboxRead*(source: ScriptedActionSource; cursorName: string;
+                      done: InboxReadCallback) =
+  done(success(source.cursors.readOf(cursorName, source.inbox)))
 
-method moveInboxCursor*(source: ScriptedActionSource; name: string;
-                        direction: CursorDirection; done: CursorCallback) =
-  done(success(source.cursors.move(name, source.inbox.orderOf, direction)))
+method postInboxCursor*(source: ScriptedActionSource; name: string;
+                        post: CursorPost; done: CursorAnswerCallback) =
+  ## Moves the cursor, answers the press, then tells every viewmodel on the
+  ## notice stream, as a server tells every device.
+  let answer = source.cursors.move(name, source.inbox, post)
+  done(success(answer))
+  discard source.noticeSubscribers.broadcast(
+    success(source.cursors.noticeOf(name, source.inbox)))
+
+method subscribeInboxNotices*(source: ScriptedActionSource;
+    callback: FeedCallback[InboxNotice]): Subscription[InboxNotice] =
+  ## The cursor moves `postInboxCursor` makes.
+  source.noticeSubscribers.subscribe(callback)
 
 method loadInboxItemDetail*(source: ScriptedActionSource; item: InboxItemRef;
                             done: ItemDetailCallback) =

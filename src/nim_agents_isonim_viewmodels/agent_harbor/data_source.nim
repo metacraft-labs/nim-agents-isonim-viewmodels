@@ -62,14 +62,23 @@
 ## `loadFileDiff`, one file's hunks, loaded when a reader opens the file), the
 ## operator's inbox in the server's order (`loadInbox`, then its events through
 ## `subscribeInbox`), the inbox cursor the server keeps per user and cursor
-## name (`loadInboxCursor`, `moveInboxCursor`: Previous and Next ask the
-## source, which answers the item landed on; a view keeps no order and no
-## stack of its own), one item's page (`loadInboxItemDetail`), and the
+## name, one item's page (`loadInboxItemDetail`), and the
 ## operator's actions (`submitAction`). An action is the only way anything is
 ## asked of a server: the base answers that the source does not provide it, so
 ## a source that has no way to send an action can never report one sent. The
 ## prototypes' sources answer actions from a script and never reach a server
 ## (`scripted_actions.nim`).
+##
+## **The inbox cursor.** Previous and Next walk a cursor the server keeps
+## (`POST /api/v1/inbox/cursors/{name}/next` and `/prev`), and a press never
+## waits for it: `loadInboxRead` answers the inbox with the cursor and the
+## targets of its next presses (`GET /api/v1/inbox?cursor=<name>`; nim-agents'
+## `InboxRead`), a viewmodel switches at once to the first target and posts
+## the move behind it (`postInboxCursor`, with the version it held and the item
+## it landed on), and `subscribeInboxNotices` delivers the inbox stream's
+## notices (`resync`, and `changed` with the cursor moves made elsewhere), on
+## which it reads again. nim-agents' `inbox_cursor` holds the shapes and the
+## client's half (`FastCursor`); a view keeps no order and no stack of its own.
 ##
 ## **Test runs and links.** A change's tests on Agent Harbor's platforms: the
 ## platforms the fleet offers (`loadTestPlatforms`), one platform's catalog of
@@ -86,14 +95,15 @@
 
 import std/json
 import nim_agents/agent_harbor/[initiatives, fleet_fold, review_record,
-                                change_diff, inbox, operator_actions]
+                                change_diff, inbox, inbox_cursor,
+                                operator_actions]
 import nim_agents/agent_harbor/test_runs as domain_test_runs
 import nim_agents/agent_harbor/trace_links as domain_trace_links
 import ./records
 import ./recording_switcher
 
 export records, initiatives, fleet_fold, recording_switcher, review_record,
-  change_diff, inbox, operator_actions
+  change_diff, inbox, inbox_cursor, operator_actions
 
 type
   DataResult*[T] = object
@@ -189,18 +199,6 @@ type
     base*: DiffBase
     bases*: seq[DiffBase]
 
-  CursorDirection* = enum
-    cdNext = "next"
-    cdPrev = "prev"
-
-  CursorPosition* = object
-    ## Where an inbox cursor is, as the source keeps it: the item on screen
-    ## (`current.id` empty for none), whether the last move moved, and
-    ## whether Previous has an item to go back to.
-    moved*: bool
-    current*: InboxItemRef
-    canPrev*: bool
-
   ActionReceipt* = object
     ## The answer to a submitted action: the action as received (its
     ## secrets forgotten) and what the source said.
@@ -211,7 +209,8 @@ type
   SessionDiffCallback* = proc(answer: DataResult[SessionDiff]) {.closure.}
   FileDiffCallback* = proc(answer: DataResult[ChangedFile]) {.closure.}
   InboxCallback* = proc(answer: DataResult[InboxSnapshot]) {.closure.}
-  CursorCallback* = proc(answer: DataResult[CursorPosition]) {.closure.}
+  InboxReadCallback* = proc(answer: DataResult[InboxRead]) {.closure.}
+  CursorAnswerCallback* = proc(answer: DataResult[CursorAnswer]) {.closure.}
   ItemDetailCallback* = proc(answer: DataResult[InboxItemDetail]) {.closure.}
   ActionCallback* = proc(answer: DataResult[ActionReceipt]) {.closure.}
 
@@ -563,20 +562,31 @@ method subscribeInbox*(source: AgentHarborDataSource;
   ## them.
   endedSubscription[InboxEvent](callback, source.unsupported("inbox events"))
 
-method loadInboxCursor*(source: AgentHarborDataSource; name: string;
-                        done: CursorCallback) {.base.} =
-  ## Where the inbox cursor `name` is (the proposed
-  ## `GET /api/v1/inbox/cursors/{name}`), so a front-end that opens later
-  ## joins the operator where they are.
-  done(failure[CursorPosition](source.unsupported("inbox cursors")))
+method loadInboxRead*(source: AgentHarborDataSource; cursorName: string;
+                      done: InboxReadCallback) {.base.} =
+  ## The inbox with the cursor `cursorName` and the targets of its next
+  ## presses (`GET /api/v1/inbox?cursor=<name>`), so a front-end that opens
+  ## later joins the walk where it is. The base answers `loadInbox`'s inbox
+  ## with the cursor unknown: a press then waits for the move's answer.
+  loadInbox(source, proc(answer: DataResult[InboxSnapshot]) =
+    if answer.ok: done(success(InboxRead(snapshot: answer.value)))
+    else: done(DataResult[InboxRead](ok: false, error: answer.error,
+                                     missing: answer.missing)))
 
-method moveInboxCursor*(source: AgentHarborDataSource; name: string;
-                        direction: CursorDirection; done: CursorCallback) {.base.} =
-  ## Moves the inbox cursor `name` (the proposed
-  ## `POST /api/v1/inbox/cursors/{name}/next` and `/prev`) and answers where
-  ## it landed: Next goes to the top of the current order excluding the item
-  ## on screen, Previous back along the items visited.
-  done(failure[CursorPosition](source.unsupported("inbox cursors")))
+method postInboxCursor*(source: AgentHarborDataSource; name: string;
+                        post: CursorPost; done: CursorAnswerCallback) {.base.} =
+  ## Moves the cursor `name` (`POST /api/v1/inbox/cursors/{name}/next` or
+  ## `/prev`, with the version the front-end held and the item it switched
+  ## to) and answers where the server put it, with the targets of the next
+  ## presses.
+  done(failure[CursorAnswer](source.unsupported("inbox cursors")))
+
+method subscribeInboxNotices*(source: AgentHarborDataSource;
+    callback: FeedCallback[InboxNotice]): Subscription[InboxNotice] {.base.} =
+  ## The inbox stream's notices (`GET /api/v1/inbox/events`): `resync`, and
+  ## `changed` with what entered or left and the cursor moves made elsewhere.
+  ## A notice carries no items; a viewmodel reads the inbox again on it.
+  endedSubscription[InboxNotice](callback, source.unsupported("inbox notices"))
 
 method loadInboxItemDetail*(source: AgentHarborDataSource; item: InboxItemRef;
                             done: ItemDetailCallback) {.base.} =
@@ -721,12 +731,8 @@ method subscribeInbox*(source: PendingDataSource;
   ## Accepted; never sends.
   source.inboxSubscribers.subscribe(callback)
 
-method loadInboxCursor*(source: PendingDataSource; name: string;
-                        done: CursorCallback) =
-  discard
-
-method moveInboxCursor*(source: PendingDataSource; name: string;
-                        direction: CursorDirection; done: CursorCallback) =
+method postInboxCursor*(source: PendingDataSource; name: string;
+                        post: CursorPost; done: CursorAnswerCallback) =
   discard
 
 method loadInboxItemDetail*(source: PendingDataSource; item: InboxItemRef;
@@ -817,13 +823,9 @@ method subscribeInbox*(source: FailingDataSource;
                        callback: FeedCallback[InboxEvent]): Subscription[InboxEvent] =
   endedSubscription[InboxEvent](callback, source.error)
 
-method loadInboxCursor*(source: FailingDataSource; name: string;
-                        done: CursorCallback) =
-  done(failure[CursorPosition](source.error))
-
-method moveInboxCursor*(source: FailingDataSource; name: string;
-                        direction: CursorDirection; done: CursorCallback) =
-  done(failure[CursorPosition](source.error))
+method postInboxCursor*(source: FailingDataSource; name: string;
+                        post: CursorPost; done: CursorAnswerCallback) =
+  done(failure[CursorAnswer](source.error))
 
 method loadInboxItemDetail*(source: FailingDataSource; item: InboxItemRef;
                             done: ItemDetailCallback) =

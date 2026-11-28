@@ -46,6 +46,7 @@ const viewmodelTests = @[
   "tests/test_live_source.nim",
   "tests/test_host_fed_source.nim",
   "tests/test_node_follower.nim",
+  "tests/test_live_inbox.nim",
   "tests/test_agent_harbor_sessions_vm.nim",
   "tests/test_session_tabs_opened.nim",
   "tests/test_progress_pie.nim",

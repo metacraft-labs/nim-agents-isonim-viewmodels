@@ -8,12 +8,20 @@
 ##
 ## - **The server orders; this viewmodel never does.** `items` is the
 ##   snapshot's order after every event, unchanged.
-## - **The server keeps the cursor.** `next` and `prev` ask the source to
-##   move the cursor `cursorName` (`moveInboxCursor`) and show the item it
-##   answers; the viewmodel keeps no order and no visited stack. `canPrev` is
-##   what the source last said about its stack. A second viewmodel on the
-##   same cursor name joins the walk where it is (`loadInboxCursor` on
-##   load).
+## - **The server keeps the cursor, and a press never waits for it.** The
+##   inbox is read with the cursor `cursorName` and the targets of its next
+##   presses (`loadInboxRead`). `next` and `prev` switch at once to the first
+##   target the inbox still lists (nim-agents' `FastCursor`), and post the
+##   move behind the switch (`postInboxCursor`, with the version held and the
+##   item switched to). A press beyond the targets held waits for its answer
+##   and shows as pending (`cursorPending`). Answers and the stream's notices
+##   reconcile: the server's targets and version are taken, and the item on
+##   screen moves only for a press that waited, or for a move made elsewhere
+##   while this viewmodel has nothing in flight. The viewmodel keeps no order
+##   and no visited stack. Previous wraps to the last item, so `canPrev` is
+##   true whenever the inbox holds an item. A second viewmodel on the same
+##   cursor name joins the walk where it is (its read on load) and follows it
+##   (the notices).
 ## - **Sessions are tabs.** A step or `open` publishes the item's session on
 ##   `requestedSession` (with `requests` moving each time), which a host
 ##   turns into activating, or opening, the session's tab.
@@ -62,7 +70,15 @@ type
     loadToken: int
     listener: int
     snapshot: InboxSnapshot
-    cursorCanPrev: bool
+    fast: FastCursor
+      ## The cursor as this viewmodel holds it: the item on screen, the
+      ## targets of the next presses and the posts in flight.
+    readToken: int
+      ## Moves on every read, so an older read's answer is dropped.
+    resyncWhileLoading: bool
+      ## The stream resynced before the first read answered. That read may
+      ## have been served before the stream connected, so whatever changed
+      ## in between is read once the load lands.
     stepped: bool
       ## The item on screen was reached through Next or Previous (the
       ## explanation strip shows while it was).
@@ -84,6 +100,9 @@ type
     error*: Signal[string]
     cursorError*: Signal[string]
       ## Why the cursor could not be read or moved ("" when it could).
+    cursorPending*: Signal[bool]
+      ## A press waits for the server's answer: it went beyond the targets
+      ## held (a burst, or right after the inbox changed).
     current*: Signal[InboxItemRef]
       ## The item the cursor is on (`id` empty for none), as the source says.
     autoSwitch*: Signal[bool]
@@ -109,6 +128,7 @@ proc newInboxVM*(source: AgentHarborDataSource; cursorName = "default";
                      clock: clock, feeds: feeds, showPages: showPages,
                      revision: createSignal(0), state: createSignal(asIdle),
                      error: createSignal(""), cursorError: createSignal(""),
+                     cursorPending: createSignal(false), fast: newFastCursor(),
                      current: createSignal(InboxItemRef()),
                      autoSwitch: createSignal(false), typing: createSignal(false),
                      requestedSession: createSignal(""), requests: createSignal(0),
@@ -125,8 +145,17 @@ proc tracker*(vm: InboxVM): ActionTracker = vm.tracker
 proc feeds*(vm: InboxVM): SourceFeeds = vm.feeds
 
 proc moveCount*(vm: InboxVM): int =
-  ## How many cursor moves the viewmodel asked its source for.
+  ## How many cursor moves the viewmodel posted to its source.
   vm.moves
+
+proc inFlight*(vm: InboxVM): int =
+  ## The posts sent and not answered yet.
+  vm.fast.inFlight
+
+proc heldAhead*(vm: InboxVM): CursorAhead =
+  ## The Next and Prev targets a press would switch to at once. Empty after
+  ## the inbox changed or the stream resynced, until the next read answers.
+  vm.fast.heldAhead
 
 proc bump(vm: InboxVM) =
   vm.revision.val = vm.revision.val + 1
@@ -138,13 +167,14 @@ proc itemOf(vm: InboxVM; r: InboxItemRef): tuple[found: bool, item: InboxItem] =
   let at = vm.snapshot.indexOf(r)
   if at < 0: (false, InboxItem()) else: (true, vm.snapshot.items[at])
 
+proc rememberItem(vm: InboxVM; item: InboxItem) =
+  for (r, _) in vm.seen:
+    if r == item.refOf: return
+  vm.seen.add (item.refOf, item.session.id)
+
 proc remember(vm: InboxVM) =
   ## Notes the session of every item held now.
-  for item in vm.snapshot.items:
-    var known = false
-    for (r, _) in vm.seen:
-      if r == item.refOf: known = true
-    if not known: vm.seen.add (item.refOf, item.session.id)
+  for item in vm.snapshot.items: vm.rememberItem(item)
 
 proc sessionOf(vm: InboxVM; r: InboxItemRef): string =
   for (seenRef, sessionId) in vm.seen:
@@ -183,22 +213,28 @@ proc setPagesVisible*(vm: InboxVM; visible: bool) =
 # The cursor
 # ---------------------------------------------------------------------------
 
-proc place(vm: InboxVM; position: CursorPosition; stepped: bool) =
-  ## Shows where the source says the cursor is.
-  let before = vm.current.val
-  vm.cursorCanPrev = position.canPrev
-  if position.current != before:
-    vm.current.val = position.current
-    vm.stepped = stepped and position.moved
+proc show(vm: InboxVM; r: InboxItemRef; stepped, request, focus: bool) =
+  ## Puts `r` on screen. `stepped`: reached through Next or Previous (here or
+  ## on another device); `request`: ask the host for its session's tab;
+  ## `focus`: and for its input.
+  if r != vm.current.val:
+    vm.current.val = r
+    vm.stepped = stepped
     vm.ownAnswer = InboxItemRef()
-  elif stepped and position.moved:
+  elif stepped:
     vm.stepped = true
-  let sessionId = vm.sessionOf(position.current)
-  if stepped and position.moved and sessionId.len > 0:
+  let sessionId = vm.sessionOf(r)
+  if request and sessionId.len > 0:
     vm.requestedSession.val = sessionId
     vm.requests.val = vm.requests.val + 1
+  if focus:
+    vm.focusRequests.val = vm.focusRequests.val + 1
   vm.syncPage(sessionId)
   vm.bump()
+
+proc syncPending(vm: InboxVM) =
+  let pending = vm.fast.pending
+  if vm.cursorPending.val != pending: vm.cursorPending.val = pending
 
 proc canNext*(vm: InboxVM): bool =
   ## Tracked: Next has somewhere to go (the inbox is not empty).
@@ -206,37 +242,59 @@ proc canNext*(vm: InboxVM): bool =
   vm.state.val == asReady and vm.snapshot.items.len > 0
 
 proc canPrev*(vm: InboxVM): bool =
-  ## Tracked: the source's visited stack has an item to go back to, and the
-  ## inbox is not empty.
+  ## Tracked: Previous has somewhere to go. It wraps to the last item, so
+  ## that is whenever the inbox is not empty.
   discard vm.revision.val
-  vm.state.val == asReady and vm.snapshot.items.len > 0 and vm.cursorCanPrev
+  vm.state.val == asReady and vm.snapshot.items.len > 0
 
-proc step(vm: InboxVM; direction: CursorDirection; focus: bool): bool =
+proc reread(vm: InboxVM)
+
+proc step(vm: InboxVM; direction: PressDirection; focus: bool): bool =
+  ## One press: switches at once when the cursor holds a target for it, and
+  ## posts the move behind it; a press that waits shows as pending and moves
+  ## the screen when its answer comes.
+  let outcome = vm.fast.press(vm.snapshot, direction)
+  if not outcome.posts: return false
   inc vm.moves
+  if outcome.switched:
+    vm.show(outcome.target, stepped = true, request = true, focus = focus)
+  vm.syncPending()
+  let token = vm.loadToken
   let target = vm
-  vm.source.moveInboxCursor(vm.cursorName, direction,
-    proc(answer: DataResult[CursorPosition]) =
+  vm.source.postInboxCursor(vm.cursorName, outcome.post,
+    proc(answer: DataResult[CursorAnswer]) =
+      if token != target.loadToken: return
       if not answer.ok:
+        target.fast.reconcileFailure()
         target.cursorError.val = answer.error
+        target.syncPending()
         target.bump()
+        target.reread()
         return
       target.cursorError.val = ""
-      target.place(answer.value, stepped = true)
-      if focus and answer.value.moved:
-        target.focusRequests.val = target.focusRequests.val + 1)
+      if answer.value.hasItem: target.rememberItem(answer.value.item)
+      let reconciled = target.fast.reconcileAnswer(answer.value)
+      target.syncPending()
+      if not reconciled.moveTo.isNone:
+        target.show(reconciled.moveTo, stepped = true, request = true,
+                    focus = focus)
+      else:
+        target.bump())
   true
 
 proc next*(vm: InboxVM): bool =
-  ## Next: the source moves the cursor to the top of its order, excluding the
-  ## item on screen. False, and nothing is asked, when the inbox is empty.
+  ## Next: the top of the server's order, excluding the item on screen,
+  ## switched to at once. False, and nothing is posted, when the inbox is
+  ## empty.
   if not vm.canNext: return false
-  vm.step(cdNext, focus = false)
+  vm.step(pdNext, focus = false)
 
 proc prev*(vm: InboxVM): bool =
-  ## Previous: the source moves the cursor back along the items visited.
-  ## False, and nothing is asked, when there is none or the inbox is empty.
+  ## Previous: back along the items visited that still wait, and with none
+  ## left the last item, switched to at once. False, and nothing is posted,
+  ## when the inbox is empty.
   if not vm.canPrev: return false
-  vm.step(cdPrev, focus = false)
+  vm.step(pdPrev, focus = false)
 
 proc open*(vm: InboxVM; r: InboxItemRef) =
   ## A row pressed: asks the host for the item's session tab. The cursor does
@@ -263,7 +321,7 @@ proc maybeAutoSwitch(vm: InboxVM) =
   vm.ownAnswer = InboxItemRef()
   if not vm.autoSwitch.val or vm.typing.val: return
   if vm.snapshot.items.len == 0: return   # the end of the inbox: stay
-  discard vm.step(cdNext, focus = true)
+  discard vm.step(pdNext, focus = true)
 
 proc noteSettled(vm: InboxVM; entry: TrackedAction) =
   ## An action settled: one of the operator's own answers to the item on
@@ -285,18 +343,79 @@ proc applyEvent*(vm: InboxVM; event: InboxEvent): bool =
   if vm.state.val != asReady: return false
   result = vm.snapshot.applyInboxEvent(event)
   if result:
+    # The targets held came from the order before the change: the next press
+    # waits for the server's answer, which brings new ones.
+    vm.fast.forgetAhead()
     vm.remember()
     vm.bump()
     vm.maybeAutoSwitch()
 
 proc restart*(vm: InboxVM)
 
+proc takeRead(vm: InboxVM; read: InboxRead) =
+  ## A read of the inbox with the cursor: the items as served, and the
+  ## cursor reconciled (the first read puts the screen where the cursor is).
+  vm.snapshot = read.snapshot
+  vm.remember()
+  let reconciled = vm.fast.reconcileRead(read.cursor, read.ahead)
+  if not reconciled.moveTo.isNone:
+    vm.show(reconciled.moveTo, stepped = false, request = false, focus = false)
+  vm.syncPending()
+  vm.bump()
+  vm.maybeAutoSwitch()
+
+proc reread(vm: InboxVM) =
+  ## Reads the inbox and the cursor again (on a notice, or after a refused
+  ## post); a newer read supersedes an older one still out.
+  if vm.state.val != asReady: return
+  inc vm.readToken
+  let token = vm.loadToken
+  let read = vm.readToken
+  let target = vm
+  vm.source.loadInboxRead(vm.cursorName, proc(answer: DataResult[InboxRead]) =
+    if token != target.loadToken or read != target.readToken: return
+    if not answer.ok:
+      target.cursorError.val = answer.error
+      target.bump()
+      return
+    target.takeRead(answer.value))
+
+proc applyNotice*(vm: InboxVM; notice: InboxNotice): bool =
+  ## One notice of the inbox stream. A move of this viewmodel's cursor made
+  ## elsewhere is followed when nothing of its own is in flight; a notice
+  ## that the inbox changed, or a resync, reads the inbox again. True when it
+  ## moved the item on screen or asked for a read.
+  if vm.state.val == asLoading and notice.kind == inResync:
+    vm.resyncWhileLoading = true
+    return false
+  if vm.state.val != asReady: return false
+  case notice.kind
+  of inResync:
+    vm.fast.forgetAhead()
+    vm.reread()
+    result = true
+  of inChanged:
+    let (told, move) = notice.cursorNoticeFor(vm.cursorName)
+    if told:
+      let reconciled = vm.fast.reconcileNotice(move, vm.snapshot)
+      if not reconciled.moveTo.isNone:
+        vm.show(reconciled.moveTo, stepped = true, request = true, focus = false)
+        result = true
+    if notice.entered.len > 0 or notice.left.len > 0 or notice.claims.len > 0 or
+        (not told and notice.cursors.len == 0):
+      vm.fast.forgetAhead()
+      vm.reread()
+      result = true
+  of inOther:
+    result = false
+
 proc load*(vm: InboxVM) =
-  ## Subscribes to the source's inbox events and resets, then loads the
-  ## inbox and the cursor; `asLoading` until the inbox answers.
+  ## Subscribes to the source's inbox events, notices and resets, then reads
+  ## the inbox with the cursor; `asLoading` until it answers.
   inc vm.loadToken
   let token = vm.loadToken
   vm.state.val = asLoading
+  vm.resyncWhileLoading = false
   vm.error.val = ""
   vm.loadStartedMs = vm.nowMs
   let target = vm
@@ -305,28 +424,26 @@ proc load*(vm: InboxVM) =
       target.noteSettled(entry))
   vm.feeds.inbox.openInbox(vm.source, proc(event: InboxEvent): bool =
     target.applyEvent(event))
+  vm.feeds.notices.openNotices(vm.source, proc(notice: InboxNotice): bool =
+    target.applyNotice(notice))
   vm.feeds.resets.openResets(vm.source, proc(reset: StreamReset): bool =
     target.restart()
     true)
-  vm.source.loadInbox(proc(answer: DataResult[InboxSnapshot]) =
-    if token != target.loadToken: return
+  inc vm.readToken
+  let read = vm.readToken
+  vm.source.loadInboxRead(vm.cursorName, proc(answer: DataResult[InboxRead]) =
+    if token != target.loadToken or read != target.readToken: return
     if not answer.ok:
       target.error.val = answer.error
       target.state.val = asError
       target.bump()
       return
-    target.snapshot = answer.value
-    target.remember()
     target.state.val = asReady
-    target.bump()
-    target.source.loadInboxCursor(target.cursorName,
-      proc(position: DataResult[CursorPosition]) =
-        if token != target.loadToken: return
-        if not position.ok:
-          target.cursorError.val = position.error
-          target.bump()
-          return
-        target.place(position.value, stepped = false)))
+    target.takeRead(answer.value)
+    if target.resyncWhileLoading:
+      target.resyncWhileLoading = false
+      target.fast.forgetAhead()
+      target.reread())
 
 proc restart*(vm: InboxVM) =
   ## Starts over, as after a source's reset: the inbox, the cursor, the
@@ -334,7 +451,8 @@ proc restart*(vm: InboxVM) =
   ## again; auto-switch and typing are kept.
   vm.snapshot = InboxSnapshot()
   vm.current.val = InboxItemRef()
-  vm.cursorCanPrev = false
+  vm.fast = newFastCursor()
+  vm.cursorPending.val = false
   vm.stepped = false
   vm.ownAnswer = InboxItemRef()
   vm.seen = @[]

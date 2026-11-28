@@ -17,6 +17,17 @@
 ##   `resync`: the server could not replay from the source's cursor (or the
 ##   source had none), so what a subscriber folded may be stale and it loads
 ##   again. The first connection always starts with one.
+## - The inbox and its cursor (CTF-M7): `loadInboxRead` answers from
+##   `GET /api/v1/inbox?cursor=<name>`; `postInboxCursor` sends
+##   `POST /api/v1/inbox/cursors/{name}/next` or `/prev` on one poster worker,
+##   in the order pressed, so a viewmodel never waits on it;
+##   `subscribeInboxNotices` delivers each frame of
+##   `GET /api/v1/inbox/events` as an `InboxNotice`, and a notice whose
+##   `nextChangeAt` passes (an item's time-based warmth changes) as a
+##   `changed` notice of its own, so a viewmodel reads the inbox again. The
+##   inbox stream starts with its first subscriber; a server that answers it
+##   404 has no inbox stream, which the source says (`lastError(skInbox)`)
+##   and stops asking for.
 ## - Every other load and subscription answers through the base methods,
 ##   that the source does not provide it, so nothing renders as empty.
 ##
@@ -44,24 +55,24 @@
 ##
 ## **Streams.** Each followed stream is a `StreamKind` with its own worker,
 ## connection state and cursor; its messages carry the kind, and `pump()`
-## dispatches on it. The lifecycle feed is the only kind today; another
-## stream (the inbox's) is one more kind, one more branch in `followStream`
-## and in `pump()`, and the subscriptions it serves.
+## dispatches on it. The lifecycle feed starts with the source; the inbox's
+## starts with its first subscriber.
 ##
 ## Native only: the JavaScript front-end is fed by its host.
 
 when defined(js):
   {.error: "the live Agent Harbor data source is native only".}
 
-import std/[atomics, json, os, tables, times]
+import std/[atomics, json, os, strutils, tables, times]
 import nim_agent_harbor
-import nim_agents/agent_harbor/[fleet_records, fleet_fold]
+import nim_agents/agent_harbor/[fleet_records, fleet_fold, inbox_cursor]
 import ./data_source
 
 type
   StreamKind* = enum
     ## A stream the source follows, each on its own worker.
     skLifecycle = "lifecycle"  ## `GET /api/v1/session-lifecycle/events`
+    skInbox = "inbox"          ## `GET /api/v1/inbox/events`
 
   MessageKind = enum
     mkConnecting   ## the feed worker opens a connection
@@ -70,6 +81,10 @@ type
     mkFrame        ## one feed frame: `event`, `data`, `id`
     mkFleet        ## a listing answered: `ok`, then `text` is the JSON body
                    ## or the error
+    mkInboxRead    ## an inbox read answered (`loadId`), as `mkFleet`
+    mkCursorAnswer ## a cursor post answered (`loadId` is the post's), as
+                   ## `mkFleet`
+    mkStreamGone   ## the server does not serve the stream: `text` says why
 
   Message = object
     kind: MessageKind
@@ -79,10 +94,20 @@ type
     text: string
     loadId: int
 
+  PostJob = object
+    ## One cursor post for the poster worker.
+    id: int
+    cursorName: string
+    direction: PressDirection
+    expectedVersion: int64
+    landedOn: string
+
   Shared = object
     ## What the host and the workers share. Allocated in shared memory and
     ## freed only when every worker that holds it has been joined.
     channel: Channel[Message]
+    posts: Channel[PostJob]
+      ## The cursor posts, in the order pressed, for the poster worker.
     stop: Atomic[bool]
 
   Connection = object
@@ -97,11 +122,18 @@ type
     after: string
     readTimeoutMs, minBackoffMs, maxBackoffMs: int
 
+  LoadWork = enum
+    lwFleet      ## read the newest page of sessions
+    lwInboxRead  ## read the inbox with a cursor
+    lwPoster     ## send the cursor posts until the source closes
+
   LoadArgs = object
     conn: Connection
     shared: ptr Shared
     loadId: int
     pageSize: int
+    work: LoadWork
+    cursorName: string
 
   StreamState = object
     connected: bool
@@ -120,6 +152,14 @@ type
     pageSize: int
     frameSubscribers: Subscribers[FleetFrame]
     resetSubscribers: Subscribers[StreamReset]
+    noticeSubscribers: Subscribers[InboxNotice]
+    pendingReads: Table[int, InboxReadCallback]
+    pendingPosts: Table[int, CursorAnswerCallback]
+    streamArgs: StreamArgs
+      ## The settings the source's streams start with.
+    inboxStarted, posterStarted: bool
+    nextInboxChangeMs: int64
+      ## When the next item's warmth changes (0 for none known).
     closed: bool
 
   Retired = object
@@ -187,16 +227,98 @@ proc followLifecycle(args: StreamArgs) =
       shared.waitOrStop(wait)
       if not delivered: wait = min(wait * 2, args.maxBackoffMs)
 
+proc followInboxStream(args: StreamArgs) =
+  ## Follows the inbox stream until told to stop, reconnecting with the id of
+  ## the last frame read (the stream starts over with a `resync` either way).
+  ## A server that answers 404 has no inbox stream: said once, then left.
+  block:
+    var client = clientOf(args.conn)
+    client.frameStreamTransport = nativeHarborFrameStream(args.readTimeoutMs)
+    let shared = args.shared
+    var lastId = args.after
+    var wait = args.minBackoffMs
+    while not shared.stopping:
+      shared.post Message(kind: mkConnecting, stream: args.kind)
+      var delivered = false
+      try:
+        client.followInbox(proc(frame: SseFrame): bool =
+          if shared.stopping: return false
+          if not delivered:
+            delivered = true
+            shared.post Message(kind: mkConnected, stream: args.kind)
+          if frame.id.len > 0: lastId = frame.id
+          shared.post Message(kind: mkFrame, stream: args.kind, event: frame.event,
+            data: frame.data, id: frame.id)
+          true, lastEventId = lastId)
+        if not shared.stopping:
+          shared.post Message(kind: mkDisconnected, stream: args.kind,
+            text: "the inbox stream ended")
+      except CatchableError as error:
+        if shared.stopping: break
+        if "(HTTP 404)" in error.msg:
+          shared.post Message(kind: mkStreamGone, stream: args.kind,
+            text: "the server does not serve the inbox stream: " & error.msg)
+          break
+        shared.post Message(kind: mkDisconnected, stream: args.kind,
+          text: error.msg)
+      if delivered: wait = args.minBackoffMs
+      shared.waitOrStop(wait)
+      if not delivered: wait = min(wait * 2, args.maxBackoffMs)
+
 proc followStream(args: StreamArgs) {.thread.} =
   ## A stream worker: follows the stream its kind names.
   {.cast(gcsafe).}:
     case args.kind
     of skLifecycle: followLifecycle(args)
+    of skInbox: followInboxStream(args)
+
+proc readInbox(args: LoadArgs) =
+  ## Reads the inbox with the cursor and posts the answer as JSON text.
+  var message = Message(kind: mkInboxRead, loadId: args.loadId)
+  try:
+    message.text = $clientOf(args.conn).getInbox(
+      InboxQuery(cursor: args.cursorName))
+    message.ok = true
+  except CatchableError as error:
+    message.text = error.msg
+  if not args.shared.stopping:
+    args.shared.post message
+
+proc sendPosts(args: LoadArgs) =
+  ## The poster: sends the cursor posts one at a time, in the order they were
+  ## pressed, until the source closes, and posts each answer as JSON text.
+  let client = clientOf(args.conn)
+  let shared = args.shared
+  while not shared.stopping:
+    let (got, job) = shared.posts.tryRecv()
+    if not got:
+      shared.waitOrStop(10)
+      continue
+    var message = Message(kind: mkCursorAnswer, loadId: job.id)
+    try:
+      let direction = if job.direction == pdNext: icNext else: icPrev
+      message.text = $client.moveInboxCursor(job.cursorName,
+        cursorMove(direction, job.expectedVersion, job.landedOn))
+      message.ok = true
+    except CatchableError as error:
+      message.text = error.msg
+    if not shared.stopping:
+      shared.post message
+
+proc listFleet(args: LoadArgs)
 
 proc loadOnce(args: LoadArgs) {.thread.} =
-  ## A listing worker: read the newest page and post it as JSON text, with
-  ## the server's total.
+  ## A load worker: a listing, an inbox read, or the poster.
   {.cast(gcsafe).}:
+    case args.work
+    of lwFleet: listFleet(args)
+    of lwInboxRead: readInbox(args)
+    of lwPoster: sendPosts(args)
+
+proc listFleet(args: LoadArgs) =
+  ## A listing: read the newest page and post it as JSON text, with the
+  ## server's total.
+  block:
     var message = Message(kind: mkFleet, loadId: args.loadId)
     try:
       let page = clientOf(args.conn).listSessions(
@@ -235,6 +357,7 @@ proc reapRetired() =
     entry.streams = streams
     if entry.streams.len == 0 and entry.loads.len == 0:
       entry.shared.channel.close()
+      entry.shared.posts.close()
       deallocShared(entry.shared)
     else:
       kept.add entry
@@ -257,12 +380,18 @@ proc newLiveDataSource*(baseUrl: string; auth = HarborAuth(kind: akNone);
   reapRetired()
   let shared = cast[ptr Shared](allocShared0(sizeof(Shared)))
   shared.channel.open()
+  shared.posts.open()
   let conn = Connection(baseUrl: baseUrl, authKind: auth.kind, token: auth.token)
   result = LiveDataSource(label: "live: " & baseUrl, conn: conn,
     shared: shared, pendingLoads: initTable[int, FleetCallback](),
-    pageSize: clamp(fleetPageSize, 1, 200))
+    pageSize: clamp(fleetPageSize, 1, 200),
+    pendingReads: initTable[int, InboxReadCallback](),
+    pendingPosts: initTable[int, CursorAnswerCallback](),
+    streamArgs: StreamArgs(conn: conn, shared: shared,
+      readTimeoutMs: readTimeoutMs, minBackoffMs: max(1, minBackoffMs),
+      maxBackoffMs: max(minBackoffMs, maxBackoffMs)))
   result.states[skLifecycle].cursor = after
-  for kind in StreamKind:
+  for kind in [skLifecycle]:
     var thread: ref Thread[StreamArgs]
     new thread
     createThread(thread[], followStream, StreamArgs(kind: kind, conn: conn,
@@ -310,6 +439,42 @@ proc deliverLifecycleFrame(source: LiveDataSource; message: Message) =
     discard source.resetSubscribers.broadcast(success(StreamReset(atMs: at,
       reason: "the server could not replay the feed (" & frame.reason & ")")))
 
+proc deliverInboxFrame(source: LiveDataSource; message: Message) =
+  let notice = inboxNoticeOf(message.event, message.data, message.id)
+  if message.id.len > 0: source.states[skInbox].cursor = message.id
+  if notice.nextChangeAtMs > 0: source.nextInboxChangeMs = notice.nextChangeAtMs
+  discard source.noticeSubscribers.broadcast(success(notice))
+
+proc deliverInboxTime(source: LiveDataSource) =
+  ## When the next item's warmth changes, a `changed` notice of the source's
+  ## own, so the subscribers read the inbox again.
+  if source.nextInboxChangeMs <= 0 or nowMs() < source.nextInboxChangeMs: return
+  source.nextInboxChangeMs = 0
+  discard source.noticeSubscribers.broadcast(success(InboxNotice(kind: inChanged,
+    reasons: @["nextChangeAt"])))
+
+proc answerInboxRead(source: LiveDataSource; message: Message) =
+  var done: InboxReadCallback
+  if not source.pendingReads.pop(message.loadId, done): return
+  if not message.ok:
+    done(failure[InboxRead](message.text))
+    return
+  try:
+    done(success(inboxReadFromJson(parseJson(message.text))))
+  except CatchableError as error:
+    done(failure[InboxRead]("unreadable inbox: " & error.msg))
+
+proc answerCursorPost(source: LiveDataSource; message: Message) =
+  var done: CursorAnswerCallback
+  if not source.pendingPosts.pop(message.loadId, done): return
+  if not message.ok:
+    done(failure[CursorAnswer](message.text))
+    return
+  try:
+    done(success(cursorAnswerFromJson(parseJson(message.text))))
+  except CatchableError as error:
+    done(failure[CursorAnswer]("unreadable cursor answer: " & error.msg))
+
 proc pump*(source: LiveDataSource): int =
   ## Delivers what the workers have posted, on the caller's thread: frames
   ## and resets to the subscribers, listings to the loads waiting for them.
@@ -336,6 +501,14 @@ proc pump*(source: LiveDataSource): int =
     of mkFrame:
       case message.stream
       of skLifecycle: source.deliverLifecycleFrame(message)
+      of skInbox: source.deliverInboxFrame(message)
+    of mkStreamGone:
+      source.states[message.stream].connected = false
+      source.states[message.stream].error = message.text
+    of mkInboxRead:
+      source.answerInboxRead(message)
+    of mkCursorAnswer:
+      source.answerCursorPost(message)
     of mkFleet:
       var done: FleetCallback
       if source.pendingLoads.pop(message.loadId, done):
@@ -347,6 +520,7 @@ proc pump*(source: LiveDataSource): int =
               nowMs(), source.label)))
           except CatchableError as error:
             done(failure[FleetSnapshot]("unreadable session list: " & error.msg))
+  if not source.closed: source.deliverInboxTime()
 
 proc close*(source: LiveDataSource) =
   ## Stops the source: nothing is delivered after it returns, and waiting
@@ -355,8 +529,11 @@ proc close*(source: LiveDataSource) =
   source.closed = true
   source.shared.stop.store(true)
   source.pendingLoads.clear()
+  source.pendingReads.clear()
+  source.pendingPosts.clear()
   source.frameSubscribers = Subscribers[FleetFrame]()
   source.resetSubscribers = Subscribers[StreamReset]()
+  source.noticeSubscribers = Subscribers[InboxNotice]()
   retired.add Retired(shared: source.shared, streams: source.streams,
     loads: source.loads)
   source.loads = @[]
@@ -383,3 +560,60 @@ method subscribeFleetFrames*(source: LiveDataSource;
 method subscribeResets*(source: LiveDataSource;
     callback: FeedCallback[StreamReset]): Subscription[StreamReset] =
   source.resetSubscribers.subscribe(callback)
+
+# ---------------------------------------------------------------------------
+# The inbox and its cursor
+# ---------------------------------------------------------------------------
+
+proc startWorker(source: LiveDataSource; args: LoadArgs) =
+  var thread: ref Thread[LoadArgs]
+  new thread
+  createThread(thread[], loadOnce, args)
+  source.loads.add thread
+
+proc startInboxStream(source: LiveDataSource) =
+  if source.inboxStarted or source.closed: return
+  source.inboxStarted = true
+  var args = source.streamArgs
+  args.kind = skInbox
+  var thread: ref Thread[StreamArgs]
+  new thread
+  createThread(thread[], followStream, args)
+  source.streams.add thread
+
+method loadInboxRead*(source: LiveDataSource; cursorName: string;
+                      done: InboxReadCallback) =
+  ## Reads the inbox with the cursor on a worker; `done` is called from
+  ## `pump()`.
+  if source.closed:
+    done(failure[InboxRead]("the live source is closed"))
+    return
+  inc source.nextLoad
+  let id = source.nextLoad
+  source.pendingReads[id] = done
+  source.startWorker(LoadArgs(conn: source.conn, shared: source.shared,
+    loadId: id, work: lwInboxRead, cursorName: cursorName))
+
+method postInboxCursor*(source: LiveDataSource; name: string;
+                        post: CursorPost; done: CursorAnswerCallback) =
+  ## Queues the post for the poster worker, which sends the posts in the
+  ## order they were queued; `done` is called from `pump()`.
+  if source.closed:
+    done(failure[CursorAnswer]("the live source is closed"))
+    return
+  if not source.posterStarted:
+    source.posterStarted = true
+    source.startWorker(LoadArgs(conn: source.conn, shared: source.shared,
+      work: lwPoster))
+  inc source.nextLoad
+  let id = source.nextLoad
+  source.pendingPosts[id] = done
+  source.shared.posts.send(PostJob(id: id, cursorName: name,
+    direction: post.direction, expectedVersion: post.expectedVersion,
+    landedOn: post.landedOn))
+
+method subscribeInboxNotices*(source: LiveDataSource;
+    callback: FeedCallback[InboxNotice]): Subscription[InboxNotice] =
+  ## Starts the inbox stream with its first subscriber.
+  source.startInboxStream()
+  source.noticeSubscribers.subscribe(callback)

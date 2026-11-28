@@ -1237,25 +1237,28 @@ suite "the inbox at each named moment":
     let f = RunFeedback.id
     let l = RunLogin.id
     # The first frame: the feedback request waiting from before the run.
-    let firstFrame: Expected = ("", @[f], "", "1 waiting", true, false, "", "", false, "")
+    # Previous wraps to the last item, so it is enabled whenever the inbox
+    # holds an item: in every frame of this run.
+    let firstFrame: Expected = ("", @[f], "", "1 waiting", true, true, "", "", false, "")
     let expected: seq[Expected] = @[
-      ("first-wait", @[q, f], "", "2 waiting", true, false, "", "", false, ""),
-      ("four-waiting", @[p, e, q, f], "", "4 waiting", true, false, "", "", false, ""),
-      ("next", @[p, e, q, f], p, "1 of 4", true, false, "", "", false, InboxSchemaSessionId),
+      ("first-wait", @[q, f], "", "2 waiting", true, true, "", "", false, ""),
+      ("four-waiting", @[p, e, q, f], "", "4 waiting", true, true, "", "", false, ""),
+      ("next", @[p, e, q, f], p, "1 of 4", true, true, "", "", false, InboxSchemaSessionId),
       # The boost ends and the server reorders; the item on screen stays.
-      ("boost-ends", @[p, q, e, f], p, "1 of 4", true, false, "", "", false,
+      ("boost-ends", @[p, q, e, f], p, "1 of 4", true, true, "", "", false,
        InboxSchemaSessionId),
       # Answered with auto-switch off: the page stays, its item gone.
-      ("answered", @[q, e, f], p, "3 waiting", true, false, "", AnswerSentText, false,
+      ("answered", @[q, e, f], p, "3 waiting", true, true, "", AnswerSentText, false,
        InboxSchemaSessionId),
       # Auto-switch on: Next to the question, answered, and on to the ended
       # turn by itself.
       ("auto-switch", @[e, f], e, "1 of 2", true, true, "", "", true,
        InboxLoggingSessionId),
-      # Previous goes back to the item visited, answered since, not to the
-      # order's neighbour.
-      ("prev", @[e, f], q, "2 waiting", true, true, "", AnswerSentText, true,
-       InboxRouteSessionId),
+      # Previous skips the items visited that were answered since (the
+      # permission gate and the question, which Next pushed nowhere): none is
+      # left, so it wraps to the last item, the feedback request.
+      ("prev", @[e, f], f, "2 of 2", true, true, "", "", true,
+       InboxNotesSessionId),
       # Answered on another front-end while on screen: nothing moves, though
       # auto-switch is on and the feedback request is still waiting.
       ("resolved-elsewhere", @[f], e, "1 waiting", true, true, "", "", true,
@@ -1341,10 +1344,12 @@ suite "the inbox at each named moment":
       check second.current.val == RunEndedTurn
       check second.positionText == "1 of 2"
       check second.canPrev
-      # Previous on the second goes back along the stack the first built.
+      # Previous on the second walks the stack the first built: the items on
+      # it were answered, so none still waits and Previous wraps to the last
+      # item.
       check second.prev()
-      check second.current.val == RunQuestion
-      check second.positionText == "2 waiting"
+      check second.current.val == RunFeedback
+      check second.positionText == "2 of 2"
       op.stop()
       first.dispose()
       second.dispose()
